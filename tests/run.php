@@ -93,6 +93,9 @@ $admin = row('SELECT * FROM users WHERE id = ?', [create_user('管理者', 'admi
 $a = row('SELECT * FROM users WHERE id = ?', [create_user('山田', 'a@example.com', 'password1')]);
 $b = row('SELECT * FROM users WHERE id = ?', [create_user('鈴木', 'b@example.com', 'password1')]);
 check('ログイン成功', login_attempt('A@example.com', 'password1') !== null, true);
+$tmpUser = row('SELECT * FROM users WHERE id = ?', [create_user('新人', 'new@example.com', 'initpass1', 'member', null, true)]);
+check('管理者が登録した人は初回パスワード変更が必要', (int)$tmpUser['must_change_password'], 1);
+check('通常登録は変更不要', (int)$a['must_change_password'], 0);
 check('ログイン失敗', login_attempt('a@example.com', 'wrong') === null, true);
 
 $today = date('Y-m-d');

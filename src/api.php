@@ -127,10 +127,16 @@ function handle_api(): void
     }
     $cal = BizCalendar::fromDb();
 
+    // 初期パスワードのままの人は、パスワードを変更するまで他の操作ができない
+    if ((int)$user['must_change_password'] === 1 && !in_array($action, ['me', 'password_change'], true)) {
+        api_fail('最初にパスワードを変更してください。', 403);
+    }
+
     switch ($action) {
         case 'me':
             api_out([
-                'user' => ['id' => (int)$user['id'], 'name' => $user['name'], 'email' => $user['email'], 'role' => $user['role']],
+                'user' => ['id' => (int)$user['id'], 'name' => $user['name'], 'email' => $user['email'], 'role' => $user['role'],
+                    'must_change_password' => (int)$user['must_change_password'] === 1],
                 'csrf' => csrf_token(),
                 'app_name' => cfg('app_name'),
                 'work_tags' => cfg('work_tags'),
@@ -272,14 +278,17 @@ function handle_api(): void
             if (mb_strlen($new) < 8) {
                 api_fail('新しいパスワードは8文字以上にしてください。');
             }
-            q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+            if (hash_equals((string)($in['current_password'] ?? ''), $new)) {
+                api_fail('現在のパスワードとは別のパスワードにしてください。');
+            }
+            q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $user['id']]);
             api_out(['ok' => true]);
 
         case 'users_list':
             require_admin($user);
             api_out(['users' => array_map(function ($u) {
-                return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'slack_id' => $u['slack_id'] ?? '', 'active' => (int)$u['active']];
-            }, rows('SELECT id,name,email,role,slack_id,active FROM users ORDER BY id'))]);
+                return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'slack_id' => $u['slack_id'] ?? '', 'active' => (int)$u['active'], 'must_change_password' => (int)$u['must_change_password']];
+            }, rows('SELECT id,name,email,role,slack_id,active,must_change_password FROM users ORDER BY id'))]);
 
         case 'user_save':
             require_admin($user);
@@ -312,7 +321,8 @@ function handle_api(): void
                     if (mb_strlen($pw) < 8) {
                         api_fail('パスワードは8文字以上にしてください。');
                     }
-                    q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash($pw, PASSWORD_DEFAULT), $target['id']]);
+                    // 管理者が決めたパスワードなので、本人が次にログインしたとき変更してもらう
+                    q('UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?', [password_hash($pw, PASSWORD_DEFAULT), (int)$target['id'] === (int)$user['id'] ? 0 : 1, $target['id']]);
                 }
             } else {
                 if (mb_strlen($pw) < 8) {
@@ -321,7 +331,7 @@ function handle_api(): void
                 if (row('SELECT id FROM users WHERE email = ?', [$email])) {
                     api_fail('そのメールアドレスは使われています。');
                 }
-                create_user($name, $email, $pw, $role, $slack ?: null);
+                create_user($name, $email, $pw, $role, $slack ?: null, true);
             }
             api_out(['ok' => true]);
 

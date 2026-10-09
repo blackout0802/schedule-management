@@ -65,14 +65,15 @@
 
   /* ---------- モーダル ---------- */
   var modals = [];
-  function openModal(title, body, wide) {
+  function openModal(title, body, wide, locked) {
     var ov = el('div', { class: 'overlay' });
+    ov.locked = !!locked; // true の間は ✕・Esc・外側クリックで閉じられない
     var close = function () { ov.remove(); modals = modals.filter(function (m) { return m !== ov; }); };
     var box = el('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-      el('h3', null, el('span', { text: title }), el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', onclick: close, text: '✕' })),
+      el('h3', null, el('span', { text: title }), locked ? null : el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', onclick: close, text: '✕' })),
       body);
     ov.appendChild(box);
-    ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(); });
+    ov.addEventListener('mousedown', function (e) { if (e.target === ov && !ov.locked) close(); });
     document.body.appendChild(ov);
     modals.push(ov);
     var f = box.querySelector('input:not([type=radio]):not([disabled]), select, textarea');
@@ -81,7 +82,7 @@
     return ov;
   }
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && modals.length) modals[modals.length - 1].close();
+    if (e.key === 'Escape' && modals.length && !modals[modals.length - 1].locked) modals[modals.length - 1].close();
   });
 
   /* ---------- 画面の骨組み ---------- */
@@ -98,10 +99,7 @@
     }
     items.push(el('hr'));
     items.push(el('button', { type: 'button', text: 'パスワードの変更', onclick: function () { closeMenu(); openPasswordDialog(); } }));
-    items.push(el('button', { type: 'button', text: 'ログアウト', onclick: function () {
-      var f = el('form', { method: 'post', action: 'logout.php' }, el('input', { type: 'hidden', name: 'csrf', value: csrf }));
-      document.body.appendChild(f); f.submit();
-    } }));
+    items.push(el('button', { type: 'button', text: 'ログアウト', onclick: doLogout }));
     function closeMenu() { if (menuList) { menuList.remove(); menuList = null; menuBtn.setAttribute('aria-expanded', 'false'); } }
     menuBtn.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -449,7 +447,7 @@
         body.appendChild(el('div', { class: 'scroll-x' }, el('table', { class: 't' },
           el('thead', null, el('tr', null, ['名前', 'メールアドレス', '権限', 'Slack ID', ''].map(function (h) { return el('th', { text: h }); }))),
           el('tbody', null, j.users.map(function (u) {
-            return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') }), el('td', { text: u.email }),
+            return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') + (u.must_change_password ? '（初回パスワード未変更）' : '') }), el('td', { text: u.email }),
               el('td', null, el('span', { class: 'pill' + (u.role === 'admin' ? ' admin' : ''), text: u.role === 'admin' ? '管理者' : '一般' })),
               el('td', { text: u.slack_id || '—' }),
               el('td', null, el('button', { class: 'btn small', type: 'button', text: '編集', onclick: function () { openUserForm(u, refresh); } })));
@@ -480,6 +478,7 @@
       el('div', { class: 'row' }, el('label', null, '権限', f.role), el('label', null, 'SlackのメンバーID', f.slack)),
       el('label', null, u ? '新しいパスワード（変更する場合のみ・8文字以上）' : 'パスワード（8文字以上）', f.pw),
       u ? el('label', { style: 'flex-direction:row;align-items:center;display:flex;gap:6px' }, f.active, '利用を許可する（退職時などは外す）') : null,
+      el('p', { class: 'hint', text: u ? 'パスワードを入力して保存すると、その人は次のログイン時に、新しいパスワードへの変更を求められます。' : 'ここで決めたパスワードは初期パスワードです。本人に伝えてください。最初のログイン時に、本人が別のパスワードへ変更します。' }),
       el('p', { class: 'hint', text: '管理者は、他の社員の休みの登録・編集ができます。プライベートの予定は、管理者にも見えません。' }),
       err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
@@ -509,17 +508,31 @@
     refresh();
   }
 
-  function openPasswordDialog() {
+  // forced=true: 初期パスワードのままの人への案内。変更するまで閉じられない
+  function openPasswordDialog(forced, onDone) {
     var cur = el('input', { type: 'password', required: true, autocomplete: 'current-password' });
     var nw = el('input', { type: 'password', required: true, minlength: '8', autocomplete: 'new-password' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      api('password_change', { body: { current_password: cur.value, new_password: nw.value } }).then(function () { ov.close(); toast('パスワードを変更しました'); })
-        .catch(function (x) { err.textContent = x.message; err.hidden = false; });
-    } }, el('label', null, '現在のパスワード', cur), el('label', null, '新しいパスワード（8文字以上）', nw), err,
-      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
-    var ov = openModal('パスワードの変更', form);
+      api('password_change', { body: { current_password: cur.value, new_password: nw.value } }).then(function () {
+        ov.close(); toast('パスワードを変更しました');
+        if (onDone) onDone();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      forced ? el('div', { class: 'notice' }, el('b', { text: 'はじめにパスワードを変更してください' }),
+        el('p', { text: '管理者が決めた初期パスワードでログインしています。ご自身だけが知っているパスワードに変更すると、予定の画面に進めます。' })) : null,
+      el('label', null, forced ? '現在のパスワード（管理者から伝えられたもの）' : '現在のパスワード', cur),
+      el('label', null, '新しいパスワード（8文字以上・現在のものとは別）', nw), err,
+      el('div', { class: 'actions' },
+        forced ? el('button', { class: 'btn left', type: 'button', text: 'ログアウト', onclick: doLogout }) : el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }),
+        el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
+    var ov = openModal(forced ? 'パスワードの変更（初回のみ）' : 'パスワードの変更', form, false, forced);
+  }
+
+  function doLogout() {
+    var f = el('form', { method: 'post', action: 'logout.php' }, el('input', { type: 'hidden', name: 'csrf', value: csrf }));
+    document.body.appendChild(f); f.submit();
   }
 
   /* ---------- 起動 ---------- */
@@ -533,7 +546,12 @@
     S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
     S.mode = store('sched.mode') || (window.innerWidth < 700 ? 'list' : 'cal');
-    renderShell();
-    load();
+    var start = function () { renderShell(); load(); };
+    if (me.user.must_change_password) {
+      root.textContent = '';
+      openPasswordDialog(true, start); // 変更が終わるまで予定の画面は出さない
+    } else {
+      start();
+    }
   }).catch(function (e) { if (e.message !== 'login') root.textContent = 'うまく読み込めませんでした: ' + e.message; });
 })();

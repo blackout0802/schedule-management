@@ -112,6 +112,17 @@ function run_schema(): void
     foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
         db()->exec($stmt);
     }
+    migrate_schema();
+}
+
+/** 古いバージョンで作ったテーブルに、後から増えた列を足す（何度実行しても安全） */
+function migrate_schema(): void
+{
+    try {
+        db()->query('SELECT must_change_password FROM users LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+    }
 }
 
 if (PHP_SAPI !== 'cli' && !headers_sent()) {

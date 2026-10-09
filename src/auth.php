@@ -26,7 +26,7 @@ function current_user(): ?array
     if (!$id) {
         return null;
     }
-    $u = row('SELECT id,name,email,role,slack_id,active FROM users WHERE id = ?', [$id]);
+    $u = row('SELECT id,name,email,role,slack_id,active,must_change_password FROM users WHERE id = ?', [$id]);
     return ($u && (int)$u['active'] === 1) ? $u : null;
 }
 
@@ -75,10 +75,11 @@ function csrf_valid(?string $token): bool
     return !empty($_SESSION['csrf']) && is_string($token) && hash_equals($_SESSION['csrf'], $token);
 }
 
-function create_user(string $name, string $email, string $password, string $role = 'member', ?string $slackId = null): int
+/** $mustChange=true なら、最初のログイン時にパスワードの変更を求める（管理者が初期パスワードを決めて登録する場合） */
+function create_user(string $name, string $email, string $password, string $role = 'member', ?string $slackId = null, bool $mustChange = false): int
 {
-    q('INSERT INTO users (name,email,password_hash,role,slack_id,active,created_at) VALUES (?,?,?,?,?,1,?)', [
-        $name, strtolower(trim($email)), password_hash($password, PASSWORD_DEFAULT), $role, $slackId ?: null, now_str(),
+    q('INSERT INTO users (name,email,password_hash,role,slack_id,active,must_change_password,created_at) VALUES (?,?,?,?,?,1,?,?)', [
+        $name, strtolower(trim($email)), password_hash($password, PASSWORD_DEFAULT), $role, $slackId ?: null, $mustChange ? 1 : 0, now_str(),
     ]);
     return (int)db()->lastInsertId();
 }
