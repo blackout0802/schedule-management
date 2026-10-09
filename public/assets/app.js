@@ -158,6 +158,7 @@
         [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
           return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
         })),
+      SHARE ? null : el('button', { class: 'btn', type: 'button', text: '↻ 繰り返し業務', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }),
       SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
     ));
     tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
@@ -403,11 +404,14 @@
     if (SHARE || (ev && !ev.editable)) return openEventView(ev);
     var isNew = !ev;
     var kind = ev ? ev.kind : (S.view === 'me' ? 'private' : 'work');
+    // 種類（業務・休み・プライベート）は、登録したあとからも変えられる。変えられるのは、予定の持ち主だけ
+    var isOwner = !ev || ev.owner_id === S.me.user.id;
     var kinds = [['work', '業務'], ['off', '休み']];
-    if (S.view === 'me' || (ev && ev.kind === 'private')) kinds.push(['private', 'プライベート']);
+    if (S.view === 'me' || (ev && (ev.kind === 'private' || isOwner))) kinds.push(['private', 'プライベート']);
+    var KIND_NAME = { work: '業務', off: '休み', private: 'プライベート' };
 
     var radios = kinds.map(function (k) {
-      return el('label', { class: k[0] }, el('input', { type: 'radio', name: 'kind', value: k[0], checked: k[0] === kind, disabled: !isNew, onchange: syncKind }), k[1]);
+      return el('label', { class: k[0] }, el('input', { type: 'radio', name: 'kind', value: k[0], checked: k[0] === kind, disabled: !(isNew || isOwner), onchange: onKindChange }), k[1]);
     });
     var title = el('input', { name: 'title', maxlength: '100', value: ev ? ev.title : '' });
     var tag = el('select', { name: 'tag' });
@@ -435,8 +439,31 @@
       return k === 'off' ? fs.off : k === 'work' ? fs.tags.indexOf(tag.value) >= 0 : false;
     }
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    // 毎月くり返す業務は、「繰り返し業務」として登録すると自動で入る。その入口を、入力画面にも出す
+    var repeatHint = el('p', { class: 'hint' });
+    var linkTo = function (label, fn) { return el('a', { href: '#', text: label, onclick: function (e) { e.preventDefault(); fn(); } }); };
+    function syncRepeat() {
+      repeatHint.textContent = '';
+      if (ev && ev.recurring) {
+        repeatHint.appendChild(document.createTextNode('↻ 毎月の繰り返しから作られた予定です。この回を編集すると、以後ルールを変更してもこの回は変わりません。 '));
+        repeatHint.appendChild(linkTo('繰り返しのルールを見る・変える', function () { ov.close(); openSeriesDialog(); }));
+      } else if (curKind() === 'work') {
+        repeatHint.appendChild(document.createTextNode('毎月くり返す業務は、 '));
+        repeatHint.appendChild(linkTo('「繰り返し業務」として登録', function () {
+          var pf = { title: title.value, tag: tag.value, start_time: st.value, end_time: et.value };
+          ov.close(); openSeriesForm(null, function () { load(); }, pf);
+        }));
+        repeatHint.appendChild(document.createTextNode(' すると、自動で毎月入ります。'));
+      }
+      repeatHint.hidden = !repeatHint.firstChild;
+    }
 
     function curKind() { var c = form.querySelector('input[name=kind]:checked'); return c ? c.value : kind; }
+    // 休み（件名が空だと「休み」で保存される）を、業務・プライベートに変えるときは、自動の件名「休み」を空にして、入力を促す
+    function onKindChange() {
+      if (ev && ev.kind === 'off' && curKind() !== 'off' && title.value === '休み') { title.value = ''; title.setAttribute('placeholder', '件名を入力してください'); title.focus(); }
+      syncKind();
+    }
     function syncKind() {
       var k = curKind();
       var tags = k === 'work' ? S.me.work_tags : k === 'off' ? S.me.off_tags : [];
@@ -446,18 +473,19 @@
       if (k === 'work' && !cur) tag.value = S.me.work_tags[0];
       tagLabel.hidden = k === 'private';
       syncFam();
+      syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示され、Slackにも通知されます。' : '業務の予定は全員に表示されます。';
       if (k === 'off' && !title.value) title.setAttribute('placeholder', '休み（空のままで可）');
-      else title.removeAttribute('placeholder');
+      else if (title.value || !(ev && ev.kind === 'off')) title.removeAttribute('placeholder');
     }
 
     function syncFam() {
       var k = curKind();
       famLabel.hidden = famOwnerOnly;
       famText.textContent = k === 'private' ? '家族に共有する（共有リンクで見える）' : '家族にも共有する（家族用の共有リンクで見える。メモ欄の内容も見えます）';
-      if (isNew && !famTouched) famCb.checked = k === 'private'; // 初期値: プライベートは共有する、業務・休みは共有しない
+      if (!famTouched) famCb.checked = (isNew || k !== kind) ? k === 'private' : ev.family_shared !== false; // 初期値: プライベートは共有する、業務・休みは共有しない（元の種類に戻したら、元の指定）
       var auto = !famOwnerOnly && famByScope(k);
       famCb.disabled = auto;
       if (auto) famCb.checked = true;
@@ -476,9 +504,11 @@
       // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
       if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
       if (!ownerLabel.hidden) body.owner_id = owner.value;
+      var kindChanged = !!ev && ev.kind !== body.kind;
+      if (kindChanged && ev.kind === 'private' && !window.confirm('プライベートの予定を「' + KIND_NAME[body.kind] + '」に変えます。会社の全員に表示されます（メモの内容も）。' + (body.kind === 'off' && S.me.slack ? 'Slackにも、休みの登録が通知されます。' : '') + 'よろしいですか？')) return;
       api('event_save', { body: body }).then(function () {
-        ov.close(); toast(isNew ? '予定を登録しました' : '予定を更新しました');
-        if (isNew && body.kind === 'private' && S.view === 'team') toast('プライベートの予定は「プライベート版」に表示されます');
+        ov.close(); toast(kindChanged ? '種類を「' + KIND_NAME[body.kind] + '」に変えて、保存しました' : isNew ? '予定を登録しました' : '予定を更新しました');
+        if ((isNew || kindChanged) && body.kind === 'private' && S.view === 'team') toast('プライベートの予定は「プライベート版」に表示されます');
         load();
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     };
@@ -490,6 +520,7 @@
 
     var form = el('form', { class: 'form', onsubmit: save },
       el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
+      !(isNew || isOwner) ? el('p', { class: 'hint', style: 'margin:-6px 0 0', text: '種類を変えられるのは、予定の持ち主だけです。' }) : null,
       el('label', null, '件名', title),
       el('div', { class: 'row' }, tagLabel, ownerLabel),
       el('div', { class: 'row' }, el('label', null, '開始日', start), el('label', null, '終了日', end)),
@@ -498,7 +529,7 @@
       famLabel,
       famNote,
       hint,
-      ev && ev.recurring ? el('p', { class: 'hint', text: '↻ 毎月の繰り返しから作られた予定です。この回を編集すると、以後ルールを変更してもこの回は変わりません。' }) : null,
+      repeatHint,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
       err,
       el('div', { class: 'actions' }, del,
@@ -1111,14 +1142,15 @@
     refresh();
   }
 
-  function openSeriesForm(s, done) {
+  function openSeriesForm(s, done, prefill) {
+    var pf = prefill || {};
     var typeSel = el('select', { name: 'rule_type' }, Object.keys(RULE_NAMES).map(function (k) { return el('option', { value: k, text: RULE_NAMES[k], selected: s && s.rule_type === k }); }));
-    var title = el('input', { name: 'title', maxlength: '100', required: true, value: s ? s.title : '' });
-    var tag = el('select', { name: 'tag' }, S.me.work_tags.map(function (t) { return el('option', { value: t, text: t, selected: s ? s.tag === t : t === '定例業務' }); }));
+    var title = el('input', { name: 'title', maxlength: '100', required: true, value: s ? s.title : (pf.title || '') });
+    var tag = el('select', { name: 'tag' }, S.me.work_tags.map(function (t) { return el('option', { value: t, text: t, selected: s ? s.tag === t : (pf.tag && S.me.work_tags.indexOf(pf.tag) >= 0 ? t === pf.tag : t === '定例業務') }); }));
     var fields = el('div', { class: 'row' });
     var num = function (name, label, val, min, max) { return el('label', null, label, el('input', { type: 'number', name: name, min: String(min), max: String(max), value: val === null || val === undefined ? '' : String(val) })); };
-    var st = el('input', { type: 'time', name: 'start_time', value: s ? s.start_time : '' });
-    var et = el('input', { type: 'time', name: 'end_time', value: s ? s.end_time : '' });
+    var st = el('input', { type: 'time', name: 'start_time', value: s ? s.start_time : (pf.start_time || '') });
+    var et = el('input', { type: 'time', name: 'end_time', value: s ? s.end_time : (pf.end_time || '') });
     var preview = el('div', { class: 'scroll-x' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var timer = null;

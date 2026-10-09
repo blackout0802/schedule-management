@@ -192,14 +192,23 @@ function handle_api(): void
                 if (!can_edit_event($existing, $user)) {
                     api_fail('この予定は編集できません。', 403);
                 }
-                $in['kind'] = $existing['kind'];
+                // 種類（業務・休み・プライベート）は、あとから変えられる。ただし、変えられるのは持ち主だけ
+                $newKind = (string)($in['kind'] ?? $existing['kind']);
+                if (!in_array($newKind, ['work', 'off', 'private'], true)) {
+                    $newKind = $existing['kind'];
+                }
+                if ($newKind !== $existing['kind'] && (int)$existing['owner_id'] !== (int)$user['id']) {
+                    api_fail('予定の種類を変えられるのは、予定の持ち主だけです。', 403);
+                }
+                $in['kind'] = $newKind;
             }
             [$data, $err] = validate_event_input($in, $user);
             if ($err) {
                 api_fail($err);
             }
             $saved = save_event($data, $user, $existing);
-            if (!$existing && $saved['kind'] === 'off') {
+            // 休みの登録（新規、または、ほかの種類から「休み」に変えたとき）は、Slackに通知する
+            if ($saved['kind'] === 'off' && (!$existing || $existing['kind'] !== 'off')) {
                 $owner = row('SELECT id,name,slack_id FROM users WHERE id = ?', [$saved['owner_id']]);
                 notify_off_registered($saved, $owner, $user);
             }

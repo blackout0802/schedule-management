@@ -467,6 +467,35 @@ check('更新番号: 書き込み(INSERT)のあとでも lastInsertId が正し�
 check('自動更新の間隔: 既定は20秒', poll_ms(), 20000);
 check('自動更新の間隔の範囲（0=なし、5〜600秒）', (function () use ($tmp) { $o = []; foreach ([0, 1, 30, 9999] as $v) { file_put_contents($tmp . '/poll.php', "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'poll_seconds' => $v];"); $o[] = (int)trim((string)shell_exec('SCHEDULE_CONFIG=' . escapeshellarg($tmp . '/poll.php') . ' ' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('require ' . var_export(__DIR__ . '/../src/bootstrap.php', true) . '; echo poll_ms();'))); } return $o; })(), [0, 5000, 30000, 600000]);
 
+// ---- 予定の種類を、あとから変える ----
+$kd = date('Y-m-d', strtotime('+250 day'));
+$ke = $mk($a, ['kind' => 'work', 'title' => '種類を変える予定', 'tag' => '打ち合わせ', 'start' => $kd, 'note' => 'メモ', 'start_time' => '10:00']);
+$chg = function (array $ev, array $user, string $kind, array $extra = []) {
+    [$d, $err] = validate_event_input(array_merge(['kind' => $kind, 'title' => $ev['title'], 'tag' => $extra['tag'] ?? '', 'start' => $ev['start_date'], 'end' => $ev['end_date'], 'start_time' => $ev['start_time'], 'end_time' => $ev['end_time'], 'note' => $ev['note']], $extra), $user);
+    if ($err) { throw new RuntimeException($err); }
+    return save_event($d, $user, row('SELECT * FROM events WHERE id = ?', [$ev['id']]));
+};
+$k1 = $chg($ke, $a, 'off', ['tag' => '有給']);
+check('種類変更: 業務→休み（分類は休みの分類になり、時刻・メモ・日付は保たれる）', [$k1['kind'], $k1['tag'], $k1['start_time'], $k1['note'], $k1['start_date'], (int)$k1['owner_id']], ['off', '有給', '10:00', 'メモ', $kd, (int)$a['id']]);
+check('種類変更: 休みになった予定は、他の人にも休みとして見える', in_array('種類を変える予定', array_column(list_events($b, $kd, $kd, 'team'), 'title'), true) && array_column(list_events($b, $kd, $kd, 'team'), 'kind', 'title')['種類を変える予定'] === 'off', true);
+$k2 = $chg($k1, $a, 'private', ['family_shared' => 1]);
+check('種類変更: 休み→プライベート（分類は空になる）', [$k2['kind'], $k2['tag']], ['private', '']);
+check('種類変更: プライベートにすると、他の人・管理者には見えなくなる', [in_array('種類を変える予定', array_column(list_events($b, $kd, $kd, 'team'), 'title'), true), in_array('種類を変える予定', array_column(list_events($admin, $kd, $kd, 'team'), 'title'), true), find_event((int)$k2['id'], $admin)], [false, false, null]);
+check('種類変更: プライベートにした予定は、本人には見える', in_array('種類を変える予定', array_column(list_events($a, $kd, $kd, 'me', ['tags' => cfg('work_tags'), 'showOff' => true]), 'title'), true), true);
+$k3 = $chg($k2, $a, 'work', ['tag' => '全体会議', 'family_shared' => 0]);
+check('種類変更: プライベート→業務（分類を選べる・家族への共有は共有しない）', [$k3['kind'], $k3['tag'], (int)$k3['family_shared']], ['work', '全体会議', 0]);
+check('種類変更: 業務になった予定は、全員に見える', in_array('種類を変える予定', array_column(list_events($b, $kd, $kd, 'team'), 'title'), true), true);
+check('種類変更: 不正な分類は、その種類の既定に直る', $chg($k3, $a, 'off', ['tag' => '全体会議'])['tag'], '有給');
+// 繰り返しの1回分の種類を変えると、個別の予定になる
+q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$a['id'], '種類変更の繰り返し', '定例業務', 'day', 5, 'none', now_str()]);
+$sidK = (int)db()->lastInsertId(); materialize_series($sidK);
+$recK = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$sidK]);
+$recK2 = $chg($recK, $a, 'off', ['tag' => '有給']);
+check('種類変更: 繰り返しの1回分を変えると、個別扱い(detached)になる', [$recK2['kind'], (int)$recK2['detached']], ['off', 1]);
+q('UPDATE series SET title = ? WHERE id = ?', ['種類変更の繰り返し(名前変更)', $sidK]); materialize_series($sidK);
+check('種類変更: ルールを変えても、種類を変えた回は上書きされない', row('SELECT kind, title FROM events WHERE id = ?', [$recK['id']]), ['kind' => 'off', 'title' => '種類変更の繰り返し']);
+delete_series($sidK);
+
 // ---- 自動更新(ensure_schema) ----
 ensure_schema();
 check('スキーマの版が記録される', (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v'], SCHEMA_VERSION);

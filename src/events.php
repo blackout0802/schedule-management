@@ -165,9 +165,8 @@ function validate_event_input(array $in, array $user): array
 function save_event(array $data, array $user, ?array $existing): array
 {
     if ($existing) {
-        // 持ち主と種類は編集で変えない（取り違えを防ぐ）
+        // 持ち主は編集で変えない。種類は変えられる（変えてよい人かの判定は、呼び出し側で行う）
         $data['owner_id'] = (int)$existing['owner_id'];
-        $data['kind'] = $existing['kind'];
         if ((int)$existing['owner_id'] !== (int)$user['id']) {
             $data['family_shared'] = (int)$existing['family_shared']; // 家族への共有は持ち主だけが決める（管理者の編集では変えない）
         }
