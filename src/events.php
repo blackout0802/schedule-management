@@ -467,3 +467,70 @@ function save_memo(string $html, array $user): string
     }
     return $clean;
 }
+
+
+/* ------------------------------------------------------------------
+ * 月のまとめ（出勤日・休みの日数）。自分の分だけ。
+ * ------------------------------------------------------------------ */
+
+/** 期間内の祝日・会社の休業日（日付 => 名前） */
+function holiday_map(string $from, string $to): array
+{
+    $holidays = [];
+    for ($y = (int)substr($from, 0, 4); $y <= (int)substr($to, 0, 4); $y++) {
+        $holidays += Holidays::national($y);
+    }
+    foreach (rows('SELECT hdate, name FROM company_holidays WHERE hdate BETWEEN ? AND ?', [$from, $to]) as $r) {
+        $holidays[$r['hdate']] = $r['name'];
+    }
+    return $holidays;
+}
+
+/**
+ * その月の、自分の出勤日・休みの日数。営業日は「平日で、祝日・会社の休業日でない日」。
+ * 休みは営業日の分だけ数える（土日祝にまたがる休みは、平日の分だけ）。午前・午後の半休は0.5日。
+ * @return array{month:string,biz_days:int,off_days:float,work_days:float,by_tag:array<int,array{tag:string,days:float}>}
+ */
+function month_summary(array $user, string $ym): array
+{
+    $first = $ym . '-01';
+    $last = date('Y-m-t', strtotime($first));
+    $hol = holiday_map($first, $last);
+    $biz = [];
+    for ($t = strtotime($first), $end = strtotime($last); $t <= $end; $t = strtotime('+1 day', $t)) {
+        $d = date('Y-m-d', $t);
+        if ((int)date('N', $t) <= 5 && !isset($hol[$d])) {
+            $biz[$d] = true;
+        }
+    }
+    $perDay = [];
+    $perDayTag = [];
+    foreach (rows("SELECT tag, start_date, end_date FROM events WHERE kind = 'off' AND owner_id = ? AND start_date <= ? AND end_date >= ?", [$user['id'], $last, $first]) as $e) {
+        $tag = $e['tag'] !== '' ? $e['tag'] : '休み';
+        $w = mb_strpos($tag, '半休') !== false ? 0.5 : 1.0;
+        $from = max($e['start_date'], $first);
+        $to = min($e['end_date'], $last);
+        for ($t = strtotime($from), $end = strtotime($to); $t <= $end; $t = strtotime('+1 day', $t)) {
+            $d = date('Y-m-d', $t);
+            if (isset($biz[$d])) {
+                $perDay[$d] = min(1.0, ($perDay[$d] ?? 0.0) + $w); // 同じ日に午前・午後の半休が2つあっても、1日まで
+                $perDayTag[$tag][$d] = min(1.0, ($perDayTag[$tag][$d] ?? 0.0) + $w); // 同じ分類を重ねて登録しても、1日は1日
+            }
+        }
+    }
+    $byTag = array_map('array_sum', $perDayTag);
+    $off = array_sum($perDay);
+    $order = array_merge(cfg('off_tags'), ['休み']);
+    $list = [];
+    foreach ($order as $tag) {
+        // 有給と欠勤は、0日でも表示する（休みの内訳がひと目で分かるように）
+        if (isset($byTag[$tag]) || in_array($tag, ['有給', '欠勤'], true)) {
+            $list[] = ['tag' => $tag, 'days' => (float)($byTag[$tag] ?? 0.0)];
+            unset($byTag[$tag]);
+        }
+    }
+    foreach ($byTag as $tag => $days) { // 設定から外れた分類で登録済みのもの
+        $list[] = ['tag' => (string)$tag, 'days' => (float)$days];
+    }
+    return ['month' => $ym, 'biz_days' => count($biz), 'off_days' => (float)$off, 'work_days' => count($biz) - (float)$off, 'by_tag' => $list];
+}

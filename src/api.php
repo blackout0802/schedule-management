@@ -169,18 +169,17 @@ function handle_api(): void
             $rev = data_rev(); // データを読む前の番号（読んでいる間に更新されても、次の確認で見つかるように）
             $view = ($_GET['view'] ?? 'team') === 'me' ? 'me' : 'team';
             $tags = isset($_GET['tags']) && $_GET['tags'] !== '' ? explode(',', (string)$_GET['tags']) : [];
-            $holidays = [];
-            for ($y = (int)substr($from, 0, 4); $y <= (int)substr($to, 0, 4); $y++) {
-                $holidays += Holidays::national($y);
-            }
-            foreach (rows('SELECT hdate, name FROM company_holidays WHERE hdate BETWEEN ? AND ?', [$from, $to]) as $r) {
-                $holidays[$r['hdate']] = $r['name'];
-            }
-            api_out([
+            $holidays = holiday_map($from, $to);
+            $out = [
                 'events' => list_events($user, $from, $to, $view, ['tags' => $tags, 'showOff' => ($_GET['off'] ?? '1') === '1']),
                 'holidays' => $holidays,
                 'rev' => $rev,
-            ]);
+            ];
+            $sum = (string)($_GET['sum'] ?? ''); // 表示している月（YYYY-MM）。あれば、その月の自分の出勤日・休みの日数も返す
+            if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $sum)) {
+                $out['summary'] = month_summary($user, $sum);
+            }
+            api_out($out);
 
         case 'event_save':
             $existing = null;

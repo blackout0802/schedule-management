@@ -251,3 +251,18 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
   table.t.stack td:nth-child(4)::before { content: "Slack ID: "; }
   table.t.stack td:nth-child(5) { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
 }
+
+/* カレンダーの下の、月のまとめ */
+.month-sum { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.month-sum h3 { margin: 0; font-size: 14px; }
+.ms-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ms-box { display: grid; gap: 2px; align-content: start; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); min-width: 0; }
+.ms-box.work { background: var(--work-soft); } .ms-box.off { background: var(--off-soft); }
+.ms-l { font-size: 12px; color: var(--muted); }
+.ms-n { font-size: 22px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.ms-box.work .ms-n { color: var(--work); } .ms-box.off .ms-n { color: var(--off); }
+.ms-note { font-size: 11px; color: var(--muted); }
+.ms-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.ms-tag { font-size: 12px; padding: 0 8px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ms-tag.absent { border-color: var(--danger); color: var(--danger); }
+@media (max-width: 640px) { .ms-grid { grid-template-columns: 1fr; } }

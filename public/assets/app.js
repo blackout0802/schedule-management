@@ -41,6 +41,39 @@
     else node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
   }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  /* ---------- 時刻の入力 ----------
+     ブラウザ標準の時刻欄（上下にスクロールして選ぶ形）は、PCでは動きが重く選びにくい。
+     PCでは「文字で打つ（9 / 930 / 9:30 / 21時30分 など）＋候補から選ぶ」形にする。
+     スマホなど指で操作する端末では、その端末の標準の時刻選択を使う。 */
+  function normTime(raw) {
+    var t = String(raw || '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[：︰]/g, ':').replace(/\s+/g, '').replace(/時/g, ':').replace(/分/g, '').replace(/[.．]/g, ':').replace(/:$/, '');
+    var h, m, x;
+    if ((x = /^(\d{1,2})$/.exec(t))) { h = +x[1]; m = 0; }
+    else if ((x = /^(\d{1,2})(\d{2})$/.exec(t))) { h = +x[1]; m = +x[2]; }
+    else if ((x = /^(\d{1,2}):(\d{1,2})$/.exec(t))) { h = +x[1]; m = +x[2]; }
+    else return null;
+    return h <= 23 && m <= 59 ? pad(h) + ':' + pad(m) : null;
+  }
+  function timeVal(inp) {
+    var v = inp.value.trim();
+    if (v === '') return '';
+    var n = normTime(v);
+    if (n) { inp.value = n; return n; }
+    return v; // 読み取れない入力は、そのまま送って、サーバーの案内（09:30 の形式で…）を出す
+  }
+  function timeInput(name, value) {
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return el('input', { type: 'time', name: name, value: value || '' });
+    if (!document.getElementById('time-list')) {
+      var dl = el('datalist', { id: 'time-list' });
+      for (var i = 0; i < 48; i++) { var k = (i + 12) % 48; dl.appendChild(el('option', { value: pad(Math.floor(k / 2)) + ':' + (k % 2 ? '30' : '00') })); } // 6:00 から始めて、朝の時間が上に来る
+      document.body.appendChild(dl);
+    }
+    var inp = el('input', { type: 'text', name: name, value: value || '', list: 'time-list', autocomplete: 'off', placeholder: '例 9:30', maxlength: '8', inputmode: 'text' });
+    inp.addEventListener('change', function () { timeVal(inp); });
+    return inp;
+  }
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parse(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
@@ -194,9 +227,10 @@
     var r = gridRange();
     var params = { from: ymd(r.start), to: ymd(r.end), view: S.view };
     if (S.view === 'me' && !SHARE) { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
+    if (!SHARE) params.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
     S.loading = true;
     api('events', { params: params }).then(function (j) {
-      S.events = j.events; S.holidays = j.holidays; S.loading = false; S.revEv = j.rev; renderBoard();
+      S.events = j.events; S.holidays = j.holidays; S.summary = j.summary || null; S.loading = false; S.revEv = j.rev; renderBoard();
     }).catch(fail);
   }
 
@@ -328,6 +362,23 @@
       el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
       SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます' }),
       POLL_MS ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null));
+    var sum = monthSummary();
+    if (sum) board.appendChild(sum);
+  }
+
+  /* カレンダーの下: その月の、自分の出勤日と休みの日数（休みは分類ごと） */
+  function fmtDays(n) { return (Math.round(n * 10) / 10) + '日'; }
+  function monthSummary() {
+    var m = S.summary;
+    if (SHARE || !m || m.month !== S.year + '-' + pad(S.month)) return null;
+    var tags = m.by_tag.map(function (t) { return el('span', { class: 'ms-tag' + (t.tag === '欠勤' && t.days > 0 ? ' absent' : ''), text: t.tag + ' ' + fmtDays(t.days) }); });
+    return el('section', { class: 'month-sum', 'aria-label': S.month + '月の出勤日と休みの日数' },
+      el('h3', { text: S.month + '月のまとめ（自分の分）' }),
+      el('div', { class: 'ms-grid' },
+        el('div', { class: 'ms-box work' }, el('span', { class: 'ms-l', text: '出勤日' }), el('b', { class: 'ms-n', text: fmtDays(m.work_days) })),
+        el('div', { class: 'ms-box off' }, el('span', { class: 'ms-l', text: '休みの日' }), el('b', { class: 'ms-n', text: fmtDays(m.off_days) }),
+          el('span', { class: 'ms-tags' }, tags)),
+        el('div', { class: 'ms-box' }, el('span', { class: 'ms-l', text: '営業日' }), el('b', { class: 'ms-n', text: fmtDays(m.biz_days) }), el('span', { class: 'ms-note', text: '土日祝・会社の休業日を除く' }))));
   }
 
   function renderWeek(days, todayStr) {
@@ -421,8 +472,8 @@
     var start = el('input', { type: 'date', name: 'start', required: true, value: ev ? ev.start : dateStr });
     var end = el('input', { type: 'date', name: 'end', value: ev ? ev.end : dateStr });
     start.addEventListener('change', function () { if (!end.value || end.value < start.value) end.value = start.value; });
-    var st = el('input', { type: 'time', name: 'start_time', value: ev ? ev.start_time : '' });
-    var et = el('input', { type: 'time', name: 'end_time', value: ev ? ev.end_time : '' });
+    var st = timeInput('start_time', ev ? ev.start_time : '');
+    var et = timeInput('end_time', ev ? ev.end_time : '');
     var note = el('textarea', { name: 'note', maxlength: '500' });
     note.value = ev ? ev.note : '';
     var hint = el('p', { class: 'hint' });
@@ -450,7 +501,7 @@
       } else if (curKind() === 'work') {
         repeatHint.appendChild(document.createTextNode('毎月くり返す業務は、 '));
         repeatHint.appendChild(linkTo('「繰り返し業務」として登録', function () {
-          var pf = { title: title.value, tag: tag.value, start_time: st.value, end_time: et.value };
+          var pf = { title: title.value, tag: tag.value, start_time: timeVal(st), end_time: timeVal(et) };
           ov.close(); openSeriesForm(null, function () { load(); }, pf);
         }));
         repeatHint.appendChild(document.createTextNode(' すると、自動で毎月入ります。'));
@@ -499,7 +550,7 @@
       err.hidden = true;
       var body = {
         id: ev ? ev.id : null, kind: curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
-        start_time: st.value, end_time: et.value, note: note.value
+        start_time: timeVal(st), end_time: timeVal(et), note: note.value
       };
       // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
       if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
@@ -1267,8 +1318,8 @@
     var tag = el('select', { name: 'tag' }, S.me.work_tags.map(function (t) { return el('option', { value: t, text: t, selected: s ? s.tag === t : (pf.tag && S.me.work_tags.indexOf(pf.tag) >= 0 ? t === pf.tag : t === '定例業務') }); }));
     var fields = el('div', { class: 'row' });
     var num = function (name, label, val, min, max) { return el('label', null, label, el('input', { type: 'number', name: name, min: String(min), max: String(max), value: val === null || val === undefined ? '' : String(val) })); };
-    var st = el('input', { type: 'time', name: 'start_time', value: s ? s.start_time : (pf.start_time || '') });
-    var et = el('input', { type: 'time', name: 'end_time', value: s ? s.end_time : (pf.end_time || '') });
+    var st = timeInput('start_time', s ? s.start_time : (pf.start_time || ''));
+    var et = timeInput('end_time', s ? s.end_time : (pf.end_time || ''));
     var preview = el('div', { class: 'scroll-x' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var timer = null;
@@ -1296,8 +1347,9 @@
       fields.querySelectorAll('input,select').forEach(function (n) { n.addEventListener('input', schedule); n.addEventListener('change', schedule); });
     }
     function collect() {
-      var b = { id: s ? s.id : null, title: title.value, tag: tag.value, rule_type: typeSel.value, start_time: st.value, end_time: et.value };
+      var b = { id: s ? s.id : null, title: title.value, tag: tag.value, rule_type: typeSel.value, start_time: timeVal(st), end_time: timeVal(et) };
       fields.querySelectorAll('input,select').forEach(function (n) { b[n.name] = n.type === 'checkbox' ? n.checked : n.value; });
+      b.start_time = timeVal(st); b.end_time = timeVal(et);
       return b;
     }
     function schedule() { clearTimeout(timer); timer = setTimeout(showPreview, 250); }

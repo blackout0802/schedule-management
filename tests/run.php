@@ -29,12 +29,15 @@ function check(string $name, $actual, $expected): void
 }
 
 // ---- 休みの分類 ----
-check('休みの分類の並び', cfg('off_tags'), ['有給', '調整休', '午前半休', '午後半休']);
+check('休みの分類の並び', cfg('off_tags'), ['有給', '調整休', '欠勤', '午前半休', '午後半休']);
 $legacyCfg = $tmp . '/legacy.php';
 file_put_contents($legacyCfg, "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'off_tags' => ['有給', '午前半休', '午後半休', 'その他の休み']];");
 $custom = $tmp . '/custom.php';
 file_put_contents($custom, "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'off_tags' => ['有給', '特別休暇']];");
-foreach ([[$legacyCfg, ['有給', '調整休', '午前半休', '午後半休']], [$custom, ['有給', '特別休暇']]] as [$f, $want]) {
+$prevCfg = $tmp . '/prev.php';
+file_put_contents($prevCfg, "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'off_tags' => ['有給', '調整休', '午前半休', '午後半休']];");
+$newOff = ['有給', '調整休', '欠勤', '午前半休', '午後半休'];
+foreach ([[$legacyCfg, $newOff], [$prevCfg, $newOff], [$custom, ['有給', '特別休暇']]] as [$f, $want]) {
     $out = trim((string)shell_exec('SCHEDULE_CONFIG=' . escapeshellarg($f) . ' ' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('require ' . var_export(__DIR__ . '/../src/bootstrap.php', true) . '; echo json_encode(cfg("off_tags"), JSON_UNESCAPED_UNICODE);')));
     check('古い初期値の config は新しい並びになり、自分で変えた分類は保たれる(' . basename($f) . ')', json_decode($out, true), $want);
 }
@@ -331,6 +334,33 @@ check('カンバン: 進行中のToDoも予定にできる（ToDoは消える）
 check('カンバン: 他の人のToDoは見えない・操作できない', [find_todo((int)$kbC['id'], $b), array_column(list_todos($b, 'me'), 'title')], [null, []]);
 foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
 q("DELETE FROM events WHERE title = 'カンバンB'");
+
+// ---- 月のまとめ（出勤日・休みの日数） ----
+$sumU = row('SELECT * FROM users WHERE id = ?', [create_user('集計', 'sum@example.com', 'password1')]);
+$sumO = row('SELECT * FROM users WHERE id = ?', [create_user('集計他', 'sumo@example.com', 'password1')]);
+$mkOff = function (array $u, string $tag, string $s, string $e) use ($mk) { return $mk($u, ['kind' => 'off', 'title' => '', 'tag' => $tag, 'start' => $s, 'end' => $e]); };
+// 2026年11月: 平日は21日。祝日は 11/3(文化の日)・11/23(勤労感謝の日) の2日 → 営業日19日
+$s0 = month_summary($sumU, '2026-11');
+check('月のまとめ: 営業日（土日祝を除く）', $s0['biz_days'], 19);
+check('月のまとめ: 休みが無ければ、出勤日=営業日。有給・欠勤は0日で出る', [$s0['work_days'], $s0['off_days'], array_column($s0['by_tag'], 'days', 'tag')], [19.0, 0.0, ['有給' => 0.0, '欠勤' => 0.0]]);
+$mkOff($sumU, '有給', '2026-11-02', '2026-11-02');            // 月曜 1日
+$mkOff($sumU, '有給', '2026-11-05', '2026-11-09');            // 木〜月: 平日3日（土日を除く）
+$mkOff($sumU, '欠勤', '2026-11-12', '2026-11-12');            // 1日
+$mkOff($sumU, '午前半休', '2026-11-16', '2026-11-16');        // 0.5日
+$mkOff($sumU, '午後半休', '2026-11-16', '2026-11-16');        // 同じ日の午後 → 日としては1日まで
+$mkOff($sumU, '調整休', '2026-11-21', '2026-11-23');          // 土・日・祝 → 営業日ではないので数えない
+$mkOff($sumO, '有給', '2026-11-17', '2026-11-18');            // 他人の休みは数えない
+$s1 = month_summary($sumU, '2026-11');
+check('月のまとめ: 休みの日数（半休は同じ日でも1日まで・土日祝は数えない）', $s1['off_days'], 6.0);
+check('月のまとめ: 出勤日 = 営業日 - 休みの日', $s1['work_days'], 13.0);
+check('月のまとめ: 分類ごとの内訳（有給・調整休・欠勤・午前半休・午後半休の順）', array_column($s1['by_tag'], 'days', 'tag'), ['有給' => 4.0, '欠勤' => 1.0, '午前半休' => 0.5, '午後半休' => 0.5]);
+$mkOff($sumU, '有給', '2026-10-30', '2026-11-03');            // 月をまたぐ → 11月の分だけ（11/2 は上と重なる）
+check('月のまとめ: 月をまたぐ休みは、その月の分だけ（同じ日・同じ分類は1日まで）', [month_summary($sumU, '2026-11')['off_days'], array_column(month_summary($sumU, '2026-11')['by_tag'], 'days', 'tag')['有給']], [6.0, 4.0]);
+check('月のまとめ: 別の月には影響しない', month_summary($sumU, '2026-10')['off_days'], 1.0);
+check('月のまとめ: 他人の分は、他人の画面だけ', month_summary($sumO, '2026-11')['off_days'], 2.0);
+check('月のまとめ: 会社の休業日は営業日から引かれる', (function () use ($sumU) { q("INSERT INTO company_holidays (hdate, name) VALUES ('2026-11-27', '創立記念日')"); $r = month_summary($sumU, '2026-11')['biz_days']; q("DELETE FROM company_holidays WHERE hdate = '2026-11-27'"); return $r; })(), 18);
+check('休みの分類に「欠勤」がある', in_array('欠勤', allowed_tags('off'), true), true);
+q("DELETE FROM events WHERE owner_id IN (?, ?)", [$sumU['id'], $sumO['id']]);
 
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
