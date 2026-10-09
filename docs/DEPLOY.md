@@ -27,7 +27,7 @@
 
 1. `src` `sql` `bin` `config.sample.php` を `schedule_app` にアップロードします。
 2. `public` フォルダの**中身**（index.php, login.php, api.php, assets など）を `public_html/schedule/` にアップロードします。
-3. `public_html/schedule/app_path.php` を開き、`/home/ユーザー名/schedule_app` を実際の場所に書き換えます。
+3. 画面を置いたフォルダから見て**2つ上の階層**に `schedule_app` フォルダがあれば、自動で見つかります（例: `…/public_html/schedule/` なら `…/schedule_app/`）。この配置なら書き換えは不要です。別の場所に置いた場合だけ、`app_path.php` の絶対パスを書き換えます。
 
 ### 方式B（いちばん簡単）: 一式を公開フォルダに置く
 
