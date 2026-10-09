@@ -26,6 +26,9 @@ function check(string $name, $actual, $expected): void
     }
 }
 
+// ---- 休みの分類 ----
+check('休みの分類の並び', cfg('off_tags'), ['有給', '調整休', '午前半休', '午後半休']);
+
 // ---- 祝日 ----
 $h26 = Holidays::national(2026);
 check('2026 元日', isset($h26['2026-01-01']), true);
@@ -130,6 +133,15 @@ $off = row("SELECT * FROM events WHERE kind='off'");
 check('休みは本人が編集可', can_edit_event($off, $a), true);
 check('休みは他の一般社員は編集不可', can_edit_event($off, $b), false);
 check('休みは管理者が編集可', can_edit_event($off, $admin), true);
+
+// 旧名称「その他の休み」の予定が「調整休」に移行される
+q("INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)", [$a['id'], '旧データ', 'off', 'その他の休み', $today, $today, $a['id'], now_str(), now_str()]);
+migrate_data();
+check('旧名称の休みが調整休になる', row("SELECT tag FROM events WHERE title = '旧データ'")['tag'], '調整休');
+[$dT] = validate_event_input(['kind' => 'off', 'title' => 'x', 'tag' => 'ありえない分類', 'start' => $today], $a);
+check('不明な分類の休みは先頭(有給)になる', $dT['tag'], '有給');
+[$dT2] = validate_event_input(['kind' => 'off', 'title' => 'x', 'tag' => '調整休', 'start' => $today], $a);
+check('調整休を選べる', $dT2['tag'], '調整休');
 
 // 休みの代理登録: 管理者のみ owner_id が有効
 [$d1] = validate_event_input(['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $today, 'owner_id' => $b['id']], $admin);

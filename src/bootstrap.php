@@ -23,7 +23,7 @@ function app_config(): array
             'base_url' => '',
             'cron_token' => '',
             'work_tags' => ['全体会議', '打ち合わせ', '定例業務', '個人作業', 'その他'],
-            'off_tags' => ['有給', '午前半休', '午後半休', 'その他の休み'],
+            'off_tags' => ['有給', '調整休', '午前半休', '午後半休'],
         ];
         $cfg = array_merge($defaults, require $file);
     }
@@ -119,6 +119,13 @@ function run_schema(): void
         db()->exec($stmt);
     }
     migrate_schema();
+    migrate_data();
+}
+
+/** 休みの分類の名称変更（その他の休み → 調整休）を、登録済みの予定にも反映する。何度実行しても安全 */
+function migrate_data(): void
+{
+    q("UPDATE events SET tag = '調整休' WHERE kind = 'off' AND tag = 'その他の休み'");
 }
 
 /** 古いバージョンで作ったテーブルに、後から増えた列を足す（何度実行しても安全） */

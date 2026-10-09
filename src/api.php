@@ -134,6 +134,7 @@ function handle_api(): void
 
     switch ($action) {
         case 'me':
+            migrate_data(); // 画面を開くたびに、名称変更の反映漏れがないようにする（軽い1文）
             api_out([
                 'user' => ['id' => (int)$user['id'], 'name' => $user['name'], 'email' => $user['email'], 'role' => $user['role'],
                     'must_change_password' => (int)$user['must_change_password'] === 1],

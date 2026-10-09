@@ -125,7 +125,8 @@ function validate_event_input(array $in, array $user): array
     if ($kind === 'private') {
         $tag = '';
     } elseif (!in_array($tag, allowed_tags($kind), true)) {
-        $tag = allowed_tags($kind)[count(allowed_tags($kind)) - 1];
+        $list = allowed_tags($kind);
+        $tag = $kind === 'off' ? $list[0] : $list[count($list) - 1]; // 休みは先頭（有給）、業務は末尾（その他）
     }
     $note = trim((string)($in['note'] ?? ''));
     if (mb_strlen($note) > 500) {
