@@ -605,40 +605,143 @@
 
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
     if (keep && keep.focus) setTimeout(function () { input.focus(); try { input.setSelectionRange(keep.s, keep.e); } catch (e) { /* 何もしない */ } }, 0);
-    box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。左のチェックで完了にすると、リストから消えて「完了」に移ります。' : 'あなただけに見えるToDoです。左のチェックで完了にすると、リストから消えて「完了」に移ります。' }));
-    box.appendChild(form);
-    box.appendChild(list);
-
     if (full) {
-      // 完了したToDo
-      var det = el('details', { class: 'todo-done', open: S.done.length ? 'true' : null }, el('summary', { text: '完了したToDo（' + S.done.length + '件）' }));
-      if (S.done.length) {
-        S.done.forEach(function (t) { det.appendChild(doneItem(t)); });
-        det.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start;margin-top:6px' }, el('button', { class: 'btn small danger', type: 'button', text: '完了をすべて削除', onclick: function () {
-          if (!window.confirm('完了したToDo ' + S.done.length + '件を、すべて削除します。元に戻せません。よろしいですか？')) return;
-          api('todo_clear_done', { body: { view: S.view } }).then(function (j) { toast(j.deleted + '件を削除しました'); loadTodos(); }).catch(fail);
-        } })));
-      } else {
-        det.appendChild(el('p', { class: 'todo-empty', text: 'まだありません。' }));
-      }
-      box.appendChild(det);
+      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。スマホでは、カードのボタンで移します。' }));
+      box.appendChild(form);
+      box.appendChild(renderKanban());
     } else {
+      box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。左のチェックで完了にすると、リストから消えて「完了」に移ります。' : 'あなただけに見えるToDoです。左のチェックで完了にすると、リストから消えて「完了」に移ります。' }));
+      box.appendChild(form);
+      box.appendChild(list);
+    }
+
+    if (!full) {
       box.appendChild(el('p', { class: 'hint todo-foot' }, 'カレンダーの日付へドラッグすると予定になり、予定をここへドラッグするとToDoに戻ります。',
         el('br'), el('a', { href: '#', text: S.done.length ? '完了したToDo（' + S.done.length + '件）を見る・管理する' : 'リストでToDoを管理する', onclick: function (e) { e.preventDefault(); setMode('list'); } })));
     }
 
     // 欄の空いたところへのドロップ（末尾に入る）
     box.ondragover = function (ev) {
-      if (!S.drag || !(S.drag.t === 'todo' || (S.drag.t === 'event' && S.drag.ok))) return;
+      if (full || !S.drag || !(S.drag.t === 'todo' || (S.drag.t === 'event' && S.drag.ok))) return;
       ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; box.classList.add('drop');
     };
     box.ondragleave = function (ev) { if (!box.contains(ev.relatedTarget)) box.classList.remove('drop'); };
     box.ondrop = function (ev) {
-      if (!S.drag) return;
+      if (!S.drag || full) return;
       ev.preventDefault();
       var p = S.drag; box.classList.remove('drop'); endDrag();
       if (p.t === 'todo') reorderTo(p.id, null, false); else if (p.t === 'event' && p.ok) returnEventToTodo(p.id, null, false);
     };
+  }
+
+  /* ---------- ToDoのカンバン（リストタブ） ---------- */
+  var KANBAN = [['todo', '未着手'], ['doing', '進行中'], ['done', '完了']];
+
+  /* ToDoを、列 status の targetId の前（after なら後ろ）へ移す。targetId が null なら列の末尾 */
+  function moveTodo(id, status, targetId, after) {
+    var t = null;
+    S.todos.forEach(function (x) { if (x.id === id) t = x; });
+    S.done.forEach(function (x) { if (x.id === id) t = x; });
+    if (!t) return;
+    var before = t.status;
+    if (targetId === id || (before === 'done' && status === 'done')) return;
+    S.todos = S.todos.filter(function (x) { return x.id !== id; });
+    S.done = S.done.filter(function (x) { return x.id !== id; });
+    t.status = status;
+    var ids = null;
+    if (status === 'done') {
+      t.done_at = (function (d) { return ymd(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':00'; })(new Date());
+      S.done.unshift(t);
+    } else {
+      t.done_at = null;
+      var col = S.todos.filter(function (x) { return x.status === status; }).map(function (x) { return x.id; });
+      var i = targetId === null || targetId === undefined ? col.length : col.indexOf(targetId) + (after ? 1 : 0);
+      if (i < 0) i = col.length;
+      col.splice(i, 0, id);
+      ids = col;
+      var rest = S.todos.filter(function (x) { return x.status !== status; });
+      var byId = {};
+      S.todos.forEach(function (x) { byId[x.id] = x; });
+      byId[id] = t;
+      S.todos = rest.concat(col.map(function (x) { return byId[x]; }));
+    }
+    renderTodo(); // 先に見た目を更新し、保存は裏で行う
+    var body = { id: id, status: status };
+    if (ids) body.ids = ids;
+    api('todo_status', { body: body }).then(function () {
+      if (status === 'done' && before !== 'done') toast('完了にしました: ' + t.title);
+      loadTodos();
+    }).catch(function (x) { fail(x); loadTodos(); });
+  }
+
+  function kanbanCard(t, status) {
+    var move = function (label, title, to) { return el('button', { class: 'btn small ghost', type: 'button', text: label, title: title, onclick: function (e) { e.stopPropagation(); moveTodo(t.id, to, null, false); } }); };
+    var acts = [];
+    if (status === 'todo') acts.push(move('進行中へ ▶', '進行中にする', 'doing'));
+    if (status === 'doing') { acts.push(move('◀ 未着手', '未着手に戻す', 'todo')); acts.push(move('完了 ✓', '完了にする', 'done')); }
+    if (status === 'done') acts.push(move('◀ 戻す', '未着手に戻す', 'todo'));
+    if (status !== 'done') acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '編集', onclick: function (e) { e.stopPropagation(); openTodoDialog(t); } }));
+    acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function (e) {
+      e.stopPropagation();
+      if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
+      api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+    } }));
+    var card = el('div', { class: 'todo-item kb-card ' + t.kind + (status === 'done' ? ' done' : ''), draggable: 'true', 'data-id': String(t.id) },
+      el('div', { class: 't-body' },
+        el('div', { class: 't-title', text: t.title }),
+        el('div', { class: 't-main' },
+          t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null),
+          status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null),
+        el('div', { class: 't-actions' }, acts)));
+    card.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
+    card.addEventListener('dragend', endDrag);
+    card.addEventListener('dragover', function (ev) {
+      if (!S.drag || S.drag.t !== 'todo' || S.drag.id === t.id) return;
+      ev.preventDefault(); ev.stopPropagation(); ev.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('.ins-before, .ins-after, .kb-col.drop').forEach(function (x) { x.classList.remove('ins-before', 'ins-after', 'drop'); });
+      if (status === 'done') { card.closest('.kb-col').classList.add('drop'); return; } // 完了の列は、並びを持たない
+      var r = card.getBoundingClientRect();
+      card.classList.add(ev.clientY > r.top + r.height / 2 ? 'ins-after' : 'ins-before');
+    });
+    card.addEventListener('dragleave', function () { card.classList.remove('ins-before', 'ins-after'); });
+    card.addEventListener('drop', function (ev) {
+      if (!S.drag || S.drag.t !== 'todo') return;
+      ev.preventDefault(); ev.stopPropagation();
+      var r = card.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2, p = S.drag;
+      endDrag();
+      moveTodo(p.id, status, status === 'done' ? null : t.id, after);
+    });
+    return card;
+  }
+
+  function renderKanban() {
+    var wrap = el('div', { class: 'kanban' });
+    KANBAN.forEach(function (c) {
+      var status = c[0], items = status === 'done' ? S.done : S.todos.filter(function (t) { return t.status === status; });
+      var col = el('div', { class: 'kb-col ' + status, 'data-status': status },
+        el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length) })));
+      items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
+      if (!items.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : 'ToDoはありません。上の欄から追加できます。' }));
+      if (status === 'done' && items.length) {
+        col.appendChild(el('button', { class: 'btn small danger', type: 'button', text: '完了をすべて削除', onclick: function () {
+          if (!window.confirm('完了したToDo ' + S.done.length + '件を、すべて削除します。元に戻せません。よろしいですか？')) return;
+          api('todo_clear_done', { body: { view: S.view } }).then(function (j) { toast(j.deleted + '件を削除しました'); loadTodos(); }).catch(fail);
+        } }));
+      }
+      col.addEventListener('dragover', function (ev) {
+        if (!S.drag || S.drag.t !== 'todo') return;
+        ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; col.classList.add('drop');
+      });
+      col.addEventListener('dragleave', function (ev) { if (!col.contains(ev.relatedTarget)) col.classList.remove('drop'); });
+      col.addEventListener('drop', function (ev) {
+        if (!S.drag || S.drag.t !== 'todo') return;
+        ev.preventDefault(); ev.stopPropagation();
+        var p = S.drag; endDrag();
+        moveTodo(p.id, status, null, false);
+      });
+      wrap.appendChild(col);
+    });
+    return wrap;
   }
 
   function setDone(t, done) {
@@ -666,6 +769,7 @@
       el('input', { type: 'checkbox', class: 't-check', 'aria-label': '完了にする', title: '完了にする（リストから消えて、「完了」に移ります）', onchange: function () { setDone(t, true); } }),
       el('div', { class: 't-body' },
         el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
+          t.status === 'doing' ? el('span', { class: 'pill doing', text: '進行中' }) : null,
           t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null)),
         el('div', { class: 't-actions' },
           btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),

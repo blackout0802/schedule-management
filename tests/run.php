@@ -295,6 +295,31 @@ set_todo_done(find_todo((int)$tdB['id'], $a), true);
 check('完了: 一括削除（プライベート版）で全て消える', [clear_done_todos($a, 'me'), list_done_todos($a, 'me')], [2, []]);
 foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
 
+// ---- ToDoのカンバン（状態: 未着手・進行中・完了） ----
+[$kA] = validate_todo_input(['kind' => 'work', 'title' => 'カンバンA']); $kbA = save_todo($kA, $a, null);
+[$kB] = validate_todo_input(['kind' => 'work', 'title' => 'カンバンB']); $kbB = save_todo($kB, $a, null);
+[$kC] = validate_todo_input(['kind' => 'private', 'title' => 'カンバンC']); $kbC = save_todo($kC, $a, null);
+$stOf = function (array $u) { $m = []; foreach (list_todos($u, 'me') as $t) { $m[$t['title']] = $t['status']; } foreach (list_done_todos($u, 'me') as $t) { $m[$t['title']] = $t['status']; } return $m; };
+check('カンバン: 新しいToDoは未着手', $stOf($a)['カンバンA'], 'todo');
+set_todo_status($kbA, 'doing');
+check('カンバン: 進行中にできる（未完了のリストに残る）', [$stOf($a)['カンバンA'], find_todo((int)$kbA['id'], $a)['done_at']], ['doing', null]);
+set_todo_status(find_todo((int)$kbA['id'], $a), 'done');
+check('カンバン: 進行中から完了へ', [$stOf($a)['カンバンA'], find_todo((int)$kbA['id'], $a)['done_at'] !== null, (int)find_todo((int)$kbA['id'], $a)['doing']], ['done', true, 0]);
+set_todo_status(find_todo((int)$kbA['id'], $a), 'doing');
+check('カンバン: 完了から進行中へ戻せる', [$stOf($a)['カンバンA'], find_todo((int)$kbA['id'], $a)['done_at']], ['doing', null]);
+set_todo_status(find_todo((int)$kbA['id'], $a), 'todo');
+check('カンバン: 進行中から未着手へ戻せる', $stOf($a)['カンバンA'], 'todo');
+set_todo_status(find_todo((int)$kbB['id'], $a), 'doing');
+set_todo_status(find_todo((int)$kbC['id'], $a), 'doing');
+reorder_todos([(int)$kbC['id'], (int)$kbB['id']], $a);
+$doingOrder = array_column(array_filter(list_todos($a, 'me'), function ($t) { return $t['status'] === 'doing'; }), 'title');
+check('カンバン: 進行中の列の並べ替え', array_values($doingOrder), ['カンバンC', 'カンバンB']);
+check('カンバン: 業務版は業務の進行中だけ', array_column(array_filter(list_todos($a, 'team'), function ($t) { return $t['status'] === 'doing'; }), 'title'), ['カンバンB']);
+check('カンバン: 進行中のToDoも予定にできる（ToDoは消える）', (function () use ($kbB, $a) { schedule_todo(find_todo((int)$kbB['id'], $a), '2026-12-02', $a); return find_todo((int)$kbB['id'], $a); })(), null);
+check('カンバン: 他の人のToDoは見えない・操作できない', [find_todo((int)$kbC['id'], $b), array_column(list_todos($b, 'me'), 'title')], [null, []]);
+foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
+q("DELETE FROM events WHERE title = 'カンバンB'");
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');

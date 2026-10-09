@@ -267,6 +267,21 @@ function handle_api(): void
             set_todo_done($t, !empty($in['done']));
             api_out(['ok' => true]);
 
+        case 'todo_status':
+            $t = find_todo((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            $st = (string)($in['status'] ?? '');
+            if (!in_array($st, ['todo', 'doing', 'done'], true)) {
+                api_fail('状態は「未着手・進行中・完了」のどれかです。');
+            }
+            set_todo_status($t, $st);
+            if ($st !== 'done' && is_array($in['ids'] ?? null)) {
+                reorder_todos($in['ids'], $user); // 移した先の列での並び
+            }
+            api_out(['ok' => true]);
+
         case 'todo_clear_done':
             api_out(['deleted' => clear_done_todos($user, ($in['view'] ?? 'me') === 'team' ? 'team' : 'me')]);
 

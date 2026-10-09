@@ -244,10 +244,19 @@ function move_event(array $e, string $newStart): array
     return row('SELECT * FROM events WHERE id = ?', [$e['id']]);
 }
 
+/** ToDoの状態: todo（未着手）/ doing（進行中）/ done（完了） */
+function todo_status_of(array $t): string
+{
+    if (($t['done_at'] ?? null) !== null) {
+        return 'done';
+    }
+    return (int)($t['doing'] ?? 0) === 1 ? 'doing' : 'todo';
+}
+
 function todo_for_client(array $t): array
 {
     return ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => $t['kind'], 'tag' => $t['tag'], 'note' => $t['note'], 'family_shared' => (int)$t['family_shared'] === 1,
-        'done_at' => $t['done_at'] ?? null];
+        'done_at' => $t['done_at'] ?? null, 'status' => todo_status_of($t)];
 }
 
 /** 未完了のToDo。@param string $view 'team' なら業務のToDoだけ */
@@ -268,11 +277,30 @@ function list_done_todos(array $user, string $view, int $limit = 100): array
 function set_todo_done(array $todo, bool $done): array
 {
     if ($done) {
-        q('UPDATE todos SET done_at = ? WHERE id = ?', [now_str(), $todo['id']]);
+        q('UPDATE todos SET done_at = ?, doing = 0 WHERE id = ?', [now_str(), $todo['id']]);
     } else {
         $max = row('SELECT MAX(sort_order) AS m FROM todos WHERE owner_id = ?', [$todo['owner_id']]);
-        q('UPDATE todos SET done_at = NULL, sort_order = ? WHERE id = ?', [(int)($max['m'] ?? 0) + 1, $todo['id']]);
+        q('UPDATE todos SET done_at = NULL, doing = 0, sort_order = ? WHERE id = ?', [(int)($max['m'] ?? 0) + 1, $todo['id']]);
     }
+    return row('SELECT * FROM todos WHERE id = ?', [$todo['id']]);
+}
+
+/**
+ * ToDoの状態を変える（カンバンの列の移動）。todo=未着手 / doing=進行中 / done=完了。
+ * 完了から戻すときは、リストの末尾に入る（並びは、続けて reorder_todos で決める）
+ */
+function set_todo_status(array $todo, string $status): array
+{
+    if ($status === 'done') {
+        if ($todo['done_at'] === null) {
+            return set_todo_done($todo, true);
+        }
+        return $todo;
+    }
+    if ($todo['done_at'] !== null) {
+        $todo = set_todo_done($todo, false);
+    }
+    q('UPDATE todos SET doing = ? WHERE id = ?', [$status === 'doing' ? 1 : 0, $todo['id']]);
     return row('SELECT * FROM todos WHERE id = ?', [$todo['id']]);
 }
 

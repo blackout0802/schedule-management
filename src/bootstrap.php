@@ -260,6 +260,11 @@ function migrate_schema(): void
         db()->exec('ALTER TABLE todos ADD COLUMN done_at DATETIME NULL');
     }
     try {
+        db()->query('SELECT doing FROM todos LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE todos ADD COLUMN doing INTEGER NOT NULL DEFAULT 0');
+    }
+    try {
         db()->query('SELECT sort_order FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
