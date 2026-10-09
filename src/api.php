@@ -10,6 +10,7 @@ require_once __DIR__ . '/share.php';
 
 function api_out($data, int $code = 200): void
 {
+    flush_rev(); // 更新番号を、応答より先に進めておく（応答を受け取った画面が、最新の番号で動き出せるように）
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -126,6 +127,13 @@ function handle_api(): void
             api_fail('リクエストの形式が正しくありません。');
         }
     }
+    if ($action === 'rev') {
+        // 画面の自動更新用。何も書き換えず、すぐ返す（待たせない・負担をかけない）
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        api_out(['rev' => data_rev()]);
+    }
     $cal = BizCalendar::fromDb();
 
     // 初期パスワードのままの人は、パスワードを変更するまで他の操作ができない
@@ -158,6 +166,7 @@ function handle_api(): void
             if (!valid_date($from) || !valid_date($to) || $to < $from || strtotime($to) - strtotime($from) > 100 * 86400) {
                 api_fail('期間が正しくありません。');
             }
+            $rev = data_rev(); // データを読む前の番号（読んでいる間に更新されても、次の確認で見つかるように）
             $view = ($_GET['view'] ?? 'team') === 'me' ? 'me' : 'team';
             $tags = isset($_GET['tags']) && $_GET['tags'] !== '' ? explode(',', (string)$_GET['tags']) : [];
             $holidays = [];
@@ -170,6 +179,7 @@ function handle_api(): void
             api_out([
                 'events' => list_events($user, $from, $to, $view, ['tags' => $tags, 'showOff' => ($_GET['off'] ?? '1') === '1']),
                 'holidays' => $holidays,
+                'rev' => $rev,
             ]);
 
         case 'event_save':
@@ -237,7 +247,8 @@ function handle_api(): void
 
         case 'todo_list':
             $tv = ($_GET['view'] ?? 'me') === 'team' ? 'team' : 'me';
-            api_out(['todos' => list_todos($user, $tv), 'done' => list_done_todos($user, $tv)]);
+            $rev = data_rev();
+            api_out(['todos' => list_todos($user, $tv), 'done' => list_done_todos($user, $tv), 'rev' => $rev]);
 
         case 'todo_done':
             $t = find_todo((int)($in['id'] ?? 0), $user);

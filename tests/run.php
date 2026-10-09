@@ -428,6 +428,45 @@ check('共有設定: ToDoから予定にしても「共有しない」のまま'
 [$tdN] = validate_todo_input(['kind' => 'private', 'title' => '共有ToDo']);
 check('共有設定: プライベートToDoの初期値は「共有する」', $tdN['family_shared'], 1);
 
+// ---- 画面の自動更新（更新番号） ----
+$rv0 = data_rev();
+check('更新番号: 読み取りだけでは増えない', [list_events($a, '2026-01-01', '2026-01-31', 'team'), data_rev()][1], $rv0);
+$rvEv = $mk($a, ['kind' => 'work', 'title' => '更新番号の確認', 'tag' => 'その他', 'start' => date('Y-m-d', strtotime('+200 day'))]);
+$rv1 = data_rev();
+check('更新番号: 予定を登録すると増える', $rv1 > $rv0, true);
+move_event($rvEv, date('Y-m-d', strtotime('+201 day'))); $rv2 = data_rev();
+check('更新番号: 予定を動かすと増える', $rv2 > $rv1, true);
+[$rvEd] = validate_event_input(['kind' => 'work', 'title' => '更新番号の確認(編集)', 'tag' => 'その他', 'start' => date('Y-m-d', strtotime('+201 day'))], $a); save_event($rvEd, $a, row('SELECT * FROM events WHERE id = ?', [$rvEv['id']])); $rv3 = data_rev();
+check('更新番号: 予定を編集すると増える', $rv3 > $rv2, true);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$rvEv['id']])); $rv4 = data_rev();
+check('更新番号: 予定を削除すると増える', $rv4 > $rv3, true);
+[$rvT] = validate_todo_input(['kind' => 'work', 'title' => '更新番号ToDo']); $rvTd = save_todo($rvT, $a, null); $rv5 = data_rev();
+check('更新番号: ToDoを追加すると増える', $rv5 > $rv4, true);
+set_todo_done($rvTd, true); $rv6 = data_rev();
+check('更新番号: ToDoを完了にすると増える', $rv6 > $rv5, true);
+q('DELETE FROM todos WHERE id = ?', [$rvTd['id']]); $rv7 = data_rev();
+check('更新番号: ToDoを削除すると増える', $rv7 > $rv6, true);
+q("INSERT INTO company_holidays (hdate, name) VALUES ('2030-01-02', '更新番号の確認')"); $rv8 = data_rev();
+check('更新番号: 会社の休業日を足すと増える', $rv8 > $rv7, true);
+q("DELETE FROM company_holidays WHERE hdate = '2030-01-02'");
+$rv9 = data_rev(); save_memo('<div>メモは画面の予定に関係しない</div>', $a);
+check('更新番号: メモの保存では増えない（自分のメモを書くたびに、他の人の画面を更新させない）', data_rev(), $rv9);
+$rv10 = data_rev(); share_link_create('family', $a);
+check('更新番号: 共有リンクの作成では増えない', data_rev(), $rv10);
+q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$a['id'], '更新番号ルール', '定例業務', 'day', 3, 'none', now_str()]);
+$rvS = (int)db()->lastInsertId(); $rv11 = data_rev(); materialize_series($rvS); $rv12 = data_rev();
+check('更新番号: 繰り返しの予定の自動作成でも増える（cronで作られた予定を、開いている画面に反映する）', $rv12 > $rv11, true);
+$rv13 = data_rev(); materialize_series($rvS);
+check('更新番号: 変更のない再実行（毎晩のcron）では増えない', data_rev(), $rv13);
+delete_series($rvS);
+flush_rev();
+check('更新番号: 古い版（app_metaに番号が無い）でも動く', (function () { q("DELETE FROM app_meta WHERE meta_key = 'rev'"); $z = data_rev(); bump_rev(); return [$z, data_rev()]; })(), [0, 1]);
+check('更新番号: 1回のリクエストで書き込みが何件あっても、番号は1だけ進む', (function () use ($a) { flush_rev(); $r0 = data_rev(); for ($i = 0; $i < 5; $i++) { q('UPDATE users SET name = name WHERE id = ?', [$a['id']]); } return data_rev() - $r0; })(), 1);
+check('更新番号: 書き込み(INSERT)のあとでも lastInsertId が正しい（MySQLで0に戻らない）', (function () use ($a) { q('INSERT INTO todos (owner_id, title, kind, tag, note, family_shared, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?)', [$a['id'], 'ID確認', 'work', '', '', 0, 999, now_str()]); $id = (int)db()->lastInsertId(); $ok = (bool)row('SELECT id FROM todos WHERE id = ?', [$id]); q('DELETE FROM todos WHERE id = ?', [$id]); return $ok; })(), true);
+
+check('自動更新の間隔: 既定は20秒', poll_ms(), 20000);
+check('自動更新の間隔の範囲（0=なし、5〜600秒）', (function () use ($tmp) { $o = []; foreach ([0, 1, 30, 9999] as $v) { file_put_contents($tmp . '/poll.php', "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'poll_seconds' => $v];"); $o[] = (int)trim((string)shell_exec('SCHEDULE_CONFIG=' . escapeshellarg($tmp . '/poll.php') . ' ' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('require ' . var_export(__DIR__ . '/../src/bootstrap.php', true) . '; echo poll_ms();'))); } return $o; })(), [0, 5000, 30000, 600000]);
+
 // ---- 自動更新(ensure_schema) ----
 ensure_schema();
 check('スキーマの版が記録される', (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v'], SCHEMA_VERSION);

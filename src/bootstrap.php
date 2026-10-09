@@ -23,6 +23,7 @@ function app_config(): array
             'slack_webhook' => '',
             'base_url' => '',
             'cron_token' => '',
+            'poll_seconds' => 20,
             'work_tags' => ['全体会議', '打ち合わせ', '定例業務', '個人作業', 'その他'],
             'off_tags' => ['有給', '調整休', '午前半休', '午後半休'],
         ];
@@ -34,6 +35,13 @@ function app_config(): array
         }
     }
     return $cfg;
+}
+
+/** 画面の自動更新の間隔（ミリ秒）。0 なら自動更新しない */
+function poll_ms(): int
+{
+    $s = (int)cfg('poll_seconds', 20);
+    return $s <= 0 ? 0 : max(5, min(600, $s)) * 1000;
 }
 
 function cfg(string $key, $default = null)
@@ -65,7 +73,70 @@ function q(string $sql, array $params = []): PDOStatement
 {
     $st = db()->prepare($sql);
     $st->execute($params);
+    // 画面に出るデータ（予定・ToDo・繰り返し・休業日・社員）を書き換えたら、更新番号を進める。
+    // 開いている画面は、この番号が変わったときだけ、自動で表示を更新する。書き込み処理を足しても入れ忘れが出ないよう、ここで一括して行う
+    if (preg_match('/^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:events|todos|series|series_skips|company_holidays|users)\b/i', $sql)) {
+        rev_mark_dirty();
+    }
     return $st;
+}
+
+/**
+ * 更新番号を進めるのは、書き込みのたびではなく、リクエストの最後（応答を返す直前）に1回だけ。
+ * ・MySQL は、直前の INSERT のあとに別の文を実行すると lastInsertId() が 0 に戻るため、途中では実行しない
+ * ・cron のように書き込みが多い処理でも、増やすのは1回で済む
+ */
+function rev_mark_dirty(): void
+{
+    static $registered = false;
+    $GLOBALS['schedule_rev_dirty'] = true;
+    if (!$registered) {
+        $registered = true;
+        register_shutdown_function('flush_rev'); // 応答を返す前に flush されなかった場合の保険
+    }
+}
+
+function flush_rev(): void
+{
+    if (empty($GLOBALS['schedule_rev_dirty'])) {
+        return;
+    }
+    $GLOBALS['schedule_rev_dirty'] = false;
+    bump_rev();
+}
+
+/** いまの更新番号（このリクエストで書き込んだ分は、先に反映してから返す） */
+function data_rev(): int
+{
+    flush_rev();
+    $st = db()->prepare('SELECT meta_value FROM app_meta WHERE meta_key = ?');
+    $st->execute(['rev']);
+    $r = $st->fetch();
+    return $r ? (int)$r['meta_value'] : 0;
+}
+
+function bump_rev(): void
+{
+    static $busy = false;
+    if ($busy) {
+        return;
+    }
+    $busy = true;
+    try {
+        $st = db()->prepare("UPDATE app_meta SET meta_value = meta_value + 1 WHERE meta_key = 'rev'");
+        $st->execute();
+        if ($st->rowCount() === 0) {
+            try {
+                db()->prepare("INSERT INTO app_meta (meta_key, meta_value) VALUES ('rev', '1')")->execute();
+            } catch (PDOException $e) {
+                // 同時に作られた。そのままで良い
+            }
+        }
+    } catch (PDOException $e) {
+        // app_meta がまだ無い古い版からの更新の途中。更新番号は、なくても動く
+    } finally {
+        $busy = false;
+    }
 }
 
 function rows(string $sql, array $params = []): array

@@ -15,7 +15,7 @@
   };
 
   var S = {
-    me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], drag: null, memoHtml: '', memoLoaded: false,
+    me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memoHtml: '', memoLoaded: false,
     events: [], holidays: {}, tags: null, showOff: true, loading: false
   };
 
@@ -54,7 +54,7 @@
     if (opts.body) { init.headers['Content-Type'] = 'application/json'; init.headers['X-CSRF-Token'] = csrf; init.body = JSON.stringify(opts.body); }
     var url = SHARE ? 'share_api.php?t=' + encodeURIComponent(SHARE.token) + '&action=' + action + qs : 'api.php?action=' + action + qs;
     return fetch(url, init).then(function (r) {
-      if (r.status === 401) { location.href = 'login.php'; throw new Error('login'); }
+      if (r.status === 401) { if (!opts.quiet) location.href = 'login.php'; throw new Error('login'); }
       return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'エラーが発生しました'); return j; });
     });
   }
@@ -72,7 +72,7 @@
   function openModal(title, body, wide, locked) {
     var ov = el('div', { class: 'overlay' });
     ov.locked = !!locked; // true の間は ✕・Esc・外側クリックで閉じられない
-    var close = function () { ov.remove(); modals = modals.filter(function (m) { return m !== ov; }); };
+    var close = function () { ov.remove(); modals = modals.filter(function (m) { return m !== ov; }); setTimeout(maybeRefresh, 0); };
     var box = el('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       el('h3', null, el('span', { text: title }), locked ? null : el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', onclick: close, text: '✕' })),
       body);
@@ -195,7 +195,7 @@
     if (S.view === 'me' && !SHARE) { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
     S.loading = true;
     api('events', { params: params }).then(function (j) {
-      S.events = j.events; S.holidays = j.holidays; S.loading = false; renderBoard();
+      S.events = j.events; S.holidays = j.holidays; S.loading = false; S.revEv = j.rev; renderBoard();
     }).catch(fail);
   }
 
@@ -274,11 +274,11 @@
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
   }
-  function renderListView(board) {
+  function renderListView(board, keepFrom) {
     if (!SHARE) {
       var mgr = el('section', { id: 'todo-mgr', class: 'todo todo-mgr', 'aria-label': 'ToDoの管理' });
       board.appendChild(mgr);
-      renderTodoInto(mgr, true);
+      renderTodoInto(mgr, true, keepFrom);
     }
     var todayStr = ymd(new Date());
     var list = el('div', { class: 'list' });
@@ -301,10 +301,11 @@
   function renderBoard() {
     var board = document.getElementById('board');
     if (!board) return;
+    var mgrKeep = captureTodoInput(document.getElementById('todo-mgr')); // リスト表示のToDo入力欄は、描き直すと作り直されるので、入力中の内容を引き継ぐ
     board.textContent = '';
     var lay = document.querySelector('.layout');
     if (lay) lay.classList.toggle('list-mode', S.mode === 'list');
-    if (S.mode === 'list') { renderListView(board); return; }
+    if (S.mode === 'list') { renderListView(board, mgrKeep); return; }
     var todayStr = ymd(new Date());
     var r = gridRange();
     var days = [];
@@ -324,7 +325,8 @@
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
       el('span', { text: '↻ 毎月の繰り返し' }),
       el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
-      SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます' })));
+      SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます' }),
+      POLL_MS ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null));
   }
 
   function renderWeek(days, todayStr) {
@@ -375,6 +377,7 @@
   }
   function endDrag() {
     S.drag = null;
+    setTimeout(maybeRefresh, 0);
     document.body.classList.remove('is-dragging', 'drag-event', 'drag-ok');
     document.querySelectorAll('.drop, .ins-before, .ins-after').forEach(function (x) { x.classList.remove('drop', 'ins-before', 'ins-after'); });
   }
@@ -510,7 +513,7 @@
 
   /* ---------- ToDo ---------- */
   function loadTodos() {
-    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; renderTodo(); }).catch(fail);
+    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; S.revTd = j.rev; renderTodo(); }).catch(fail);
   }
 
   /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
@@ -544,10 +547,21 @@
 
   function setMode(m) { S.mode = m; store('sched.mode', m); renderToolbar(); renderBoard(); }
 
-  function renderTodoInto(box, full) {
+  /* 自動更新などで描き直しても、入力中の文字・選んでいる種類・カーソルを失わないよう、描き直す前に控える */
+  function captureTodoInput(box) {
+    var i = box && box.querySelector('.todo-add input[type=text]'), sel = box && box.querySelector('.todo-add select');
+    return i ? { v: i.value, focus: document.activeElement === i, s: i.selectionStart, e: i.selectionEnd, k: sel ? sel.value : null } : null;
+  }
+
+  function renderTodoInto(box, full, keepFrom) {
+    var keep = keepFrom || captureTodoInput(box);
     box.textContent = '';
     var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容' });
     var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類' }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
+    if (keep) {
+      input.value = keep.v;
+      if (kindSel && keep.k) kindSel.value = keep.k;
+    }
     var form = el('form', { class: 'todo-add', onsubmit: function (e) {
       e.preventDefault();
       if (!input.value.trim()) return;
@@ -559,6 +573,7 @@
     if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。上の欄に入力して追加できます。' }));
 
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
+    if (keep && keep.focus) setTimeout(function () { input.focus(); try { input.setSelectionRange(keep.s, keep.e); } catch (e) { /* 何もしない */ } }, 0);
     box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。左のチェックで完了にすると、リストから消えて「完了」に移ります。' : 'あなただけに見えるToDoです。左のチェックで完了にすると、リストから消えて「完了」に移ります。' }));
     box.appendChild(form);
     box.appendChild(list);
@@ -1264,6 +1279,42 @@
     document.body.appendChild(f); f.submit();
   }
 
+  /* ---------- 自動更新 ----------
+   * 他の人（同僚・共有リンクを見ている家族）が予定やToDoを変えたら、開いている画面に自動で反映する。
+   * 共有レンタルサーバーでは、サーバーから画面へ即時に通知できないため、画面が「更新番号」を一定間隔で軽く確認する方式。
+   *  ・番号が変わったときだけ、予定とToDoを読み直す（変わっていなければ何も描き直さない）
+   *  ・編集画面を開いている間・ドラッグ中は、画面を組み替えない（閉じたあとに反映）
+   *  ・非表示のタブでは確認しない（見えるようになった瞬間に確認）
+   *  ・自分が更新したあとは、読み直した時点で番号が追いつくので、二重に読み直さない */
+  // 確認の間隔(ミリ秒)。サーバーの設定(poll_seconds)が渡される。0 = 自動更新しない。SCHEDULE_POLL_TEST_MS は自動テストで間隔を短くするための入口
+  var POLL_MS = typeof window.SCHEDULE_POLL_TEST_MS === 'number' ? window.SCHEDULE_POLL_TEST_MS : typeof window.SCHEDULE_POLL_MS === 'number' ? window.SCHEDULE_POLL_MS : 20000;
+  var pollBusy = false;
+  function canRefresh() { return !S.drag && !modals.length; }
+  /* 予定とToDoは別々に判定し、古くなったほうだけを読み直す（自分が予定を更新したあとに、予定まで二重に読み直さない） */
+  function maybeRefresh() {
+    if ((!S.pendEv && !S.pendTd) || !canRefresh()) return;
+    var ev = S.pendEv, td = S.pendTd;
+    S.pendEv = false; S.pendTd = false;
+    if (ev) load();
+    if (td && !SHARE) loadTodos();
+  }
+  function pollRev() {
+    if (document.hidden || pollBusy || !S.me) return;
+    pollBusy = true;
+    api('rev', { quiet: true }).then(function (j) {
+      pollBusy = false;
+      if (S.revEv !== null && j.rev !== S.revEv) S.pendEv = true;
+      if (!SHARE && S.revTd !== null && j.rev !== S.revTd) S.pendTd = true;
+      maybeRefresh();
+    }).catch(function () { pollBusy = false; }); // 通信できないときは、黙って次回に回す
+  }
+  function startAutoRefresh() {
+    if (!POLL_MS) return;
+    setInterval(pollRev, POLL_MS);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) pollRev(); });
+    window.addEventListener('focus', pollRev);
+  }
+
   /* ---------- 起動 ---------- */
   if (SHARE) {
     api('meta').then(function (m) {
@@ -1274,7 +1325,7 @@
       document.title = m.title;
       var now = new Date();
       S.year = now.getFullYear(); S.month = now.getMonth() + 1;
-      renderShell(); load();
+      renderShell(); load(); startAutoRefresh();
     }).catch(function (e) { if (window.console) console.error(e); root.textContent = 'このリンクは無効です。共有してくれた方に確認してください。'; });
     return;
   }
@@ -1288,7 +1339,7 @@
     S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
     S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
-    var start = function () { renderShell(); load(); };
+    var start = function () { renderShell(); load(); startAutoRefresh(); };
     if (me.user.must_change_password) {
       root.textContent = '';
       openPasswordDialog(true, start); // 変更が終わるまで予定の画面は出さない

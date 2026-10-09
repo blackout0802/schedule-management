@@ -27,6 +27,9 @@ try {
         share_out(['error' => 'このリンクは無効です。'], 404);
     }
     $action = (string)($_GET['action'] ?? '');
+    if ($action === 'rev') {
+        share_out(['rev' => data_rev()]);
+    }
     if ($action === 'meta') {
         share_out(['kind' => $link['kind'], 'title' => share_title($link), 'app_name' => cfg('app_name')]);
     }
@@ -36,7 +39,8 @@ try {
         if (!valid_date($from) || !valid_date($to) || $to < $from || strtotime($to) - strtotime($from) > 100 * 86400) {
             share_out(['error' => '期間が正しくありません。'], 400);
         }
-        share_out(['events' => share_events($link, $from, $to), 'holidays' => share_holidays($from, $to)]);
+        $rev = data_rev();
+        share_out(['events' => share_events($link, $from, $to), 'holidays' => share_holidays($from, $to), 'rev' => $rev]);
     }
     share_out(['error' => '不明な操作です。'], 404);
 } catch (Throwable $e) {

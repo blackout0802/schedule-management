@@ -19,6 +19,9 @@ return [
     // Slack通知に付けるアプリのURL（例: https://example.com/schedule/public/）
     'base_url' => '',
 
+    // 他の人の更新を画面に自動で反映する間隔（秒）。5〜600。0 にすると自動更新しない
+    'poll_seconds' => 20,
+
     // cron から CLI で実行できない場合の予備（Web経由で bin/cron.php を呼ぶ時の合言葉）。使わなければ空のまま
     'cron_token' => '',
 
