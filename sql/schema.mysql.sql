@@ -1,0 +1,71 @@
+CREATE TABLE IF NOT EXISTS users (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(60) NOT NULL,
+  email VARCHAR(190) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(10) NOT NULL DEFAULT 'member',
+  slack_id VARCHAR(40) NULL,
+  active TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uq_users_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS series (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  owner_id INT UNSIGNED NOT NULL,
+  title VARCHAR(100) NOT NULL,
+  tag VARCHAR(40) NOT NULL DEFAULT '',
+  rule_type VARCHAR(20) NOT NULL,
+  p_day INT NULL,
+  p_day2 INT NULL,
+  p_nth INT NULL,
+  p_weekday INT NULL,
+  p_count INT NULL,
+  shift VARCHAR(8) NOT NULL DEFAULT 'none',
+  bizonly TINYINT NOT NULL DEFAULT 0,
+  start_time VARCHAR(5) NOT NULL DEFAULT '',
+  end_time VARCHAR(5) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS events (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  owner_id INT UNSIGNED NOT NULL,
+  title VARCHAR(100) NOT NULL,
+  kind VARCHAR(10) NOT NULL,
+  tag VARCHAR(40) NOT NULL DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  start_time VARCHAR(5) NOT NULL DEFAULT '',
+  end_time VARCHAR(5) NOT NULL DEFAULT '',
+  note VARCHAR(500) NOT NULL DEFAULT '',
+  series_id INT UNSIGNED NULL,
+  ym CHAR(7) NULL,
+  detached TINYINT NOT NULL DEFAULT 0,
+  created_by INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  KEY ix_events_range (start_date, end_date),
+  KEY ix_events_owner (owner_id),
+  KEY ix_events_series (series_id, ym)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS series_skips (
+  series_id INT UNSIGNED NOT NULL,
+  ym CHAR(7) NOT NULL,
+  PRIMARY KEY (series_id, ym)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS company_holidays (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  hdate DATE NOT NULL,
+  name VARCHAR(60) NOT NULL,
+  UNIQUE KEY uq_company_holidays_date (hdate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS notification_log (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  ref VARCHAR(80) NOT NULL,
+  sent_at DATETIME NOT NULL,
+  UNIQUE KEY uq_notification_ref (ref)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

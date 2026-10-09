@@ -1,0 +1,63 @@
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  slack_id TEXT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS series (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  tag TEXT NOT NULL DEFAULT '',
+  rule_type TEXT NOT NULL,
+  p_day INTEGER NULL,
+  p_day2 INTEGER NULL,
+  p_nth INTEGER NULL,
+  p_weekday INTEGER NULL,
+  p_count INTEGER NULL,
+  shift TEXT NOT NULL DEFAULT 'none',
+  bizonly INTEGER NOT NULL DEFAULT 0,
+  start_time TEXT NOT NULL DEFAULT '',
+  end_time TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  tag TEXT NOT NULL DEFAULT '',
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  start_time TEXT NOT NULL DEFAULT '',
+  end_time TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  series_id INTEGER NULL,
+  ym TEXT NULL,
+  detached INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_events_range ON events (start_date, end_date);
+CREATE INDEX IF NOT EXISTS ix_events_owner ON events (owner_id);
+CREATE INDEX IF NOT EXISTS ix_events_series ON events (series_id, ym);
+CREATE TABLE IF NOT EXISTS series_skips (
+  series_id INTEGER NOT NULL,
+  ym TEXT NOT NULL,
+  PRIMARY KEY (series_id, ym)
+);
+CREATE TABLE IF NOT EXISTS company_holidays (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  hdate TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notification_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ref TEXT NOT NULL UNIQUE,
+  sent_at TEXT NOT NULL
+);

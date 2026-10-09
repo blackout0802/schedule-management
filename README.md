@@ -1,0 +1,65 @@
+# スケジュール管理アプリ
+
+会社の業務予定・休み（他の社員を含む）・プライベートの予定を1か所で管理する、小規模チーム向けのスケジュールアプリです。
+PHP + MySQL だけで動くので、レンタルサーバーにアップロードして使えます（ビルド作業・Node.js は不要）。
+
+## できること
+
+| 機能 | 内容 |
+|---|---|
+| 業務版 | 会社の全員に見せる画面。**プライベートの予定は、サーバーが返さない**ため、画面を細工しても見えません |
+| プライベート版 | 自分のプライベート予定に、見たい業務の予定（全体会議・打ち合わせなど）をタグで選んで重ねて表示 |
+| 休みの管理 | 本人が登録。管理者は他の社員の休みも登録・編集できる（承認は不要） |
+| 毎月の繰り返し業務 | 「月初3営業日」「10〜15日の営業日」「25日（休日なら前営業日）」などをルールで登録すると、12か月先まで自動で作成。土日祝・会社の休業日を避けて日付を計算 |
+| Slack通知 | 休みの登録時、毎朝（本日の休み）、前日夕方（明日の休み）に通知。件名と日付だけを送り、休みの理由は載せない |
+| ログイン | メールアドレス＋パスワード |
+| 権限 | 一般 / 管理者（社員の追加、他の社員の休みの登録、会社の休業日の設定）。管理者でもプライベートは見えない |
+
+## 見える範囲のルール
+
+| 予定の種類 | 本人 | 他の社員 | 管理者 |
+|---|---|---|---|
+| 業務 | 見える・編集可 | 見える | 見える・編集可 |
+| 休み | 見える・編集可 | 見える | 見える・編集可 |
+| プライベート | 見える・編集可 | **届かない** | **届かない** |
+
+この判定は `src/events.php` の1か所だけで行っています。
+
+## 構成
+
+```
+public/        画面とAPIの入口（公開する部分）
+  index.php login.php logout.php install.php api.php app_path.php
+  assets/app.js app.css
+src/           アプリ本体（bootstrap / auth / events / recurrence / holidays / slack / api）
+sql/           テーブル定義（MySQL用・SQLite用）
+bin/cron.php   毎日動かす自動処理（繰り返し予定の作成・Slack通知）
+tests/run.php  自動テスト
+docs/DEPLOY.md スターレンタルサーバーへの導入手順
+config.sample.php  設定ファイルの見本
+```
+
+## 動作環境
+
+PHP 7.4 以上（PDO と pdo_mysql、curl があれば可）／ MySQL または MariaDB。
+
+## 手元で試す
+
+```bash
+cp config.sample.php config.php
+# config.php の db を SQLite にする:  'db' => ['dsn' => 'sqlite:' . __DIR__ . '/data/app.sqlite'],
+php -S 127.0.0.1:8080 -t public
+# ブラウザで http://127.0.0.1:8080/install.php を開いて管理者を登録
+```
+
+## テスト
+
+```bash
+php tests/run.php                       # SQLite（一時DB）で実行
+SCHEDULE_TEST_DSN='mysql:host=localhost;dbname=テスト用DB;charset=utf8mb4' \
+SCHEDULE_TEST_USER=ユーザー SCHEDULE_TEST_PASS=パスワード php tests/run.php   # MySQLで実行（テスト用DBの中身は消えます）
+```
+
+祝日の計算、繰り返しルールの日付、プライベートが他人に漏れないこと、管理者の権限、繰り返し予定の個別編集・削除、Slack通知の二重送信防止などを確認します。
+
+導入手順は [docs/DEPLOY.md](docs/DEPLOY.md) を見てください。
