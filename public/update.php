@@ -23,13 +23,9 @@ $appDir = SCHEDULE_APP_DIR;
 $publicDir = __DIR__;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $me = row('SELECT password_hash FROM users WHERE id = ?', [$user['id']]);
+    // 管理者としてログイン済みなら、パスワードの再入力は不要。外部のページからの勝手な送信は、画面ごとの確認用文字列(CSRF)で防ぐ
     if (!csrf_valid($_POST['csrf'] ?? null)) {
         $err = '画面の有効期限が切れました。ページを再読み込みして、もう一度お試しください。';
-    } elseif (!password_verify((string)($_POST['password'] ?? ''), $me['password_hash'])) {
-        // ファイルを書き換える操作なので、毎回パスワードを確認する
-        usleep(700000);
-        $err = 'パスワードが違います。管理者ご自身のログインパスワードを入力してください。';
     } else {
         try {
             if (($_POST['action'] ?? '') === 'upload') {
@@ -91,7 +87,6 @@ $hasZip = class_exists('ZipArchive');
       <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
       <input type="hidden" name="action" value="upload">
       <label>更新用の zip<input type="file" name="zip" accept=".zip,application/zip" required></label>
-      <label>あなた（管理者）のパスワード<input type="password" name="password" required autocomplete="current-password"></label>
       <div class="actions"><button class="btn primary" type="submit">更新する</button></div>
     </form>
     <?php endif; ?>
@@ -113,8 +108,7 @@ $hasZip = class_exists('ZipArchive');
             <?php endforeach; ?>
           </select>
         </label>
-        <label>あなた（管理者）のパスワード<input type="password" name="password" required autocomplete="current-password"></label>
-        <div class="actions"><button class="btn danger" type="submit">この時点に戻す</button></div>
+        <div class="actions"><button class="btn danger" type="submit" onclick="return confirm('選んだ時点の状態に戻します。よろしいですか？')">この時点に戻す</button></div>
       </form>
     <?php endif; ?>
   </section>
