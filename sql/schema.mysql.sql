@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   slack_id VARCHAR(40) NULL,
   active TINYINT NOT NULL DEFAULT 1,
   must_change_password TINYINT NOT NULL DEFAULT 0,
+  family_share_off TINYINT NOT NULL DEFAULT 0,
+  family_share_tags VARCHAR(500) NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL,
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

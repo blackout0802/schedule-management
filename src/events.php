@@ -8,6 +8,18 @@
 
 require_once __DIR__ . '/recurrence.php';
 
+/**
+ * 「家族に共有する」の値。指定があればそれに従い、なければ種類ごとの初期値。
+ * プライベート = 共有する（外した予定だけ隠す） / 業務・休み = 共有しない（選んだものだけ共有）
+ */
+function family_flag(string $kind, array $in): int
+{
+    if (array_key_exists('family_shared', $in)) {
+        return empty($in['family_shared']) ? 0 : 1;
+    }
+    return $kind === 'private' ? 1 : 0;
+}
+
 function allowed_tags(string $kind): array
 {
     if ($kind === 'work') {
@@ -146,7 +158,7 @@ function validate_event_input(array $in, array $user): array
         'kind' => $kind, 'title' => $title, 'tag' => $tag, 'start' => $start, 'end' => $end,
         'start_time' => $st, 'end_time' => $et, 'note' => $note, 'owner_id' => $owner,
         // プライベートの予定だけが対象。指定がなければ「家族に共有する」
-        'family_shared' => ($kind === 'private' && array_key_exists('family_shared', $in) && empty($in['family_shared'])) ? 0 : 1,
+        'family_shared' => family_flag($kind, $in),
     ], null];
 }
 
@@ -156,6 +168,9 @@ function save_event(array $data, array $user, ?array $existing): array
         // 持ち主と種類は編集で変えない（取り違えを防ぐ）
         $data['owner_id'] = (int)$existing['owner_id'];
         $data['kind'] = $existing['kind'];
+        if ((int)$existing['owner_id'] !== (int)$user['id']) {
+            $data['family_shared'] = (int)$existing['family_shared']; // 家族への共有は持ち主だけが決める（管理者の編集では変えない）
+        }
         q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, detached=?, updated_at=? WHERE id=?', [
             $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'], $data['note'],
             $data['family_shared'] ?? 1, $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
@@ -294,7 +309,7 @@ function validate_todo_input(array $in): array
         $tags = cfg('work_tags');
         $tag = in_array((string)($in['tag'] ?? ''), $tags, true) ? (string)$in['tag'] : $tags[count($tags) - 1];
     }
-    $fam = ($kind === 'private' && array_key_exists('family_shared', $in) && empty($in['family_shared'])) ? 0 : 1;
+    $fam = family_flag($kind, $in);
     return [['kind' => $kind, 'title' => $title, 'tag' => $tag, 'note' => $note, 'family_shared' => $fam], null];
 }
 
@@ -389,6 +404,21 @@ function sanitize_memo_html(string $html): string
     $html = preg_replace('#<(/?)p>#i', '<$1div>', $html);
     $html = preg_replace('#<br\s*/?>#i', '<br>', $html);
     return $html;
+}
+
+/** 本人が決める「家族に見せる範囲」: 休みを全て見せるか / 見せる業務の分類 */
+function get_family_share(array $user): array
+{
+    $r = row('SELECT family_share_off, family_share_tags FROM users WHERE id = ?', [$user['id']]);
+    $tags = $r && $r['family_share_tags'] !== '' ? array_values(array_intersect(explode(',', $r['family_share_tags']), cfg('work_tags'))) : [];
+    return ['off' => $r && (int)$r['family_share_off'] === 1, 'tags' => $tags];
+}
+
+function save_family_share(array $user, bool $off, array $tags): array
+{
+    $tags = array_values(array_intersect(cfg('work_tags'), array_map('strval', $tags))); // 設定にある分類だけ、決まった順で
+    q('UPDATE users SET family_share_off = ?, family_share_tags = ? WHERE id = ?', [$off ? 1 : 0, implode(',', $tags), $user['id']]);
+    return ['off' => $off, 'tags' => $tags];
 }
 
 function get_memo(array $user): string

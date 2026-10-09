@@ -175,8 +175,8 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
                 $changed++;
             }
         } elseif ($ym >= $thisMonth) {
-            q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,series_id,ym,detached,created_by,created_at,updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)', [
+            q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,series_id,ym,detached,created_by,created_at,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,0,?,?,0,?,?,?)', [
                 $s['owner_id'], $s['title'], 'work', $s['tag'], $p['start'], $p['end'], $s['start_time'], $s['end_time'], '',
                 $seriesId, $ym, $s['owner_id'], now_str(), now_str(),
             ]);

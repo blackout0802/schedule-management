@@ -319,7 +319,8 @@ $wk = $mk($a, ['kind' => 'work', 'title' => '共有される業務', 'tag' => '�
 $of = $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $sd]);
 check('家族共有: プライベートの初期値は「共有する」', (int)$pubShared['family_shared'], 1);
 check('家族共有: チェックを外すと共有しない', (int)$pubHidden['family_shared'], 0);
-check('家族共有: 業務・休みでは指定しても影響しない', (int)validate_event_input(['kind' => 'work', 'title' => 'x', 'start' => $sd, 'family_shared' => 0], $a)[0]['family_shared'], 1);
+check('家族共有: 業務・休みの初期値は「共有しない」（選んだものだけ共有）', [(int)validate_event_input(['kind' => 'work', 'title' => 'x', 'start' => $sd], $a)[0]['family_shared'], (int)validate_event_input(['kind' => 'off', 'title' => 'x', 'tag' => '有給', 'start' => $sd], $a)[0]['family_shared']], [0, 0]);
+check('家族共有: 業務・休みも、チェックすれば共有できる', [(int)validate_event_input(['kind' => 'work', 'title' => 'x', 'start' => $sd, 'family_shared' => 1], $a)[0]['family_shared'], (int)validate_event_input(['kind' => 'off', 'title' => 'x', 'tag' => '有給', 'start' => $sd, 'family_shared' => true], $a)[0]['family_shared']], [1, 1]);
 // リンクの作成・作り直し・停止
 check('リンク: 一般社員は会社用を作れない', $thrown(function () use ($a) { share_link_create('company', $a); }), true);
 check('リンク: 種類の不正を拒否', $thrown(function () use ($a) { share_link_create('x', $a); }), true);
@@ -360,6 +361,63 @@ check('リンク: 利用停止の本人の家族用リンクは無効', share_li
 q('UPDATE users SET active = 1 WHERE id = ?', [$b['id']]);
 share_link_revoke('family', $a); share_link_revoke('family', $b);
 check('リンク: 停止すると使えない', share_link_find($fl2['token']), null);
+// ---- 既存の予定（業務・休み・繰り返し）を家族に共有する ----
+$fd = date('Y-m-d', strtotime('+150 day'));
+$fw1 = $mk($a, ['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => $fd]);
+$fw2 = $mk($a, ['kind' => 'work', 'title' => '個別に共有する業務', 'tag' => '打ち合わせ', 'start' => $fd, 'family_shared' => 1]);
+$fw3 = $mk($a, ['kind' => 'work', 'title' => '全体会議の業務', 'tag' => '全体会議', 'start' => $fd]);
+$fo1 = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $fd]);
+$bw = $mk($b, ['kind' => 'work', 'title' => '鈴木の業務', 'tag' => '打ち合わせ', 'start' => $fd, 'family_shared' => 1]);
+$famL = share_link_find(share_link_create('family', $a)['token']);
+$fam1 = function () use ($famL, $fd) { return array_column(share_events($famL, $fd, $fd), 'title'); };
+check('既存予定の共有: 初期状態では、業務・休みは家族に見えない', in_array('共有しない業務', $fam1(), true) || in_array('休み', $fam1(), true), false);
+check('既存予定の共有: チェックした業務だけが家族に見える', $fam1(), ['個別に共有する業務']);
+[$ed] = validate_event_input(['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => $fd, 'family_shared' => 1], $a);
+save_event($ed, $a, $fw1);
+check('既存予定の共有: 既存の業務を編集してチェックすると、すぐ家族に見える', in_array('共有しない業務', $fam1(), true), true);
+check('既存予定の共有: 他の人（鈴木）の業務は、チェックがあっても見えない', in_array('鈴木の業務', $fam1(), true), false);
+save_family_share($a, true, ['全体会議']);
+check('範囲の設定: 休みを全て見せる + 分類「全体会議」の業務を見せる', $fam1(), ['共有しない業務', '個別に共有する業務', '全体会議の業務', '休み']);
+check('範囲の設定: 設定は保存され、読み出せる', get_family_share($a), ['off' => true, 'tags' => ['全体会議']]);
+save_family_share($a, false, ['存在しない分類', '打ち合わせ', '全体会議']);
+check('範囲の設定: 存在しない分類は捨て、並びは設定どおり', get_family_share($a), ['off' => false, 'tags' => ['全体会議', '打ち合わせ']]);
+check('範囲の設定: 打ち合わせ+全体会議の業務が全て見える（休みは外した）', $fam1(), ['共有しない業務', '個別に共有する業務', '全体会議の業務']);
+save_family_share($a, false, []);
+check('範囲の設定: 全て外すと、チェックした予定だけに戻る', $fam1(), ['共有しない業務', '個別に共有する業務']);
+check('範囲の設定: 他の人の設定は影響しない', get_family_share($b), ['off' => false, 'tags' => []]);
+// 会社用リンクは、家族への共有設定に関係なく変わらない
+$compL = share_link_find(share_link_create('company', $admin)['token']);
+check('会社用リンクは、家族への共有設定に関係しない（プライベートなし・メモなし）', [count(array_filter(share_events($compL, $fd, $fd), function ($e) { return $e['kind'] === 'private'; })), array_unique(array_column(share_events($compL, $fd, $fd), 'note'))], [0, ['']]);
+// 管理者が他の人の予定を編集しても、持ち主の共有設定は変わらない
+[$adm] = validate_event_input(['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $fd, 'family_shared' => 1], $admin);
+save_event($adm, $admin, $fo1);
+check('管理者が編集しても、持ち主の「共有しない」は変わらない', (int)row('SELECT family_shared FROM events WHERE id = ?', [$fo1['id']])['family_shared'], 0);
+[$own] = validate_event_input(['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $fd, 'family_shared' => 1], $a);
+save_event($own, $a, $fo1);
+check('持ち主が編集すれば、共有できる', in_array('休み', $fam1(), true), true);
+// 繰り返しで自動作成される予定・ToDoから作る予定の初期値は「共有しない」
+q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$a['id'], '共有確認ルール', '定例業務', 'day', 18, 'none', now_str()]);
+$sidF = (int)db()->lastInsertId(); materialize_series($sidF);
+check('繰り返しで自動作成された予定は、初期状態では共有されない', array_unique(array_map('intval', array_column(rows('SELECT family_shared FROM events WHERE series_id = ?', [$sidF]), 'family_shared'))), [0]);
+save_family_share($a, false, ['定例業務']);
+$recDate = row('SELECT start_date FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$sidF])['start_date'];
+check('分類を選ぶと、繰り返しの予定（既存分）がまとめて家族に見える', in_array('共有確認ルール', array_column(share_events($famL, $recDate, $recDate), 'title'), true), true);
+save_family_share($a, false, []); delete_series($sidF);
+[$wt] = validate_todo_input(['kind' => 'work', 'title' => '共有確認ToDo']);
+check('業務のToDoの初期値は「共有しない」、プライベートは「共有する」', [$wt['family_shared'], validate_todo_input(['kind' => 'private', 'title' => 'x'])[0]['family_shared']], [0, 1]);
+$wtEv = schedule_todo(save_todo($wt, $a, null), $fd, $a);
+check('業務のToDoから作った予定は、初期状態では共有されない', (int)$wtEv['family_shared'], 0);
+// 一回限りのデータ移行: 旧版で初期値(1)のまま入っている業務・休みは「共有しない」に戻り、プライベートは触らない
+q("UPDATE events SET family_shared = 1 WHERE kind IN ('work','off')"); q("UPDATE todos SET family_shared = 1 WHERE kind = 'work'");
+$mp = $mk($a, ['kind' => 'private', 'title' => '移行確認の私用', 'start' => $fd, 'family_shared' => 0]);
+$mp2 = $mk($a, ['kind' => 'private', 'title' => '移行確認の私用2', 'start' => $fd]);
+q("DELETE FROM app_meta WHERE meta_key = 'schema_version'"); q("INSERT INTO app_meta (meta_key, meta_value) VALUES ('schema_version', '6')");
+ensure_schema();
+check('データ移行: 旧版の業務・休みの共有指定は、全て「共有しない」に戻る', [(int)row("SELECT COUNT(*) AS c FROM events WHERE kind IN ('work','off') AND family_shared = 1")['c'], (int)row("SELECT COUNT(*) AS c FROM todos WHERE kind = 'work' AND family_shared = 1")['c']], [0, 0]);
+check('データ移行: プライベートの共有指定（共有する・しない）は、そのまま', [(int)row('SELECT family_shared FROM events WHERE id = ?', [$mp['id']])['family_shared'], (int)row('SELECT family_shared FROM events WHERE id = ?', [$mp2['id']])['family_shared']], [0, 1]);
+ensure_schema();
+check('データ移行: 2回目以降は何もしない（あとから選んだ共有を消さない）', (function () use ($fo1) { q('UPDATE events SET family_shared = 1 WHERE id = ?', [$fo1['id']]); ensure_schema(); return (int)row('SELECT family_shared FROM events WHERE id = ?', [$fo1['id']])['family_shared']; })(), 1);
+
 // 複製・ToDo⇔予定でも「共有しない」を引き継ぐ
 [$dup] = duplicate_event($pubHidden, [date('Y-m-d', strtotime($sd . ' +9 day'))], $a);
 check('共有設定: 複製しても「共有しない」を引き継ぐ', (int)$dup[0]['family_shared'], 0);

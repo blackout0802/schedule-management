@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   slack_id TEXT NULL,
   active INTEGER NOT NULL DEFAULT 1,
   must_change_password INTEGER NOT NULL DEFAULT 0,
+  family_share_off INTEGER NOT NULL DEFAULT 0,
+  family_share_tags TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS series (

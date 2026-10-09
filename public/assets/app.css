@@ -210,3 +210,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .list-day.today { background: var(--work-soft); }
 .list-items { display: grid; gap: 3px; align-content: start; }
 .bar.plain { margin: 0; height: auto; line-height: 1.5; padding: 2px 8px; white-space: normal; }
+
+.scope { border: 1px dashed var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; background: var(--surface-2); }
+.scope-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

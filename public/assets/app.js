@@ -154,14 +154,14 @@
       el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', text: '›', onclick: function () { nav(1); } }),
       el('button', { class: 'btn', type: 'button', text: '今日', onclick: function () { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); } }),
       el('span', { class: 'spacer', style: 'flex:1' }),
-      el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
+      SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
           return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
         })),
       SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
     ));
     tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
-      text: SHARE ? (SHARE.kind === 'family' ? '共有されたプライベートの予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
+      text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）' : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
   }
 
@@ -419,8 +419,18 @@
     var note = el('textarea', { name: 'note', maxlength: '500' });
     note.value = ev ? ev.note : '';
     var hint = el('p', { class: 'hint' });
-    var famCb = el('input', { type: 'checkbox', name: 'family_shared', checked: ev ? ev.family_shared !== false : true, style: 'width:auto' });
-    var famLabel = el('label', { class: 'check', title: '共有リンク（家族用）で見られるか' }, famCb, '家族に共有する（共有リンクで見える）');
+    var famTouched = false;
+    var famCb = el('input', { type: 'checkbox', name: 'family_shared', checked: ev ? ev.family_shared !== false : true, style: 'width:auto', onchange: function () { famTouched = true; } });
+    var famText = el('span');
+    var famNote = el('p', { class: 'hint', style: 'margin:-6px 0 0' });
+    var famLabel = el('label', { class: 'check', title: '共有リンク（家族用）で見られるか' }, famCb, famText);
+    // 他の人の予定を管理者が編集するとき、家族への共有は持ち主だけが決める
+    var famOwnerOnly = !!ev && ev.owner_id !== S.me.user.id;
+    // 本人が「共有リンク」で、休みや業務の分類を“まとめて共有”にしているか
+    function famByScope(k) {
+      var fs = S.me.family_share || { off: false, tags: [] };
+      return k === 'off' ? fs.off : k === 'work' ? fs.tags.indexOf(tag.value) >= 0 : false;
+    }
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
 
     function curKind() { var c = form.querySelector('input[name=kind]:checked'); return c ? c.value : kind; }
@@ -432,7 +442,7 @@
       tags.forEach(function (t) { tag.appendChild(el('option', { value: t, text: t, selected: t === cur })); });
       if (k === 'work' && !cur) tag.value = S.me.work_tags[0];
       tagLabel.hidden = k === 'private';
-      famLabel.hidden = k !== 'private';
+      syncFam();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示され、Slackにも通知されます。' : '業務の予定は全員に表示されます。';
@@ -440,13 +450,28 @@
       else title.removeAttribute('placeholder');
     }
 
+    function syncFam() {
+      var k = curKind();
+      famLabel.hidden = famOwnerOnly;
+      famText.textContent = k === 'private' ? '家族に共有する（共有リンクで見える）' : '家族にも共有する（家族用の共有リンクで見える。メモ欄の内容も見えます）';
+      if (isNew && !famTouched) famCb.checked = k === 'private'; // 初期値: プライベートは共有する、業務・休みは共有しない
+      var auto = !famOwnerOnly && famByScope(k);
+      famCb.disabled = auto;
+      if (auto) famCb.checked = true;
+      famNote.hidden = !auto;
+      famNote.textContent = auto ? '「共有リンク」の設定で、自分の' + (k === 'off' ? '休み' : '業務（' + tag.value + '）') + 'は全て家族に共有しています。' : '';
+    }
+    tag.addEventListener('change', syncFam);
+
     var save = function (e) {
       e.preventDefault();
       err.hidden = true;
       var body = {
         id: ev ? ev.id : null, kind: curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
-        start_time: st.value, end_time: et.value, note: note.value, family_shared: famCb.checked
+        start_time: st.value, end_time: et.value, note: note.value
       };
+      // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
+      if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
       if (!ownerLabel.hidden) body.owner_id = owner.value;
       api('event_save', { body: body }).then(function () {
         ov.close(); toast(isNew ? '予定を登録しました' : '予定を更新しました');
@@ -468,6 +493,7 @@
       el('div', { class: 'row' }, el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
       el('label', null, 'メモ（任意）', note),
       famLabel,
+      famNote,
       hint,
       ev && ev.recurring ? el('p', { class: 'hint', text: '↻ 毎月の繰り返しから作られた予定です。この回を編集すると、以後ルールを変更してもこの回は変わりません。' }) : null,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
@@ -630,10 +656,17 @@
     var tagLabel = el('label', null, '分類（予定にしたときの分類）', tag);
     var note = el('textarea', { maxlength: '500' }); note.value = t.note || '';
     var famCb = el('input', { type: 'checkbox', checked: t.family_shared !== false, style: 'width:auto' });
-    var famLabel = el('label', { class: 'check' }, famCb, '家族に共有する（予定にしたとき、共有リンクで見える）');
+    var famTouched = false; famCb.addEventListener('change', function () { famTouched = true; });
+    var famText = el('span');
+    var famLabel = el('label', { class: 'check' }, famCb, famText);
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     function kindNow() { var c = form.querySelector('input[name=tkind]:checked'); return c ? c.value : 'work'; }
-    function sync() { tagLabel.hidden = kindNow() === 'private'; famLabel.hidden = kindNow() !== 'private'; }
+    function sync() {
+      var k = kindNow();
+      tagLabel.hidden = k === 'private';
+      famText.textContent = k === 'private' ? '家族に共有する（予定にしたとき、共有リンクで見える）' : '予定にしたとき、家族にも共有する';
+      if (!famTouched && k !== t.kind) famCb.checked = k === 'private'; // 種類を変えたときは、その種類の初期値にする
+    }
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
       api('todo_save', { body: { id: t.id, title: title.value, kind: kindNow(), tag: tag.value, note: note.value, family_shared: famCb.checked } })
@@ -968,13 +1001,30 @@
     var body = el('div', { class: 'form' });
     var ov = openModal('共有リンク（閲覧専用）', body, true);
     var absUrl = function (path) { return new URL(path, location.href).href; };
+    var scope = { off: false, tags: [] };
+    function scopeBox() {
+      var save = function () {
+        var tags = S.me.work_tags.filter(function (t, i) { return boxes[i].checked; });
+        api('share_options', { body: { off: offCb.checked, tags: tags } }).then(function (j) { S.me.family_share = j.family_share; scope = j.family_share; toast('家族に見せる範囲を保存しました'); }).catch(fail);
+      };
+      var offCb = el('input', { type: 'checkbox', checked: scope.off, onchange: save });
+      var boxes = S.me.work_tags.map(function (t) { return el('input', { type: 'checkbox', checked: scope.tags.indexOf(t) >= 0, onchange: save }); });
+      return el('div', { class: 'scope' },
+        el('b', { text: '家族に見せる範囲（まとめて指定）' }),
+        el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '予定ごとの「家族に共有」のチェックとは別に、すでに登録してある予定も含めて、まとめて見せられます。チェックを外すと、すぐ見えなくなります。' }),
+        el('label', { class: 'check' }, offCb, '自分の休みを、すべて見せる'),
+        el('div', { class: 'scope-tags' }, el('span', { class: 'hint', text: '見せる業務の分類:' }),
+          S.me.work_tags.map(function (t, i) { return el('label', { class: 'fchip' }, boxes[i], t); })),
+        el('p', { class: 'hint', style: 'margin:6px 0 0', text: 'プライベートの予定は、予定ごとの「家族に共有」で決まります（初期値は共有）。業務の予定は会社の情報を含むことがあるので、見せてよい分類だけにチェックしてください。' }));
+    }
     function card(l) {
       var family = l.kind === 'family';
       var box = el('div', { class: 'card' },
         el('div', { class: 'name', text: family ? '家族用リンク' : '会社用リンク（管理者のみ）' }),
         el('p', { class: 'hint', style: 'margin:0', text: family
-          ? 'あなたのプライベートの予定のうち、「家族に共有する」にチェックが入ったものだけが見られます。業務の予定・休みは含まれません。ログイン不要で、見るだけです。'
+          ? 'あなたの予定のうち、家族に共有すると決めたものだけが、カレンダーで見られます。プライベートは初期状態で共有（外した予定だけ隠れます）、業務・休みは、選んだものだけが共有されます。ログイン不要で、見るだけです。'
           : '会社の業務の予定と休みが見られます。プライベートの予定は含まれません。ログイン不要で、見るだけです。' }));
+      if (family) box.appendChild(scopeBox());
       if (l.path) {
         var url = absUrl(l.path);
         var input = el('input', { type: 'text', readonly: true, value: url, 'aria-label': 'リンクのURL', onclick: function (e) { e.target.select(); } });
@@ -1003,6 +1053,7 @@
     }
     function refresh() {
       api('share_list').then(function (j) {
+        scope = j.family_share || scope; S.me.family_share = scope;
         body.textContent = '';
         body.appendChild(el('div', { class: 'notice' }, el('b', { text: 'このURLを知っている人は、ログインなしで見られます' }),
           el('p', { text: '見せたい人にだけ伝えてください。会社の人が見られる場所に、家族用のURLを載せないでください。URLが他の人に伝わったときは「リンクを作り直す」か「共有を止める」で、すぐに見られなくなります。' })));
@@ -1219,7 +1270,7 @@
       S.me = { user: { id: 0, name: '閲覧専用', role: 'viewer' }, app_name: m.app_name, work_tags: [], off_tags: [], users: [] };
       S.shareTitle = m.title;
       S.view = SHARE.kind === 'family' ? 'me' : 'team';
-      S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
+      S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
       document.title = m.title;
       var now = new Date();
       S.year = now.getFullYear(); S.month = now.getMonth() + 1;

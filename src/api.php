@@ -143,6 +143,7 @@ function handle_api(): void
                 'csrf' => csrf_token(),
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
+                'family_share' => get_family_share($user),
                 'work_tags' => cfg('work_tags'),
                 'off_tags' => cfg('off_tags'),
                 'slack' => slack_enabled(),
@@ -272,7 +273,10 @@ function handle_api(): void
                 $l = share_link_get($k, $user);
                 $out[] = ['kind' => $k, 'path' => $l ? 'share.php?t=' . $l['token'] : null, 'created_at' => $l ? $l['created_at'] : null];
             }
-            api_out(['links' => $out]);
+            api_out(['links' => $out, 'family_share' => get_family_share($user)]);
+
+        case 'share_options':
+            api_out(['family_share' => save_family_share($user, !empty($in['off']), is_array($in['tags'] ?? null) ? $in['tags'] : [])]);
 
         case 'share_create':
             try {

@@ -144,6 +144,12 @@ function ensure_schema(): void
         return;
     }
     run_schema();
+    if ($cur < 7) {
+        // 家族への共有が「プライベート」だけだった版では、業務・休みの共有指定が初期値(1)のまま入っている。
+        // 業務・休みは「自分で選んだものだけ共有」にするので、一度だけ全て「共有しない」に戻す（プライベートは触らない）
+        q("UPDATE events SET family_shared = 0 WHERE kind IN ('work', 'off')");
+        q("UPDATE todos SET family_shared = 0 WHERE kind = 'work'");
+    }
     q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
     q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', (string)SCHEMA_VERSION]);
 }
@@ -161,6 +167,13 @@ function migrate_schema(): void
         db()->query('SELECT must_change_password FROM users LIMIT 1')->fetchAll();
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+    }
+    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''"] as $col => $def) {
+        try {
+            db()->query("SELECT $col FROM users LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            db()->exec("ALTER TABLE users ADD COLUMN $col $def");
+        }
     }
     foreach (['events', 'todos'] as $t) {
         try {

@@ -2,12 +2,13 @@
 // 共有リンク: ログインなしで見られる、閲覧専用のURL。
 //
 //   company … 会社用。業務の予定と休みだけ（プライベートは絶対に含まれない）。管理者が作る
-//   family  … 家族用。リンクを作った本人の、「家族に共有」にチェックが入ったプライベート予定だけ。本人が作る
+//   family  … 家族用。リンクを作った本人の予定のうち、本人が「家族に共有」と決めたものだけ。本人が作る
 //
 // 見せる範囲は、このファイルの SQL で決める（画面で隠すのではなく、サーバーが渡さない）。
 // リンクは推測できない長いランダム文字列。作り直す／止めると、古いURLはすぐ使えなくなる。
 
 require_once __DIR__ . '/holidays.php';
+require_once __DIR__ . '/events.php';
 
 const SHARE_KINDS = ['company', 'family'];
 
@@ -87,7 +88,7 @@ function share_title(array $link): string
 /**
  * 閲覧用の予定を返す。リンクの種類で、見せてよいものだけを SQL で絞る。
  * 会社用: kind IN (work, off) だけ。メモは返さない。
- * 家族用: 本人の kind = private で、family_shared = 1 のものだけ。
+ * 家族用: 本人の予定のうち、予定ごとに共有にしたもの＋本人が選んだ範囲（休み／業務の分類）だけ。
  */
 function share_events(array $link, string $from, string $to): array
 {
@@ -96,9 +97,21 @@ function share_events(array $link, string $from, string $to): array
                       WHERE e.kind IN ('work','off') AND u.active = 1 AND e.start_date <= ? AND e.end_date >= ?
                       ORDER BY e.start_date, e.start_time, e.id", [$to, $from]);
     } else {
+        // 家族用: 本人の予定のうち、(1) 予定ごとに「家族に共有」にチェックが入っているもの、
+        // (2) 本人が「休みを全て見せる」にした場合の休み、(3) 本人が選んだ分類の業務、だけ
+        $fs = get_family_share(['id' => (int)$link['owner_id']]);
+        $conds = ['e.family_shared = 1'];
+        $params = [(int)$link['owner_id'], $to, $from];
+        if ($fs['off']) {
+            $conds[] = "e.kind = 'off'";
+        }
+        if ($fs['tags']) {
+            $conds[] = "(e.kind = 'work' AND e.tag IN (" . implode(',', array_fill(0, count($fs['tags']), '?')) . '))';
+            $params = array_merge($params, $fs['tags']);
+        }
         $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
-                      WHERE e.kind = 'private' AND e.owner_id = ? AND e.family_shared = 1 AND e.start_date <= ? AND e.end_date >= ?
-                      ORDER BY e.start_date, e.start_time, e.id", [(int)$link['owner_id'], $to, $from]);
+                      WHERE e.owner_id = ? AND e.start_date <= ? AND e.end_date >= ? AND (" . implode(' OR ', $conds) . ")
+                      ORDER BY e.start_date, e.start_time, e.id", $params);
     }
     $withNote = $link['kind'] === 'family';
     return array_map(function ($e) use ($withNote) {
