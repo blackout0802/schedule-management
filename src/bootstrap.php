@@ -271,8 +271,23 @@ function migrate_schema(): void
     }
 }
 
+/** 画面ごとに作る使い捨ての印。これを付けた <script> だけが動く（外から差し込まれた文字列は動かない） */
+function csp_nonce(): string
+{
+    static $n = null;
+    if ($n === null) {
+        $n = rtrim(strtr(base64_encode(random_bytes(16)), '+/', '-_'), '=');
+    }
+    return $n;
+}
+
 if (PHP_SAPI !== 'cli' && !headers_sent()) {
     header('X-Frame-Options: DENY');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
+    // 外部のスクリプト・画像・通信・フォーム送信を許さない（画面に紛れ込んだ文字列が悪さをしにくくなる）
+    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-" . csp_nonce() . "'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+    if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) {
+        header('Strict-Transport-Security: max-age=15552000'); // 以後、ブラウザは https でしか開かない（約半年）
+    }
 }

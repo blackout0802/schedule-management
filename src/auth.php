@@ -9,6 +9,7 @@ function session_boot(): void
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
     session_name('schedsess');
+    ini_set('session.use_strict_mode', '1'); // サーバーが発行していないセッションIDは受け付けない
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
@@ -35,12 +36,58 @@ function is_admin(array $u): bool
     return $u['role'] === 'admin';
 }
 
-function login_attempt(string $email, string $password): ?array
+/* ログイン失敗の回数制限: 同じメールアドレスで8回、同じ接続元で30回失敗したら、15分間は試せない */
+const LOGIN_MAX_PER_EMAIL = 8;
+const LOGIN_MAX_PER_IP = 30;
+const LOGIN_WINDOW_SEC = 900;
+
+function client_ip(): string
 {
-    $u = row('SELECT * FROM users WHERE email = ?', [strtolower(trim($email))]);
-    if (!$u || (int)$u['active'] !== 1 || !password_verify($password, $u['password_hash'])) {
-        usleep(700000); // 総当たり対策のため失敗時は少し待たせる
+    return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+}
+
+function login_locked(string $email): bool
+{
+    try {
+        $since = date('Y-m-d H:i:s', time() - LOGIN_WINDOW_SEC);
+        $e = row('SELECT COUNT(*) AS c FROM login_fails WHERE email = ? AND failed_at >= ?', [$email, $since]);
+        $i = row('SELECT COUNT(*) AS c FROM login_fails WHERE ip = ? AND failed_at >= ?', [client_ip(), $since]);
+        return (int)$e['c'] >= LOGIN_MAX_PER_EMAIL || (int)$i['c'] >= LOGIN_MAX_PER_IP;
+    } catch (Throwable $t) {
+        return false; // 記録用のテーブルがまだ無い（更新直後）ときは、制限なしで続ける
+    }
+}
+
+function login_record_fail(string $email): void
+{
+    try {
+        q('INSERT INTO login_fails (email, ip, failed_at) VALUES (?,?,?)', [substr($email, 0, 190), client_ip(), now_str()]);
+        q('DELETE FROM login_fails WHERE failed_at < ?', [date('Y-m-d H:i:s', time() - 86400)]);
+    } catch (Throwable $t) {
+        // 記録できなくても、ログインの判定そのものは続ける
+    }
+}
+
+/** @return ?array ユーザー。失敗なら null（$locked が true なら、回数制限で試せなかった） */
+function login_attempt(string $email, string $password, ?bool &$locked = null): ?array
+{
+    $email = strtolower(trim($email));
+    $locked = false;
+    if (login_locked($email)) {
+        $locked = true;
+        usleep(300000);
         return null;
+    }
+    $u = row('SELECT * FROM users WHERE email = ?', [$email]);
+    if (!$u || (int)$u['active'] !== 1 || !password_verify($password, $u['password_hash'])) {
+        login_record_fail($email);
+        usleep(700000); // 失敗時は少し待たせる
+        return null;
+    }
+    try {
+        q('DELETE FROM login_fails WHERE email = ?', [$email]);
+    } catch (Throwable $t) {
+        // 何もしない
     }
     session_boot();
     session_regenerate_id(true);

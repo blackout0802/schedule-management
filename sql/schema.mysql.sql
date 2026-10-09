@@ -110,3 +110,12 @@ CREATE TABLE IF NOT EXISTS share_links (
   UNIQUE KEY uq_share_token (token),
   UNIQUE KEY uq_share_kind_owner (kind, owner_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS login_fails (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(190) NOT NULL,
+  ip VARCHAR(45) NOT NULL,
+  failed_at DATETIME NOT NULL,
+  KEY ix_login_fails_email (email, failed_at),
+  KEY ix_login_fails_ip (ip, failed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

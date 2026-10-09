@@ -110,6 +110,18 @@ $tmpUser = row('SELECT * FROM users WHERE id = ?', [create_user('新人', 'new@e
 check('管理者が登録した人は初回パスワード変更が必要', (int)$tmpUser['must_change_password'], 1);
 check('通常登録は変更不要', (int)$a['must_change_password'], 0);
 check('ログイン失敗', login_attempt('a@example.com', 'wrong') === null, true);
+create_user('試験', 'lock@example.com', 'rightpass1');
+for ($i = 0; $i < LOGIN_MAX_PER_EMAIL; $i++) { login_attempt('lock@example.com', 'wrong' . $i); }
+$lk = null; $lkRes = login_attempt('lock@example.com', 'rightpass1', $lk);
+check('ログイン制限: 失敗が続くと、正しいパスワードでも試せない', [$lkRes, $lk], [null, true]);
+check('ログイン制限: 大文字小文字・空白が違っても同じメールとして数える', (function () { $l = null; login_attempt(' LOCK@example.com ', 'rightpass1', $l); return $l; })(), true);
+$okOther = null; $okRes = login_attempt('a@example.com', 'password1', $okOther);
+check('ログイン制限: 他のメールアドレスには影響しない', [$okRes !== null, $okOther], [true, false]);
+q('UPDATE login_fails SET failed_at = ? WHERE email = ?', [date('Y-m-d H:i:s', time() - LOGIN_WINDOW_SEC - 60), 'lock@example.com']);
+$lk2 = null; $res2 = login_attempt('lock@example.com', 'rightpass1', $lk2);
+check('ログイン制限: 15分たつと、また試せて、成功すると失敗の記録が消える', [$res2 !== null, $lk2, (int)row('SELECT COUNT(*) AS c FROM login_fails WHERE email = ?', ['lock@example.com'])['c']], [true, false, 0]);
+check('ログイン制限: 存在しないメールアドレスも数える（有無を探れない）', (function () { for ($i = 0; $i < LOGIN_MAX_PER_EMAIL; $i++) { login_attempt('nobody@example.com', 'x'); } $l = null; login_attempt('nobody@example.com', 'x', $l); return $l; })(), true);
+db()->exec('DELETE FROM login_fails');
 
 $today = date('Y-m-d');
 $ym = date('Y-m');

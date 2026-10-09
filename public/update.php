@@ -98,7 +98,7 @@ $hasZip = class_exists('ZipArchive');
       <p class="hint">まだバックアップはありません。更新するたびに、更新前のファイルが自動で保存されます（新しい <?= (int)UPDATER_KEEP_BACKUPS ?> 件まで）。</p>
     <?php else: ?>
       <p class="hint">更新後におかしくなったときは、更新前の状態に戻せます。</p>
-      <form method="post" class="form">
+      <form method="post" class="form" id="restore-form">
         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
         <input type="hidden" name="action" value="restore">
         <label>戻す時点
@@ -108,10 +108,14 @@ $hasZip = class_exists('ZipArchive');
             <?php endforeach; ?>
           </select>
         </label>
-        <div class="actions"><button class="btn danger" type="submit" onclick="return confirm('選んだ時点の状態に戻します。よろしいですか？')">この時点に戻す</button></div>
+        <div class="actions"><button class="btn danger" type="submit">この時点に戻す</button></div>
       </form>
     <?php endif; ?>
   </section>
 </main>
+<script nonce="<?= csp_nonce() ?>">
+var rf = document.getElementById('restore-form');
+if (rf) rf.addEventListener('submit', function (e) { if (!window.confirm('選んだ時点の状態に戻します。よろしいですか？')) e.preventDefault(); });
+</script>
 </body>
 </html>

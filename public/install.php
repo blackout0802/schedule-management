@@ -28,8 +28,21 @@ function db_error_hint(Throwable $e): string
     return 'データベースに接続できませんでした。入力内容を確認してください。';
 }
 
+// 初期設定が済んでいる（ユーザーが1人以上いる）ときは、この画面からデータベースの設定を書き換えさせない。
+// install.php をサーバーに残したままでも、第三者に接続先をすり替えられないようにするため
+$locked = false;
+if (is_file($cfgPath)) {
+    try {
+        $locked = (int)(row('SELECT COUNT(*) AS c FROM users')['c']) > 0;
+    } catch (Throwable $e) {
+        $locked = false;
+    }
+}
+
 // ---- 手順1: データベース情報の保存 ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'db') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'db' && $locked) {
+    $err = '初期設定はすでに完了しています。データベースの設定を変えるときは、config.php を直接書き換えてください。';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'db') {
     $v['host'] = trim((string)($_POST['host'] ?? ''));
     $v['dbname'] = trim((string)($_POST['dbname'] ?? ''));
     $v['user'] = trim((string)($_POST['user'] ?? ''));
@@ -141,7 +154,8 @@ $appName = is_file($cfgPath) && $fallbackCode === null ? cfg('app_name') : 'ス�
       <label>データベース名<input name="dbname" value="<?= h($v['dbname']) ?>" required placeholder="サーバーIDが前に付いた完全な名前"></label>
       <label>ユーザー名<input name="user" value="<?= h($v['user']) ?>" required placeholder="サーバーIDが前に付いた完全な名前"></label>
       <label>パスワード<input id="pass" type="password" name="pass" required autocomplete="new-password"></label>
-      <label style="flex-direction:row;display:flex;align-items:center;gap:6px"><input type="checkbox" style="width:auto" onchange="document.getElementById('pass').type=this.checked?'text':'password'">パスワードを表示する</label>
+      <label style="flex-direction:row;display:flex;align-items:center;gap:6px"><input id="show-pass" type="checkbox" style="width:auto">パスワードを表示する</label>
+      <script nonce="<?= csp_nonce() ?>">document.getElementById('show-pass').addEventListener('change', function () { document.getElementById('pass').type = this.checked ? 'text' : 'password'; });</script>
       <button class="btn primary" type="submit">接続を確かめて保存する</button>
     </form>
 

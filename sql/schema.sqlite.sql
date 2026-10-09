@@ -100,3 +100,12 @@ CREATE TABLE IF NOT EXISTS share_links (
   created_at TEXT NOT NULL,
   UNIQUE (kind, owner_id)
 );
+
+CREATE TABLE IF NOT EXISTS login_fails (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  failed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_login_fails_email ON login_fails (email, failed_at);
+CREATE INDEX IF NOT EXISTS ix_login_fails_ip ON login_fails (ip, failed_at);
