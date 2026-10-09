@@ -226,4 +226,14 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .kb-card.done { opacity: .85; cursor: grab; }
 .kb-card .t-actions { flex-wrap: wrap; margin-left: -6px; }
 .pill.doing { background: var(--work-soft); color: var(--work); }
-@media (max-width: 760px) { .kanban { grid-template-columns: 1fr; } }
+.kb-tabs { display: none; }
+@media (max-width: 760px) {
+  .kanban { display: block; }
+  .kb-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 10px 10px 0 0; border-bottom: 0; overflow: hidden; }
+  .kb-tab { border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 10px 0; font-weight: 600; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .kb-tab[aria-selected=true] { color: var(--work); border-bottom-color: var(--work); }
+  .kb-tab.done[aria-selected=true] { color: var(--off); border-bottom-color: var(--off); }
+  .kb-col { display: none; border-radius: 0 0 10px 10px; min-height: 220px; }
+  .kb-col h3 { display: none; }
+  .kanban[data-tab=todo] .kb-col.todo, .kanban[data-tab=doing] .kb-col.doing, .kanban[data-tab=done] .kb-col.done { display: grid; }
+}

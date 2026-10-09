@@ -670,6 +670,7 @@
     if (ids) body.ids = ids;
     api('todo_status', { body: body }).then(function () {
       if (status === 'done' && before !== 'done') toast('完了にしました: ' + t.title);
+      else if (status !== before) toast((status === 'doing' ? '進行中にしました: ' : '未着手に戻しました: ') + t.title);
       loadTodos();
     }).catch(function (x) { fail(x); loadTodos(); });
   }
@@ -715,7 +716,20 @@
   }
 
   function renderKanban() {
-    var wrap = el('div', { class: 'kanban' });
+    var tab = store('sched.kbTab');
+    if (tab !== 'todo' && tab !== 'doing' && tab !== 'done') tab = 'doing';
+    var wrap = el('div', { class: 'kanban', 'data-tab': tab });
+    // スマホ幅では、列を並べず、状態をタブで切り替える（幅が広いときは隠れる）
+    var tabs = el('div', { class: 'kb-tabs', role: 'tablist', 'aria-label': 'ToDoの状態' });
+    KANBAN.forEach(function (c) {
+      var n = c[0] === 'done' ? S.done.length : S.todos.filter(function (t) { return t.status === c[0]; }).length;
+      tabs.appendChild(el('button', { type: 'button', role: 'tab', class: 'kb-tab ' + c[0], 'aria-selected': c[0] === tab ? 'true' : 'false',
+        text: c[1] + ' ' + n, onclick: function () {
+          store('sched.kbTab', c[0]); wrap.setAttribute('data-tab', c[0]);
+          tabs.querySelectorAll('.kb-tab').forEach(function (b) { b.setAttribute('aria-selected', b === this ? 'true' : 'false'); }, this);
+        } }));
+    });
+    wrap.appendChild(tabs);
     KANBAN.forEach(function (c) {
       var status = c[0], items = status === 'done' ? S.done : S.todos.filter(function (t) { return t.status === status; });
       var col = el('div', { class: 'kb-col ' + status, 'data-status': status },
