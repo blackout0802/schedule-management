@@ -6,6 +6,7 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/events.php';
 require_once __DIR__ . '/slack.php';
+require_once __DIR__ . '/share.php';
 
 function api_out($data, int $code = 200): void
 {
@@ -234,7 +235,19 @@ function handle_api(): void
             api_out(['ok' => true, 'start' => $moved['start_date'], 'end' => $moved['end_date']]);
 
         case 'todo_list':
-            api_out(['todos' => list_todos($user, ($_GET['view'] ?? 'me') === 'team' ? 'team' : 'me')]);
+            $tv = ($_GET['view'] ?? 'me') === 'team' ? 'team' : 'me';
+            api_out(['todos' => list_todos($user, $tv), 'done' => list_done_todos($user, $tv)]);
+
+        case 'todo_done':
+            $t = find_todo((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            set_todo_done($t, !empty($in['done']));
+            api_out(['ok' => true]);
+
+        case 'todo_clear_done':
+            api_out(['deleted' => clear_done_todos($user, ($in['view'] ?? 'me') === 'team' ? 'team' : 'me')]);
 
         case 'todo_save':
             $existing = null;
@@ -249,6 +262,33 @@ function handle_api(): void
                 api_fail($err);
             }
             api_out(['todo' => todo_for_client(save_todo($data, $user, $existing))]);
+
+        case 'share_list':
+            $out = [];
+            foreach (['family', 'company'] as $k) {
+                if ($k === 'company' && !is_admin($user)) {
+                    continue;
+                }
+                $l = share_link_get($k, $user);
+                $out[] = ['kind' => $k, 'path' => $l ? 'share.php?t=' . $l['token'] : null, 'created_at' => $l ? $l['created_at'] : null];
+            }
+            api_out(['links' => $out]);
+
+        case 'share_create':
+            try {
+                $l = share_link_create((string)($in['kind'] ?? ''), $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), 403);
+            }
+            api_out(['kind' => $l['kind'], 'path' => 'share.php?t=' . $l['token']]);
+
+        case 'share_revoke':
+            try {
+                share_link_revoke((string)($in['kind'] ?? ''), $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), 403);
+            }
+            api_out(['ok' => true]);
 
         case 'memo_get':
             api_out(['html' => get_memo($user)]);
@@ -282,7 +322,11 @@ function handle_api(): void
             if (!valid_date($date)) {
                 api_fail('日付を正しく入力してください。');
             }
-            $ev = schedule_todo($t, $date, $user);
+            try {
+                $ev = schedule_todo($t, $date, $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
             api_out(['ok' => true, 'event_id' => (int)$ev['id']]);
 
         case 'event_to_todo':

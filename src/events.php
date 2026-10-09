@@ -74,6 +74,7 @@ function event_for_client(array $e, array $user): array
         'end_time' => $e['end_time'],
         'note' => $e['note'],
         'owner_id' => (int)$e['owner_id'],
+        'family_shared' => (int)$e['family_shared'] === 1,
         'owner_name' => $e['owner_name'] ?? '',
         'recurring' => $e['series_id'] !== null,
         'series_id' => $e['series_id'] !== null ? (int)$e['series_id'] : null,
@@ -144,6 +145,8 @@ function validate_event_input(array $in, array $user): array
     return [[
         'kind' => $kind, 'title' => $title, 'tag' => $tag, 'start' => $start, 'end' => $end,
         'start_time' => $st, 'end_time' => $et, 'note' => $note, 'owner_id' => $owner,
+        // プライベートの予定だけが対象。指定がなければ「家族に共有する」
+        'family_shared' => ($kind === 'private' && array_key_exists('family_shared', $in) && empty($in['family_shared'])) ? 0 : 1,
     ], null];
 }
 
@@ -153,16 +156,16 @@ function save_event(array $data, array $user, ?array $existing): array
         // 持ち主と種類は編集で変えない（取り違えを防ぐ）
         $data['owner_id'] = (int)$existing['owner_id'];
         $data['kind'] = $existing['kind'];
-        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, detached=?, updated_at=? WHERE id=?', [
+        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, detached=?, updated_at=? WHERE id=?', [
             $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'], $data['note'],
-            $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
+            $data['family_shared'] ?? 1, $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
         ]);
         $id = (int)$existing['id'];
     } else {
-        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,series_id,ym,detached,created_by,created_at,updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
+        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,series_id,ym,detached,created_by,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
             $data['owner_id'], $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'],
-            $data['note'], $user['id'], now_str(), now_str(),
+            $data['note'], $data['family_shared'] ?? 1, $user['id'], now_str(), now_str(),
         ]);
         $id = (int)db()->lastInsertId();
     }
@@ -205,6 +208,7 @@ function duplicate_event(array $src, array $dates, array $user): array
         $created[] = save_event([
             'kind' => $src['kind'], 'title' => $src['title'], 'tag' => $src['tag'], 'start' => $d, 'end' => $end,
             'start_time' => $src['start_time'], 'end_time' => $src['end_time'], 'note' => $src['note'], 'owner_id' => (int)$src['owner_id'],
+            'family_shared' => (int)$src['family_shared'],
         ], $user, null);
     }
     return [$created, $skipped];
@@ -228,14 +232,41 @@ function move_event(array $e, string $newStart): array
 
 function todo_for_client(array $t): array
 {
-    return ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => $t['kind'], 'tag' => $t['tag'], 'note' => $t['note']];
+    return ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => $t['kind'], 'tag' => $t['tag'], 'note' => $t['note'], 'family_shared' => (int)$t['family_shared'] === 1,
+        'done_at' => $t['done_at'] ?? null];
 }
 
-/** @param string $view 'team' なら業務のToDoだけ */
+/** 未完了のToDo。@param string $view 'team' なら業務のToDoだけ */
 function list_todos(array $user, string $view): array
 {
-    $sql = 'SELECT * FROM todos WHERE owner_id = ?' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY sort_order, id';
+    $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY sort_order, id';
     return array_map('todo_for_client', rows($sql, [$user['id']]));
+}
+
+/** 完了したToDo（新しい順）。業務版では業務のToDoだけ */
+function list_done_todos(array $user, string $view, int $limit = 100): array
+{
+    $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY done_at DESC, id DESC LIMIT ' . (int)$limit;
+    return array_map('todo_for_client', rows($sql, [$user['id']]));
+}
+
+/** 完了にする／未完了に戻す。戻したToDoは、リストの末尾に入る */
+function set_todo_done(array $todo, bool $done): array
+{
+    if ($done) {
+        q('UPDATE todos SET done_at = ? WHERE id = ?', [now_str(), $todo['id']]);
+    } else {
+        $max = row('SELECT MAX(sort_order) AS m FROM todos WHERE owner_id = ?', [$todo['owner_id']]);
+        q('UPDATE todos SET done_at = NULL, sort_order = ? WHERE id = ?', [(int)($max['m'] ?? 0) + 1, $todo['id']]);
+    }
+    return row('SELECT * FROM todos WHERE id = ?', [$todo['id']]);
+}
+
+/** 完了したToDoをまとめて消す。業務版では業務のものだけ */
+function clear_done_todos(array $user, string $view): int
+{
+    $st = q('DELETE FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
+    return $st->rowCount();
 }
 
 function find_todo(int $id, array $user): ?array
@@ -263,17 +294,18 @@ function validate_todo_input(array $in): array
         $tags = cfg('work_tags');
         $tag = in_array((string)($in['tag'] ?? ''), $tags, true) ? (string)$in['tag'] : $tags[count($tags) - 1];
     }
-    return [['kind' => $kind, 'title' => $title, 'tag' => $tag, 'note' => $note], null];
+    $fam = ($kind === 'private' && array_key_exists('family_shared', $in) && empty($in['family_shared'])) ? 0 : 1;
+    return [['kind' => $kind, 'title' => $title, 'tag' => $tag, 'note' => $note, 'family_shared' => $fam], null];
 }
 
 function save_todo(array $data, array $user, ?array $existing): array
 {
     if ($existing) {
-        q('UPDATE todos SET title = ?, kind = ?, tag = ?, note = ? WHERE id = ?', [$data['title'], $data['kind'], $data['tag'], $data['note'], $existing['id']]);
+        q('UPDATE todos SET title = ?, kind = ?, tag = ?, note = ?, family_shared = ? WHERE id = ?', [$data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], $existing['id']]);
         $id = (int)$existing['id'];
     } else {
         $max = row('SELECT MAX(sort_order) AS m FROM todos WHERE owner_id = ?', [$user['id']]);
-        q('INSERT INTO todos (owner_id, title, kind, tag, note, sort_order, created_at) VALUES (?,?,?,?,?,?,?)', [$user['id'], $data['title'], $data['kind'], $data['tag'], $data['note'], (int)($max['m'] ?? 0) + 1, now_str()]);
+        q('INSERT INTO todos (owner_id, title, kind, tag, note, family_shared, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?)', [$user['id'], $data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], (int)($max['m'] ?? 0) + 1, now_str()]);
         $id = (int)db()->lastInsertId();
     }
     return row('SELECT * FROM todos WHERE id = ?', [$id]);
@@ -282,9 +314,13 @@ function save_todo(array $data, array $user, ?array $existing): array
 /** ToDo を、指定した日の予定にする（ToDo は消える）。業務のToDoは全社員に見える業務の予定になる */
 function schedule_todo(array $todo, string $date, array $user): array
 {
+    if ($todo['done_at'] !== null) {
+        throw new RuntimeException('完了したToDoは予定にできません。先に未完了に戻してください。');
+    }
     $event = save_event([
         'kind' => $todo['kind'], 'title' => $todo['title'], 'tag' => $todo['tag'], 'start' => $date, 'end' => $date,
         'start_time' => '', 'end_time' => '', 'note' => $todo['note'], 'owner_id' => (int)$user['id'],
+        'family_shared' => (int)$todo['family_shared'],
     ], $user, null);
     q('DELETE FROM todos WHERE id = ?', [$todo['id']]);
     return $event;
@@ -302,7 +338,7 @@ function event_to_todo(array $e, array $user): array
     if ((int)$e['owner_id'] !== (int)$user['id']) {
         throw new RuntimeException('他の人の予定は、ToDoに戻せません。');
     }
-    $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note']], $user, null);
+    $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note'], 'family_shared' => (int)$e['family_shared']], $user, null);
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
     return $todo;
 }
@@ -315,7 +351,7 @@ function reorder_todos(array $ids, array $user): void
 {
     $ids = array_values(array_unique(array_map('intval', $ids)));
     $own = [];
-    foreach (rows('SELECT id, sort_order FROM todos WHERE owner_id = ?', [$user['id']]) as $r) {
+    foreach (rows('SELECT id, sort_order FROM todos WHERE owner_id = ? AND done_at IS NULL', [$user['id']]) as $r) {
         $own[(int)$r['id']] = (int)$r['sort_order'];
     }
     $ids = array_values(array_filter($ids, function ($id) use ($own) { return isset($own[$id]); }));

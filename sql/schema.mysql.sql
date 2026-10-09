@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS events (
   series_id INT UNSIGNED NULL,
   ym CHAR(7) NULL,
   detached TINYINT NOT NULL DEFAULT 0,
+  family_shared TINYINT NOT NULL DEFAULT 1,
   created_by INT UNSIGNED NOT NULL,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
@@ -79,6 +80,8 @@ CREATE TABLE IF NOT EXISTS todos (
   tag VARCHAR(40) NOT NULL DEFAULT '',
   note VARCHAR(500) NOT NULL DEFAULT '',
   sort_order INT NOT NULL DEFAULT 0,
+  family_shared TINYINT NOT NULL DEFAULT 1,
+  done_at DATETIME NULL,
   created_at DATETIME NOT NULL,
   KEY ix_todos_owner (owner_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -92,4 +95,15 @@ CREATE TABLE IF NOT EXISTS memos (
   owner_id INT UNSIGNED NOT NULL PRIMARY KEY,
   body TEXT NOT NULL,
   updated_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS share_links (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  kind VARCHAR(10) NOT NULL,
+  owner_id INT UNSIGNED NOT NULL DEFAULT 0,
+  token VARCHAR(64) NOT NULL,
+  created_by INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uq_share_token (token),
+  UNIQUE KEY uq_share_kind_owner (kind, owner_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

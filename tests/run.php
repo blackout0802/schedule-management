@@ -13,6 +13,7 @@ require_once __DIR__ . '/../src/auth.php';
 require_once __DIR__ . '/../src/events.php';
 require_once __DIR__ . '/../src/slack.php';
 require_once __DIR__ . '/../src/updater.php';
+require_once __DIR__ . '/../src/share.php';
 
 $fail = 0;
 $pass = 0;
@@ -273,6 +274,27 @@ $rec2 = row('SELECT * FROM events WHERE series_id IS NOT NULL LIMIT 1');
 check('予定→ToDo: 繰り返し由来は戻せない', $rec2 === null ? true : $thrown(function () use ($rec2, $a) { event_to_todo($rec2, $a); }), true);
 check('予定→ToDo: 他人の予定は戻せない', $thrown(function () use ($admin, $mv) { event_to_todo(row('SELECT * FROM events WHERE id = ?', [$mv['id']]), $admin); }), true);
 
+// ---- ToDoの完了 ----
+[$dA] = validate_todo_input(['kind' => 'work', 'title' => '完了テストA']); $tdA = save_todo($dA, $a, null);
+[$dB] = validate_todo_input(['kind' => 'work', 'title' => '完了テストB']); $tdB = save_todo($dB, $a, null);
+[$dP] = validate_todo_input(['kind' => 'private', 'title' => '完了テスト私用']); $tdP = save_todo($dP, $a, null);
+set_todo_done($tdA, true); set_todo_done($tdP, true);
+check('完了: 完了にすると、未完了のリストから消える', in_array('完了テストA', array_column(list_todos($a, 'me'), 'title'), true), false);
+check('完了: 完了リストに入り、完了日時が付く', [array_column(list_done_todos($a, 'me'), 'title'), list_done_todos($a, 'me')[0]['done_at'] !== null], [['完了テスト私用', '完了テストA'], true]);
+check('完了: 業務版の完了リストには業務のToDoだけ', array_column(list_done_todos($a, 'team'), 'title'), ['完了テストA']);
+check('完了: 他の社員には完了リストも見えない', [list_done_todos($b, 'me'), list_done_todos($admin, 'me')], [[], []]);
+check('完了: 完了したToDoは予定にできない', $thrown(function () use ($tdA, $a) { schedule_todo(find_todo((int)$tdA['id'], $a), '2026-12-01', $a); }), true);
+reorder_todos([(int)$tdA['id'], (int)$tdB['id']], $a);
+check('完了: 並べ替えは未完了だけが対象', find_todo((int)$tdA['id'], $a)['done_at'] !== null, true);
+set_todo_done(find_todo((int)$tdA['id'], $a), false);
+$act = array_column(list_todos($a, 'me'), 'title');
+check('完了: 未完了に戻すと、リストの末尾に入る', end($act), '完了テストA');
+check('完了: 戻すと完了リストから消える', in_array('完了テストA', array_column(list_done_todos($a, 'me'), 'title'), true), false);
+check('完了: 業務版で完了を一括削除しても、プライベートの完了は残る', [clear_done_todos($a, 'team'), array_column(list_done_todos($a, 'me'), 'title')], [0, ['完了テスト私用']]);
+set_todo_done(find_todo((int)$tdB['id'], $a), true);
+check('完了: 一括削除（プライベート版）で全て消える', [clear_done_todos($a, 'me'), list_done_todos($a, 'me')], [2, []]);
+foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');
@@ -287,6 +309,66 @@ check('メモ: 他の人のメモは空（本人だけ）', [get_memo($b), get_m
 save_memo('<div>上書き</div>', $a);
 check('メモ: 上書き保存', get_memo($a), '<div>上書き</div>');
 check('メモ: 長すぎると拒否', $thrown(function () use ($a) { save_memo(str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);
+
+// ---- 共有リンク（家族用・会社用） ----
+$sd = date('Y-m-d', strtotime('+120 day'));
+$pubShared = $mk($a, ['kind' => 'private', 'title' => '家族に共有する予定', 'start' => $sd, 'note' => '場所メモ']);
+$pubHidden = $mk($a, ['kind' => 'private', 'title' => '共有しない予定', 'start' => $sd, 'family_shared' => 0]);
+$bPriv = $mk($b, ['kind' => 'private', 'title' => '鈴木の私的予定', 'start' => $sd]);
+$wk = $mk($a, ['kind' => 'work', 'title' => '共有される業務', 'tag' => '打ち合わせ', 'start' => $sd, 'note' => '社内メモ']);
+$of = $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $sd]);
+check('家族共有: プライベートの初期値は「共有する」', (int)$pubShared['family_shared'], 1);
+check('家族共有: チェックを外すと共有しない', (int)$pubHidden['family_shared'], 0);
+check('家族共有: 業務・休みでは指定しても影響しない', (int)validate_event_input(['kind' => 'work', 'title' => 'x', 'start' => $sd, 'family_shared' => 0], $a)[0]['family_shared'], 1);
+// リンクの作成・作り直し・停止
+check('リンク: 一般社員は会社用を作れない', $thrown(function () use ($a) { share_link_create('company', $a); }), true);
+check('リンク: 種類の不正を拒否', $thrown(function () use ($a) { share_link_create('x', $a); }), true);
+$fl = share_link_create('family', $a);
+check('リンク: 家族用は48文字のランダム文字列', share_valid_token($fl['token']), true);
+check('リンク: 文字列から本人のリンクが見つかる', (int)share_link_find($fl['token'])['owner_id'], (int)$a['id']);
+$fl2 = share_link_create('family', $a);
+check('リンク: 作り直すと別の文字列になる', $fl2['token'] !== $fl['token'], true);
+check('リンク: 作り直すと、古いURLは使えない', share_link_find($fl['token']), null);
+check('リンク: 本人ごとに別のリンク', share_link_create('family', $b)['token'] !== $fl2['token'], true);
+check('リンク: 不正な文字列は無効（空・短い・SQL・大文字）', [share_link_find(''), share_link_find('abc'), share_link_find("' OR 1=1 --"), share_link_find(strtoupper($fl2['token']))], [null, null, null, null]);
+// 家族用の見える範囲
+$fam = share_link_find($fl2['token']);
+$famTitles = array_column(share_events($fam, $sd, $sd), 'title');
+check('家族用: 「共有する」プライベート予定だけが見える', $famTitles, ['家族に共有する予定']);
+check('家族用: 共有しない予定・他人の予定・業務・休みは出ない', [in_array('共有しない予定', $famTitles, true), in_array('鈴木の私的予定', $famTitles, true), in_array('共有される業務', $famTitles, true), count(array_filter(share_events($fam, $sd, $sd), function ($e) { return $e['kind'] !== 'private'; }))], [false, false, false, 0]);
+check('家族用: メモも見える（本人が共有した予定だから）', share_events($fam, $sd, $sd)[0]['note'], '場所メモ');
+check('家族用: 期間の外は出ない', share_events($fam, date('Y-m-d', strtotime($sd . ' +1 day')), date('Y-m-d', strtotime($sd . ' +5 day'))), []);
+// 共有をあとから外すと、すぐ見えなくなる
+$tmpShared = $mk($a, ['kind' => 'private', 'title' => 'あとで外す', 'start' => $sd]);
+check('家族用: 共有中は見える', in_array('あとで外す', array_column(share_events($fam, $sd, $sd), 'title'), true), true);
+[$dd2] = validate_event_input(['kind' => 'private', 'title' => 'あとで外す', 'start' => $sd, 'family_shared' => 0], $a);
+save_event($dd2, $a, $tmpShared);
+check('家族用: チェックを外すと、すぐ見えなくなる', in_array('あとで外す', array_column(share_events($fam, $sd, $sd), 'title'), true), false);
+// 会社用の見える範囲
+$cl = share_link_create('company', $admin);
+$comp = share_link_find($cl['token']);
+$compEv = share_events($comp, $sd, $sd);
+check('会社用: 業務と休みが見える', array_column($compEv, 'title'), ['共有される業務', '休み']);
+check('会社用: プライベートは（共有にチェックがあっても）絶対に出ない', count(array_filter($compEv, function ($e) { return $e['kind'] === 'private'; })), 0);
+check('会社用: メモは出さない', array_unique(array_column($compEv, 'note')), ['']);
+check('会社用: 管理者が停止すると使えなくなる', (function () use ($admin, $cl) { share_link_revoke('company', $admin); return share_link_find($cl['token']); })(), null);
+check('リンク: 一般社員は会社用リンクを止められない', $thrown(function () use ($a) { share_link_revoke('company', $a); }), true);
+// 利用停止になった本人の家族用リンクは使えない
+q('UPDATE users SET active = 0 WHERE id = ?', [$b['id']]);
+$bl = share_link_create('family', $b);
+check('リンク: 利用停止の本人の家族用リンクは無効', share_link_find($bl['token']), null);
+q('UPDATE users SET active = 1 WHERE id = ?', [$b['id']]);
+share_link_revoke('family', $a); share_link_revoke('family', $b);
+check('リンク: 停止すると使えない', share_link_find($fl2['token']), null);
+// 複製・ToDo⇔予定でも「共有しない」を引き継ぐ
+[$dup] = duplicate_event($pubHidden, [date('Y-m-d', strtotime($sd . ' +9 day'))], $a);
+check('共有設定: 複製しても「共有しない」を引き継ぐ', (int)$dup[0]['family_shared'], 0);
+$tdBack = event_to_todo($pubHidden, $a);
+check('共有設定: ToDoに戻しても「共有しない」を引き継ぐ', $tdBack['family_shared'], 0);
+$evBack = schedule_todo(find_todo((int)$tdBack['id'], $a), $sd, $a);
+check('共有設定: ToDoから予定にしても「共有しない」のまま', (int)$evBack['family_shared'], 0);
+[$tdN] = validate_todo_input(['kind' => 'private', 'title' => '共有ToDo']);
+check('共有設定: プライベートToDoの初期値は「共有する」', $tdN['family_shared'], 1);
 
 // ---- 自動更新(ensure_schema) ----
 ensure_schema();

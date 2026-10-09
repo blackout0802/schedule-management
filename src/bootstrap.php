@@ -162,6 +162,19 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
     }
+    foreach (['events', 'todos'] as $t) {
+        try {
+            db()->query("SELECT family_shared FROM $t LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            // 既存のプライベート予定・ToDoは「家族に共有する」(1)が初期値
+            db()->exec("ALTER TABLE $t ADD COLUMN family_shared INTEGER NOT NULL DEFAULT 1");
+        }
+    }
+    try {
+        db()->query('SELECT done_at FROM todos LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE todos ADD COLUMN done_at DATETIME NULL');
+    }
     try {
         db()->query('SELECT sort_order FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {

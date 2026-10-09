@@ -2,6 +2,7 @@
 (function () {
   'use strict';
 
+  var SHARE = window.SCHEDULE_SHARE || null; // 共有リンクの閲覧ページ（ログイン不要・閲覧専用）
   var root = document.getElementById('app');
   var csrf = root.getAttribute('data-csrf');
   var DOW = ['日', '月', '火', '水', '木', '金', '土'];
@@ -14,7 +15,7 @@
   };
 
   var S = {
-    me: null, view: 'team', year: 0, month: 0, todos: [], drag: null, memoHtml: '', memoLoaded: false,
+    me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], drag: null, memoHtml: '', memoLoaded: false,
     events: [], holidays: {}, tags: null, showOff: true, loading: false
   };
 
@@ -51,7 +52,8 @@
     var qs = Object.keys(opts.params || {}).map(function (k) { return '&' + k + '=' + encodeURIComponent(opts.params[k]); }).join('');
     var init = { method: opts.body ? 'POST' : 'GET', credentials: 'same-origin', headers: {} };
     if (opts.body) { init.headers['Content-Type'] = 'application/json'; init.headers['X-CSRF-Token'] = csrf; init.body = JSON.stringify(opts.body); }
-    return fetch('api.php?action=' + action + qs, init).then(function (r) {
+    var url = SHARE ? 'share_api.php?t=' + encodeURIComponent(SHARE.token) + '&action=' + action + qs : 'api.php?action=' + action + qs;
+    return fetch(url, init).then(function (r) {
       if (r.status === 401) { location.href = 'login.php'; throw new Error('login'); }
       return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'エラーが発生しました'); return j; });
     });
@@ -88,13 +90,23 @@
   });
 
   /* ---------- 画面の骨組み ---------- */
+  /* 共有リンクの閲覧ページ: 月の移動と、予定の詳細を見るだけ。編集・ToDo・メモは無い */
+  function renderShareShell() {
+    root.textContent = '';
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }))));
+    root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
+    renderToolbar();
+  }
+
   function renderShell() {
+    if (SHARE) return renderShareShell();
     flushMemo();
     root.textContent = '';
     var menuList = null;
     var menuBtn = el('button', { class: 'btn small', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', text: S.me.user.name + ' ▾' });
     var items = [
-      el('button', { type: 'button', text: '繰り返し業務の設定', onclick: function () { closeMenu(); openSeriesDialog(); } })
+      el('button', { type: 'button', text: '繰り返し業務の設定', onclick: function () { closeMenu(); openSeriesDialog(); } }),
+      el('button', { type: 'button', text: '共有リンク（家族・会社へ）', onclick: function () { closeMenu(); openShareDialog(); } })
     ];
     if (S.me.user.role === 'admin') {
       items.push(el('button', { type: 'button', text: '社員の管理', onclick: function () { closeMenu(); openUsersDialog(); } }));
@@ -142,10 +154,15 @@
       el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', text: '›', onclick: function () { nav(1); } }),
       el('button', { class: 'btn', type: 'button', text: '今日', onclick: function () { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); } }),
       el('span', { class: 'spacer', style: 'flex:1' }),
-      el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
+      el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
+        [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
+          return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
+        })),
+      SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
     ));
-    tb.appendChild(el('div', { class: 'view-banner ' + S.view, style: 'margin-top:8px',
-      text: S.view === 'team' ? '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）' : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
+    tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
+      text: SHARE ? (SHARE.kind === 'family' ? '共有されたプライベートの予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
+        : S.view === 'team' ? '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）' : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
   }
 
 
@@ -175,7 +192,7 @@
   function load() {
     var r = gridRange();
     var params = { from: ymd(r.start), to: ymd(r.end), view: S.view };
-    if (S.view === 'me') { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
+    if (S.view === 'me' && !SHARE) { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
     S.loading = true;
     api('events', { params: params }).then(function (j) {
       S.events = j.events; S.holidays = j.holidays; S.loading = false; renderBoard();
@@ -189,7 +206,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    return (e.recurring ? '↻ ' : '') + time + t;
+    return (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
   /* 土日祝か（会社の休業日を含む。祝日は読み込んだ範囲の分だけ分かる） */
@@ -251,10 +268,43 @@
     return bar;
   }
 
+  /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
+  function plainBar(e, ds) {
+    return el('div', { role: 'button', tabindex: '0', class: 'bar plain ' + e.kind,
+      text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
+  }
+  function renderListView(board) {
+    if (!SHARE) {
+      var mgr = el('section', { id: 'todo-mgr', class: 'todo todo-mgr', 'aria-label': 'ToDoの管理' });
+      board.appendChild(mgr);
+      renderTodoInto(mgr, true);
+    }
+    var todayStr = ymd(new Date());
+    var list = el('div', { class: 'list' });
+    var any = false;
+    var last = new Date(S.year, S.month, 0).getDate();
+    for (var i = 1; i <= last; i++) {
+      var d = new Date(S.year, S.month - 1, i), ds = ymd(d), hol = S.holidays[ds];
+      var evs = S.events.filter(function (e) { return shownOn(e, ds); });
+      if (!evs.length && !hol) continue;
+      any = true;
+      list.appendChild(el('div', { class: 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (ds === todayStr ? ' today' : '') },
+        el('div', { class: 'dt' }, (d.getMonth() + 1) + '/' + d.getDate(), el('small', { text: DOW[d.getDay()] + '曜日' + (hol ? '・' + hol : '') })),
+        el('div', { class: 'list-items' }, evs.map(function (e) { return plainBar(e, ds); }))));
+    }
+    if (!any) list.appendChild(el('p', { class: 'empty-note', text: 'この月の予定はまだありません。' }));
+    board.appendChild(el('h3', { class: 'list-h', text: S.year + '年' + S.month + '月の予定' }));
+    board.appendChild(list);
+  }
+
   function renderBoard() {
     var board = document.getElementById('board');
     if (!board) return;
     board.textContent = '';
+    var lay = document.querySelector('.layout');
+    if (lay) lay.classList.toggle('list-mode', S.mode === 'list');
+    if (S.mode === 'list') { renderListView(board); return; }
     var todayStr = ymd(new Date());
     var r = gridRange();
     var days = [];
@@ -271,10 +321,10 @@
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
       el('span', null, el('i', { style: 'background:var(--work)' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--off)' }), '休み'),
-      S.view === 'me' ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
+      S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
       el('span', { text: '↻ 毎月の繰り返し' }),
       el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
-      el('span', { text: '予定はドラッグで別の日へ動かせます' })));
+      SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます' })));
   }
 
   function renderWeek(days, todayStr) {
@@ -285,7 +335,7 @@
       var s = ymd(d), hol = S.holidays[s];
       var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
-        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { openEventDialog(null, s); } },
+        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: SHARE ? null : function () { openEventDialog(null, s); } },
         el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
     });
     pack.segs.forEach(function (g) { week.appendChild(barFor(g, days)); });
@@ -347,7 +397,7 @@
 
   /* ---------- 予定の追加・編集 ---------- */
   function openEventDialog(ev, dateStr) {
-    if (ev && !ev.editable) return openEventView(ev);
+    if (SHARE || (ev && !ev.editable)) return openEventView(ev);
     var isNew = !ev;
     var kind = ev ? ev.kind : (S.view === 'me' ? 'private' : 'work');
     var kinds = [['work', '業務'], ['off', '休み']];
@@ -369,6 +419,8 @@
     var note = el('textarea', { name: 'note', maxlength: '500' });
     note.value = ev ? ev.note : '';
     var hint = el('p', { class: 'hint' });
+    var famCb = el('input', { type: 'checkbox', name: 'family_shared', checked: ev ? ev.family_shared !== false : true, style: 'width:auto' });
+    var famLabel = el('label', { class: 'check', title: '共有リンク（家族用）で見られるか' }, famCb, '家族に共有する（共有リンクで見える）');
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
 
     function curKind() { var c = form.querySelector('input[name=kind]:checked'); return c ? c.value : kind; }
@@ -380,6 +432,7 @@
       tags.forEach(function (t) { tag.appendChild(el('option', { value: t, text: t, selected: t === cur })); });
       if (k === 'work' && !cur) tag.value = S.me.work_tags[0];
       tagLabel.hidden = k === 'private';
+      famLabel.hidden = k !== 'private';
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示され、Slackにも通知されます。' : '業務の予定は全員に表示されます。';
@@ -392,7 +445,7 @@
       err.hidden = true;
       var body = {
         id: ev ? ev.id : null, kind: curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
-        start_time: st.value, end_time: et.value, note: note.value
+        start_time: st.value, end_time: et.value, note: note.value, family_shared: famCb.checked
       };
       if (!ownerLabel.hidden) body.owner_id = owner.value;
       api('event_save', { body: body }).then(function () {
@@ -414,6 +467,7 @@
       el('div', { class: 'row' }, el('label', null, '開始日', start), el('label', null, '終了日', end)),
       el('div', { class: 'row' }, el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
       el('label', null, 'メモ（任意）', note),
+      famLabel,
       hint,
       ev && ev.recurring ? el('p', { class: 'hint', text: '↻ 毎月の繰り返しから作られた予定です。この回を編集すると、以後ルールを変更してもこの回は変わりません。' }) : null,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
@@ -430,7 +484,7 @@
 
   /* ---------- ToDo ---------- */
   function loadTodos() {
-    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; renderTodo(); }).catch(fail);
+    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; renderTodo(); }).catch(fail);
   }
 
   /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
@@ -454,9 +508,17 @@
     }).catch(fail);
   }
 
+  /* 細い欄（カレンダーの横）と、リストタブの管理画面の両方を描く */
   function renderTodo() {
-    var box = document.getElementById('todo');
-    if (!box) return;
+    var side = document.getElementById('todo');
+    if (side) renderTodoInto(side, false);
+    var mgr = document.getElementById('todo-mgr');
+    if (mgr) renderTodoInto(mgr, true);
+  }
+
+  function setMode(m) { S.mode = m; store('sched.mode', m); renderToolbar(); renderBoard(); }
+
+  function renderTodoInto(box, full) {
     box.textContent = '';
     var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容' });
     var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類' }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
@@ -468,13 +530,30 @@
 
     var list = el('div', { class: 'todo-list' });
     S.todos.forEach(function (t) { list.appendChild(todoItem(t)); });
-    if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: 'ToDoはありません。上の欄に入力して追加できます。' }));
+    if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。上の欄に入力して追加できます。' }));
 
-    box.appendChild(el('h2', { text: 'ToDo' }));
-    box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。日付へドラッグすると、会社に共有される予定になります。' : 'あなただけに見えるToDoです。日付へドラッグすると予定になります。' }));
+    box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
+    box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。左のチェックで完了にすると、リストから消えて「完了」に移ります。' : 'あなただけに見えるToDoです。左のチェックで完了にすると、リストから消えて「完了」に移ります。' }));
     box.appendChild(form);
     box.appendChild(list);
-    box.appendChild(el('p', { class: 'hint todo-foot', text: 'カレンダーの予定をここへドラッグすると、ToDoに戻ります。ToDoは、ドラッグで並べ替えられます。' }));
+
+    if (full) {
+      // 完了したToDo
+      var det = el('details', { class: 'todo-done', open: S.done.length ? 'true' : null }, el('summary', { text: '完了したToDo（' + S.done.length + '件）' }));
+      if (S.done.length) {
+        S.done.forEach(function (t) { det.appendChild(doneItem(t)); });
+        det.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start;margin-top:6px' }, el('button', { class: 'btn small danger', type: 'button', text: '完了をすべて削除', onclick: function () {
+          if (!window.confirm('完了したToDo ' + S.done.length + '件を、すべて削除します。元に戻せません。よろしいですか？')) return;
+          api('todo_clear_done', { body: { view: S.view } }).then(function (j) { toast(j.deleted + '件を削除しました'); loadTodos(); }).catch(fail);
+        } })));
+      } else {
+        det.appendChild(el('p', { class: 'todo-empty', text: 'まだありません。' }));
+      }
+      box.appendChild(det);
+    } else {
+      box.appendChild(el('p', { class: 'hint todo-foot' }, 'カレンダーの日付へドラッグすると予定になり、予定をここへドラッグするとToDoに戻ります。',
+        el('br'), el('a', { href: '#', text: S.done.length ? '完了したToDo（' + S.done.length + '件）を見る・管理する' : 'リストでToDoを管理する', onclick: function (e) { e.preventDefault(); setMode('list'); } })));
+    }
 
     // 欄の空いたところへのドロップ（末尾に入る）
     box.ondragover = function (ev) {
@@ -490,18 +569,39 @@
     };
   }
 
+  function setDone(t, done) {
+    api('todo_done', { body: { id: t.id, done: done } }).then(function () {
+      toast(done ? '完了にしました: ' + t.title : '未完了に戻しました: ' + t.title);
+      loadTodos();
+    }).catch(function (x) { fail(x); loadTodos(); });
+  }
+
+  function doneItem(t) {
+    return el('div', { class: 'todo-item done ' + t.kind },
+      el('input', { type: 'checkbox', class: 't-check', checked: true, 'aria-label': '未完了に戻す', title: 'チェックを外すと、未完了に戻ります', onchange: function () { setDone(t, false); } }),
+      el('div', { class: 't-body' },
+        el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
+          el('span', { class: 'pill', text: t.done_at ? mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' : '完了' })),
+        el('div', { class: 't-actions' }, el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function () {
+          if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
+          api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+        } }))));
+  }
+
   function todoItem(t) {
     var btn = function (label, title, fn) { return el('button', { class: 'btn small ghost', type: 'button', text: label, title: title, onclick: function (e) { e.stopPropagation(); fn(); } }); };
     var item = el('div', { class: 'todo-item ' + t.kind, draggable: 'true', 'data-id': String(t.id) },
-      el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
-        t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null)),
-      el('div', { class: 't-actions' },
-        btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),
-        btn('編集', 'ToDoを編集', function () { openTodoDialog(t); }),
-        btn('削除', 'ToDoを削除', function () {
-          if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
-          api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
-        })));
+      el('input', { type: 'checkbox', class: 't-check', 'aria-label': '完了にする', title: '完了にする（リストから消えて、「完了」に移ります）', onchange: function () { setDone(t, true); } }),
+      el('div', { class: 't-body' },
+        el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
+          t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null)),
+        el('div', { class: 't-actions' },
+          btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),
+          btn('編集', 'ToDoを編集', function () { openTodoDialog(t); }),
+          btn('削除', 'ToDoを削除', function () {
+            if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
+            api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+          }))));
     item.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
     item.addEventListener('dragend', endDrag);
     item.addEventListener('dragover', function (ev) {
@@ -529,15 +629,17 @@
     var tag = el('select', { name: 'tag' }, S.me.work_tags.map(function (x) { return el('option', { value: x, text: x, selected: x === t.tag }); }));
     var tagLabel = el('label', null, '分類（予定にしたときの分類）', tag);
     var note = el('textarea', { maxlength: '500' }); note.value = t.note || '';
+    var famCb = el('input', { type: 'checkbox', checked: t.family_shared !== false, style: 'width:auto' });
+    var famLabel = el('label', { class: 'check' }, famCb, '家族に共有する（予定にしたとき、共有リンクで見える）');
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     function kindNow() { var c = form.querySelector('input[name=tkind]:checked'); return c ? c.value : 'work'; }
-    function sync() { tagLabel.hidden = kindNow() === 'private'; }
+    function sync() { tagLabel.hidden = kindNow() === 'private'; famLabel.hidden = kindNow() !== 'private'; }
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      api('todo_save', { body: { id: t.id, title: title.value, kind: kindNow(), tag: tag.value, note: note.value } })
+      api('todo_save', { body: { id: t.id, title: title.value, kind: kindNow(), tag: tag.value, note: note.value, family_shared: famCb.checked } })
         .then(function () { ov.close(); toast('ToDoを更新しました'); loadTodos(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
-      el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), el('label', null, '内容', title), tagLabel, el('label', null, 'メモ（任意）', note), err,
+      el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), el('label', null, '内容', title), tagLabel, el('label', null, 'メモ（任意）', note), famLabel, err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal('ToDoを編集', form);
     sync();
@@ -702,6 +804,8 @@
       var me = S.me.user.id, hol = j.holidays;
       var off = function (ds) { var w = parse(ds).getDay(); return w === 0 || w === 6 || !!hol[ds]; };
       var todos = S.todos.filter(function (t) { return t.kind === 'work'; }).map(function (t) { return t.title; });
+      // 今日完了した業務のToDoは、取り消し線つきで入れる（終わった業務に線を引く、いつもの形）
+      var doneToday = S.done.filter(function (t) { return t.kind === 'work' && t.done_at && t.done_at.slice(0, 10) === from; }).map(function (t) { return { t: t.title, s: true }; });
       var itemsFor = function (ds) {
         var list = [];
         j.events.forEach(function (e) {
@@ -709,7 +813,7 @@
           if (e.start !== e.end && off(ds)) return; // 期間のある業務は土日祝に出さない（カレンダーと同じ）
           list.push((e.start_time ? e.start_time + ' ' : '') + e.title);
         });
-        return list.concat(todos);
+        return list.concat(todos, ds === from ? doneToday : []);
       };
       var next = addDays(today, 1);
       for (var i = 0; i < 14 && off(ymd(next)); i++) next = addDays(next, 1);
@@ -734,7 +838,9 @@
       tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
       tool('日報の雛形', '本日と次の営業日の予定・ToDoを入れた日報の下書きを作る', function () {
         if (memoLines(memoEditor).length && !window.confirm('いまのメモを、日報の雛形で置き換えます。よろしいですか？')) return;
-        buildReportLines().then(function (L) { fillMemo(linesToSaveHtml(L.map(function (t) { return t === '' ? [] : [{ t: t, s: false }]; }))); memoChanged(); }).catch(fail);
+        buildReportLines().then(function (L) {
+          fillMemo(linesToSaveHtml(L.map(function (t) { return t === '' ? [] : typeof t === 'string' ? [{ t: t, s: false }] : [{ t: t.t, s: true }]; }))); memoChanged();
+        }).catch(fail);
       }),
       tool('クリア', 'メモを空にする', function () {
         if (!memoLines(memoEditor).length || !window.confirm('メモを空にします。よろしいですか？')) return;
@@ -846,15 +952,65 @@
   }
 
   function openEventView(ev) {
-    var rows = [['種類', ev.kind === 'off' ? '休み' : '業務'], ['件名', eventLabel(ev, true)], ['日付', ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)]];
+    var rows = [['種類', ev.kind === 'off' ? '休み' : ev.kind === 'private' ? 'プライベート' : '業務'], ['件名', eventLabel(ev, true)], ['日付', ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)]];
     if (ev.start_time) rows.push(['時刻', ev.start_time + (ev.end_time ? ' 〜 ' + ev.end_time : '')]);
     if (ev.tag) rows.push(['分類', ev.tag]);
     rows.push(['持ち主', ev.owner_name]);
     if (ev.note) rows.push(['メモ', ev.note]);
     var dl = el('dl', { class: 'detail' }, rows.map(function (r) { return [el('dt', { text: r[0] }), el('dd', { text: r[1] })]; }));
     var ov = openModal('予定の詳細', el('div', { class: 'form' }, dl,
-      el('p', { class: 'hint', text: 'この予定は持ち主と管理者だけが編集できます。' }),
+      SHARE ? null : el('p', { class: 'hint', text: 'この予定は持ち主と管理者だけが編集できます。' }),
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
+  }
+
+  /* ---------- 共有リンク ---------- */
+  function openShareDialog() {
+    var body = el('div', { class: 'form' });
+    var ov = openModal('共有リンク（閲覧専用）', body, true);
+    var absUrl = function (path) { return new URL(path, location.href).href; };
+    function card(l) {
+      var family = l.kind === 'family';
+      var box = el('div', { class: 'card' },
+        el('div', { class: 'name', text: family ? '家族用リンク' : '会社用リンク（管理者のみ）' }),
+        el('p', { class: 'hint', style: 'margin:0', text: family
+          ? 'あなたのプライベートの予定のうち、「家族に共有する」にチェックが入ったものだけが見られます。業務の予定・休みは含まれません。ログイン不要で、見るだけです。'
+          : '会社の業務の予定と休みが見られます。プライベートの予定は含まれません。ログイン不要で、見るだけです。' }));
+      if (l.path) {
+        var url = absUrl(l.path);
+        var input = el('input', { type: 'text', readonly: true, value: url, 'aria-label': 'リンクのURL', onclick: function (e) { e.target.select(); } });
+        box.appendChild(el('div', { class: 'share-row' }, input,
+          el('button', { class: 'btn small primary', type: 'button', text: 'コピー', onclick: function () {
+            var done = function () { toast('リンクをコピーしました'); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { input.select(); toast('選択しました。Ctrl + C でコピーしてください'); });
+            else { input.select(); try { document.execCommand('copy'); done(); } catch (e) { toast('Ctrl + C でコピーしてください'); } }
+          } }),
+          el('a', { class: 'btn small', href: url, target: '_blank', rel: 'noopener noreferrer', text: '開く' })));
+        box.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
+          el('button', { class: 'btn small', type: 'button', text: 'リンクを作り直す', title: '古いURLは、すぐに見られなくなります', onclick: function () {
+            if (!window.confirm('リンクを作り直します。古いURLは、すぐに見られなくなります（共有している人には新しいURLを伝え直してください）。よろしいですか？')) return;
+            api('share_create', { body: { kind: l.kind } }).then(function () { toast('作り直しました'); refresh(); }).catch(fail);
+          } }),
+          el('button', { class: 'btn small danger', type: 'button', text: '共有を止める', onclick: function () {
+            if (!window.confirm('共有を止めます。このURLでは、もう見られなくなります。よろしいですか？')) return;
+            api('share_revoke', { body: { kind: l.kind } }).then(function () { toast('共有を止めました'); refresh(); }).catch(fail);
+          } })));
+      } else {
+        box.appendChild(el('div', null, el('button', { class: 'btn primary small', type: 'button', text: 'リンクを作る', onclick: function () {
+          api('share_create', { body: { kind: l.kind } }).then(function () { toast('リンクを作りました'); refresh(); }).catch(fail);
+        } })));
+      }
+      return box;
+    }
+    function refresh() {
+      api('share_list').then(function (j) {
+        body.textContent = '';
+        body.appendChild(el('div', { class: 'notice' }, el('b', { text: 'このURLを知っている人は、ログインなしで見られます' }),
+          el('p', { text: '見せたい人にだけ伝えてください。会社の人が見られる場所に、家族用のURLを載せないでください。URLが他の人に伝わったときは「リンクを作り直す」か「共有を止める」で、すぐに見られなくなります。' })));
+        j.links.forEach(function (l) { body.appendChild(card(l)); });
+        body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+      }).catch(fail);
+    }
+    refresh();
   }
 
   /* ---------- 繰り返し業務 ---------- */
@@ -1058,6 +1214,19 @@
   }
 
   /* ---------- 起動 ---------- */
+  if (SHARE) {
+    api('meta').then(function (m) {
+      S.me = { user: { id: 0, name: '閲覧専用', role: 'viewer' }, app_name: m.app_name, work_tags: [], off_tags: [], users: [] };
+      S.shareTitle = m.title;
+      S.view = SHARE.kind === 'family' ? 'me' : 'team';
+      S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
+      document.title = m.title;
+      var now = new Date();
+      S.year = now.getFullYear(); S.month = now.getMonth() + 1;
+      renderShell(); load();
+    }).catch(function (e) { if (window.console) console.error(e); root.textContent = 'このリンクは無効です。共有してくれた方に確認してください。'; });
+    return;
+  }
   api('me').then(function (me) {
     S.me = me;
     csrf = me.csrf;
@@ -1067,6 +1236,7 @@
     S.tags = f && Array.isArray(f.tags) ? f.tags.filter(function (t) { return me.work_tags.indexOf(t) >= 0; }) : me.work_tags.filter(function (t) { return t !== '個人作業'; });
     S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
+    S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
     var start = function () { renderShell(); load(); };
     if (me.user.must_change_password) {
       root.textContent = '';

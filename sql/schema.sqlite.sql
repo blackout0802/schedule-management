@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS events (
   series_id INTEGER NULL,
   ym TEXT NULL,
   detached INTEGER NOT NULL DEFAULT 0,
+  family_shared INTEGER NOT NULL DEFAULT 1,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -71,6 +72,8 @@ CREATE TABLE IF NOT EXISTS todos (
   tag TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   sort_order INTEGER NOT NULL DEFAULT 0,
+  family_shared INTEGER NOT NULL DEFAULT 1,
+  done_at TEXT NULL,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_todos_owner ON todos (owner_id);
@@ -83,4 +86,14 @@ CREATE TABLE IF NOT EXISTS memos (
   owner_id INTEGER NOT NULL PRIMARY KEY,
   body TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS share_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  owner_id INTEGER NOT NULL DEFAULT 0,
+  token TEXT NOT NULL UNIQUE,
+  created_by INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (kind, owner_id)
 );

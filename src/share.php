@@ -1,0 +1,124 @@
+<?php
+// 共有リンク: ログインなしで見られる、閲覧専用のURL。
+//
+//   company … 会社用。業務の予定と休みだけ（プライベートは絶対に含まれない）。管理者が作る
+//   family  … 家族用。リンクを作った本人の、「家族に共有」にチェックが入ったプライベート予定だけ。本人が作る
+//
+// 見せる範囲は、このファイルの SQL で決める（画面で隠すのではなく、サーバーが渡さない）。
+// リンクは推測できない長いランダム文字列。作り直す／止めると、古いURLはすぐ使えなくなる。
+
+require_once __DIR__ . '/holidays.php';
+
+const SHARE_KINDS = ['company', 'family'];
+
+function share_new_token(): string
+{
+    return bin2hex(random_bytes(24)); // 48文字（192ビット）
+}
+
+function share_valid_token(string $t): bool
+{
+    return (bool)preg_match('/^[a-f0-9]{48}$/', $t);
+}
+
+/** 会社用は owner_id = 0、家族用は作った本人の id */
+function share_owner_key(string $kind, array $user): int
+{
+    return $kind === 'company' ? 0 : (int)$user['id'];
+}
+
+function share_link_get(string $kind, array $user): ?array
+{
+    return row('SELECT * FROM share_links WHERE kind = ? AND owner_id = ?', [$kind, share_owner_key($kind, $user)]);
+}
+
+/** リンクを作る。すでにあれば作り直す（古いURLは使えなくなる） */
+function share_link_create(string $kind, array $user): array
+{
+    if (!in_array($kind, SHARE_KINDS, true)) {
+        throw new RuntimeException('共有リンクの種類が正しくありません。');
+    }
+    if ($kind === 'company' && !is_admin($user)) {
+        throw new RuntimeException('会社用のリンクは、管理者だけが作れます。');
+    }
+    $owner = share_owner_key($kind, $user);
+    $token = share_new_token();
+    if (share_link_get($kind, $user)) {
+        q('UPDATE share_links SET token = ?, created_by = ?, created_at = ? WHERE kind = ? AND owner_id = ?', [$token, $user['id'], now_str(), $kind, $owner]);
+    } else {
+        q('INSERT INTO share_links (kind, owner_id, token, created_by, created_at) VALUES (?,?,?,?,?)', [$kind, $owner, $token, $user['id'], now_str()]);
+    }
+    return share_link_get($kind, $user);
+}
+
+function share_link_revoke(string $kind, array $user): void
+{
+    if ($kind === 'company' && !is_admin($user)) {
+        throw new RuntimeException('会社用のリンクは、管理者だけが止められます。');
+    }
+    q('DELETE FROM share_links WHERE kind = ? AND owner_id = ?', [$kind, share_owner_key($kind, $user)]);
+}
+
+/** 閲覧のときに、リンクの文字列から探す。無効・存在しなければ null */
+function share_link_find(string $token): ?array
+{
+    if (!share_valid_token($token)) {
+        return null;
+    }
+    $l = row('SELECT * FROM share_links WHERE token = ?', [$token]);
+    if (!$l) {
+        return null;
+    }
+    if ($l['kind'] === 'family') {
+        $u = row('SELECT id, name FROM users WHERE id = ? AND active = 1', [$l['owner_id']]);
+        if (!$u) {
+            return null; // 本人が利用停止になったら、家族用リンクも使えない
+        }
+        $l['owner_name'] = $u['name'];
+    }
+    return $l;
+}
+
+function share_title(array $link): string
+{
+    return $link['kind'] === 'company' ? '業務カレンダー（閲覧専用）' : $link['owner_name'] . ' さんの予定（家族用・閲覧専用）';
+}
+
+/**
+ * 閲覧用の予定を返す。リンクの種類で、見せてよいものだけを SQL で絞る。
+ * 会社用: kind IN (work, off) だけ。メモは返さない。
+ * 家族用: 本人の kind = private で、family_shared = 1 のものだけ。
+ */
+function share_events(array $link, string $from, string $to): array
+{
+    if ($link['kind'] === 'company') {
+        $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
+                      WHERE e.kind IN ('work','off') AND u.active = 1 AND e.start_date <= ? AND e.end_date >= ?
+                      ORDER BY e.start_date, e.start_time, e.id", [$to, $from]);
+    } else {
+        $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
+                      WHERE e.kind = 'private' AND e.owner_id = ? AND e.family_shared = 1 AND e.start_date <= ? AND e.end_date >= ?
+                      ORDER BY e.start_date, e.start_time, e.id", [(int)$link['owner_id'], $to, $from]);
+    }
+    $withNote = $link['kind'] === 'family';
+    return array_map(function ($e) use ($withNote) {
+        return [
+            'id' => (int)$e['id'], 'title' => $e['title'], 'kind' => $e['kind'], 'tag' => $e['tag'],
+            'start' => $e['start_date'], 'end' => $e['end_date'], 'start_time' => $e['start_time'], 'end_time' => $e['end_time'],
+            'note' => $withNote ? $e['note'] : '', 'owner_id' => (int)$e['owner_id'], 'owner_name' => $e['owner_name'],
+            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'editable' => false,
+        ];
+    }, $list);
+}
+
+function share_holidays(string $from, string $to): array
+{
+    $h = [];
+    for ($y = (int)substr($from, 0, 4); $y <= (int)substr($to, 0, 4); $y++) {
+        $h += Holidays::national($y);
+    }
+    foreach (rows('SELECT hdate, name FROM company_holidays WHERE hdate BETWEEN ? AND ?', [$from, $to]) as $r) {
+        $h[$r['hdate']] = $r['name'];
+    }
+    return $h;
+}
