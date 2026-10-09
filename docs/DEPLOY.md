@@ -29,6 +29,13 @@
 2. `public` フォルダの**中身**（index.php, login.php, api.php, assets など）を `public_html/schedule/` にアップロードします。
 3. 画面を置いたフォルダから見て**2つ上の階層**に `schedule_app` フォルダがあれば、自動で見つかります（例: `…/public_html/schedule/` なら `…/schedule_app/`）。この配置なら書き換えは不要です。別の場所に置いた場合だけ、`app_path.php` の絶対パスを書き換えます。
 
+### 方式A'（これまでのアプリと同じく public_html の中に置く）
+
+本体の `schedule_app` を、`public_html` の中の、画面のフォルダの**隣**に置きます（例: `public_html/schedule_app/` と `public_html/サイト名/`）。
+
+- `schedule_app` の直下に `.htaccess`（リポジトリ直下のものと同じ「アクセス拒否」の設定）を**必ず置いてください**。これで `config.php` などがURLから見えなくなります。（Apache 2.4 で、`config.php`・`src`・`sql`・`bin` が403になることを確認済みです。サーバー側で `.htaccess` が使える設定になっているかは、手順5で確認してください。）
+- 方式Aより少し弱い点: 「公開フォルダの外」ではなく、`.htaccess` に守りを頼る形になります。
+
 ### 方式B（いちばん簡単）: 一式を公開フォルダに置く
 
 1. プロジェクト一式を `public_html/schedule/` にアップロードします。
