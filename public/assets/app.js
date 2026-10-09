@@ -1338,7 +1338,7 @@
     function refresh() {
       api('users_list').then(function (j) {
         body.textContent = '';
-        body.appendChild(el('div', { class: 'scroll-x' }, el('table', { class: 't' },
+        body.appendChild(el('div', { class: 'scroll-x' }, el('table', { class: 't stack' },
           el('thead', null, el('tr', null, ['名前', 'メールアドレス', '権限', 'Slack ID', ''].map(function (h) { return el('th', { text: h }); }))),
           el('tbody', null, j.users.map(function (u) {
             return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') + (u.must_change_password ? '（初回パスワード未変更）' : '') }), el('td', { text: u.email }),
