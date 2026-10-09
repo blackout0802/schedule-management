@@ -134,12 +134,14 @@ function handle_api(): void
 
     switch ($action) {
         case 'me':
+            ensure_schema(); // アプリのファイルを更新したあと、足りないテーブルを自動で作る
             migrate_data(); // 画面を開くたびに、名称変更の反映漏れがないようにする（軽い1文）
             api_out([
                 'user' => ['id' => (int)$user['id'], 'name' => $user['name'], 'email' => $user['email'], 'role' => $user['role'],
                     'must_change_password' => (int)$user['must_change_password'] === 1],
                 'csrf' => csrf_token(),
                 'app_name' => cfg('app_name'),
+                'app_version' => APP_VERSION,
                 'work_tags' => cfg('work_tags'),
                 'off_tags' => cfg('off_tags'),
                 'slack' => slack_enabled(),
@@ -215,6 +217,77 @@ function handle_api(): void
                 notify_offs_registered($created, $owner, $user);
             }
             api_out(['created' => count($created), 'skipped' => $skipped]);
+
+        case 'event_move':
+            $e = find_event((int)($in['id'] ?? 0), $user);
+            if (!$e) {
+                api_fail('予定が見つかりません。', 404);
+            }
+            if (!can_edit_event($e, $user)) {
+                api_fail('この予定は動かせません。', 403);
+            }
+            $to = (string)($in['start'] ?? '');
+            if (!valid_date($to)) {
+                api_fail('日付を正しく入力してください。');
+            }
+            $moved = move_event($e, $to);
+            api_out(['ok' => true, 'start' => $moved['start_date'], 'end' => $moved['end_date']]);
+
+        case 'todo_list':
+            api_out(['todos' => list_todos($user, ($_GET['view'] ?? 'me') === 'team' ? 'team' : 'me')]);
+
+        case 'todo_save':
+            $existing = null;
+            if (!empty($in['id'])) {
+                $existing = find_todo((int)$in['id'], $user);
+                if (!$existing) {
+                    api_fail('ToDoが見つかりません。', 404);
+                }
+            }
+            [$data, $err] = validate_todo_input($in);
+            if ($err) {
+                api_fail($err);
+            }
+            api_out(['todo' => todo_for_client(save_todo($data, $user, $existing))]);
+
+        case 'todo_reorder':
+            reorder_todos(is_array($in['ids'] ?? null) ? $in['ids'] : [], $user);
+            api_out(['ok' => true]);
+
+        case 'todo_delete':
+            $t = find_todo((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            q('DELETE FROM todos WHERE id = ?', [$t['id']]);
+            api_out(['ok' => true]);
+
+        case 'todo_schedule':
+            $t = find_todo((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            $date = (string)($in['date'] ?? '');
+            if (!valid_date($date)) {
+                api_fail('日付を正しく入力してください。');
+            }
+            $ev = schedule_todo($t, $date, $user);
+            api_out(['ok' => true, 'event_id' => (int)$ev['id']]);
+
+        case 'event_to_todo':
+            $e = find_event((int)($in['id'] ?? 0), $user);
+            if (!$e) {
+                api_fail('予定が見つかりません。', 404);
+            }
+            if (!can_edit_event($e, $user)) {
+                api_fail('この予定はToDoに戻せません。', 403);
+            }
+            try {
+                $todo = event_to_todo($e, $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'todo' => todo_for_client($todo)]);
 
         case 'event_delete':
             $e = find_event((int)($in['id'] ?? 0), $user);

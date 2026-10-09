@@ -62,3 +62,19 @@ CREATE TABLE IF NOT EXISTS notification_log (
   ref TEXT NOT NULL UNIQUE,
   sent_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'work',
+  tag TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_todos_owner ON todos (owner_id);
+CREATE TABLE IF NOT EXISTS app_meta (
+  meta_key TEXT NOT NULL PRIMARY KEY,
+  meta_value TEXT NOT NULL
+);

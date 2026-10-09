@@ -12,6 +12,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/../src/auth.php';
 require_once __DIR__ . '/../src/events.php';
 require_once __DIR__ . '/../src/slack.php';
+require_once __DIR__ . '/../src/updater.php';
 
 $fail = 0;
 $pass = 0;
@@ -28,6 +29,14 @@ function check(string $name, $actual, $expected): void
 
 // ---- 休みの分類 ----
 check('休みの分類の並び', cfg('off_tags'), ['有給', '調整休', '午前半休', '午後半休']);
+$legacyCfg = $tmp . '/legacy.php';
+file_put_contents($legacyCfg, "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'off_tags' => ['有給', '午前半休', '午後半休', 'その他の休み']];");
+$custom = $tmp . '/custom.php';
+file_put_contents($custom, "<?php return ['db' => ['dsn' => 'sqlite::memory:'], 'off_tags' => ['有給', '特別休暇']];");
+foreach ([[$legacyCfg, ['有給', '調整休', '午前半休', '午後半休']], [$custom, ['有給', '特別休暇']]] as [$f, $want]) {
+    $out = trim((string)shell_exec('SCHEDULE_CONFIG=' . escapeshellarg($f) . ' ' . escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg('require ' . var_export(__DIR__ . '/../src/bootstrap.php', true) . '; echo json_encode(cfg("off_tags"), JSON_UNESCAPED_UNICODE);')));
+    check('古い初期値の config は新しい並びになり、自分で変えた分類は保たれる(' . basename($f) . ')', json_decode($out, true), $want);
+}
 
 // ---- 祝日 ----
 $h26 = Holidays::national(2026);
@@ -209,14 +218,116 @@ $srcSeries = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date L
 check('複製: 繰り返し予定のコピーは通常の予定', [$cr5[0]['series_id'], $cr5[0]['ym']], [null, null]);
 delete_series($sid2);
 
+// ---- 予定の移動 ----
+$mv = $mk($a, ['kind' => 'work', 'title' => '移動する業務', 'tag' => '打ち合わせ', 'start' => date('Y-m-d', strtotime('+70 day')), 'end' => date('Y-m-d', strtotime('+72 day'))]);
+$newS = date('Y-m-d', strtotime('+80 day'));
+$m2 = move_event($mv, $newS);
+check('移動: 期間(3日間)を保ったまま動く', [$m2['start_date'], $m2['end_date']], [$newS, date('Y-m-d', strtotime($newS . ' +2 day'))]);
+$sid3 = (int)(function () use ($a) { q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$a['id'], '移動元ルール', '定例業務', 'day', 10, 'none', now_str()]); return db()->lastInsertId(); })();
+materialize_series($sid3);
+$rec = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$sid3]);
+$recMoved = move_event($rec, date('Y-m-d', strtotime($rec['start_date'] . ' +1 day')));
+check('移動: 繰り返し予定の1回分を動かすと個別扱いになる', (int)$recMoved['detached'], 1);
+q('UPDATE series SET p_day = 20 WHERE id = ?', [$sid3]); materialize_series($sid3);
+check('移動: 個別扱いの回はルール変更で上書きされない', row('SELECT start_date FROM events WHERE id = ?', [$rec['id']])['start_date'], $recMoved['start_date']);
+delete_series($sid3);
+
+// ---- ToDo ----
+[$td1, $e1] = validate_todo_input(['kind' => 'work', 'title' => '見積書を作る', 'tag' => '個人作業']);
+check('ToDo: 入力が通る', $e1, null);
+$todoA = save_todo($td1, $a, null);
+[$td2] = validate_todo_input(['kind' => 'private', 'title' => '歯医者の予約', 'tag' => '個人作業', 'note' => 'メモ']);
+$todoP = save_todo($td2, $a, null);
+check('ToDo: プライベートは分類が空になる', $todoP['tag'], '');
+check('ToDo: 不正な種類を拒否', validate_todo_input(['kind' => 'off', 'title' => 'x'])[1] !== null, true);
+check('ToDo: 空の内容を拒否', validate_todo_input(['kind' => 'work', 'title' => '  '])[1] !== null, true);
+check('ToDo: 本人の画面(プライベート版)には全部出る', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '歯医者の予約']);
+check('ToDo: 業務版にはプライベートのToDoを出さない', array_column(list_todos($a, 'team'), 'title'), ['見積書を作る']);
+check('ToDo: 他の社員・管理者には見えない', [list_todos($b, 'me'), list_todos($admin, 'me')], [[], []]);
+check('ToDo: 他人のToDoは取得できない', [find_todo((int)$todoA['id'], $b), find_todo((int)$todoA['id'], $admin)], [null, null]);
+// 並べ替え
+[$tdx] = validate_todo_input(['kind' => 'work', 'title' => '3つ目', 'tag' => 'その他']); $todoC = save_todo($tdx, $a, null);
+check('ToDo: 追加した順に並ぶ', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '歯医者の予約', '3つ目']);
+reorder_todos([(int)$todoC['id'], (int)$todoA['id'], (int)$todoP['id']], $a);
+check('ToDo: 並べ替えが保存される', array_column(list_todos($a, 'me'), 'title'), ['3つ目', '見積書を作る', '歯医者の予約']);
+reorder_todos([(int)$todoA['id'], (int)$todoC['id']], $a); // 業務版のように、プライベートが見えていない並べ替え
+check('ToDo: 見えていない項目の位置は動かさない', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
+reorder_todos([(int)$todoA['id'], (int)$todoC['id']], $b); // 他人は動かせない
+check('ToDo: 他人の並べ替えは効かない', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
+q('DELETE FROM todos WHERE id = ?', [$todoC['id']]);
+// 日付へドラッグ → 予定になる（ToDoは消える）
+$dd = date('Y-m-d', strtotime('+90 day'));
+$ev = schedule_todo($todoA, $dd, $a);
+check('ToDo→予定: 業務の予定として作られる', [$ev['kind'], $ev['title'], $ev['tag'], $ev['start_date'], $ev['end_date'], (int)$ev['owner_id']], ['work', '見積書を作る', '個人作業', $dd, $dd, (int)$a['id']]);
+check('ToDo→予定: ToDoは消える', find_todo((int)$todoA['id'], $a), null);
+check('ToDo→予定: 全社員に見える', in_array('見積書を作る', $titles(list_events($b, $dd, $dd, 'team')), true), true);
+$evP = schedule_todo($todoP, $dd, $a);
+check('ToDo→予定: プライベートのToDoはプライベートの予定になり、他人に見えない', [$evP['kind'], in_array('歯医者の予約', $titles(list_events($b, $dd, $dd, 'team')), true)], ['private', false]);
+// 予定をToDoに戻す
+$back = event_to_todo($ev, $a);
+check('予定→ToDo: 内容が引き継がれる', [$back['title'], $back['kind'], $back['tag']], ['見積書を作る', 'work', '個人作業']);
+check('予定→ToDo: 予定は消える', row('SELECT id FROM events WHERE id = ?', [$ev['id']]), null);
+$thrown = function (callable $f) { try { $f(); return false; } catch (RuntimeException $x) { return true; } };
+check('予定→ToDo: 休みは戻せない', $thrown(function () use ($a, $mk, $today) { event_to_todo($mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => date('Y-m-d', strtotime('+95 day'))]), $a); }), true);
+$rec2 = row('SELECT * FROM events WHERE series_id IS NOT NULL LIMIT 1');
+check('予定→ToDo: 繰り返し由来は戻せない', $rec2 === null ? true : $thrown(function () use ($rec2, $a) { event_to_todo($rec2, $a); }), true);
+check('予定→ToDo: 他人の予定は戻せない', $thrown(function () use ($admin, $mv) { event_to_todo(row('SELECT * FROM events WHERE id = ?', [$mv['id']]), $admin); }), true);
+
+// ---- 自動更新(ensure_schema) ----
+ensure_schema();
+check('スキーマの版が記録される', (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v'], SCHEMA_VERSION);
+db()->exec('DROP TABLE todos'); q("DELETE FROM app_meta WHERE meta_key = 'schema_version'");
+ensure_schema();
+check('テーブルが無くなっていても、ensure_schema で自動で作り直される', (int)row('SELECT COUNT(*) AS c FROM todos')['c'], 0);
+
 // Slack 通知の重複防止
 check('通知は1回目だけ true', notify_once('test:1'), true);
 check('同じ通知は2回目 false', notify_once('test:1'), false);
 check('Webhook未設定でも休み通知は例外にならない', notify_offs_for_day($today, '本日') >= 1, true);
 check('通知の二重送信防止(同日2回目は0件)', notify_offs_for_day($today, '本日'), 0);
 
+
+// ---- システム更新（updater） ----
+$U = $tmp . '/upd'; mkdir($U); mkdir("$U/web"); mkdir("$U/app"); mkdir("$U/app/src");
+file_put_contents("$U/app/src/a.php", "<?php // OLD\n");
+file_put_contents("$U/app/src/same.php", "<?php // SAME\n");
+file_put_contents("$U/web/config.php", "SERVER-SECRET");
+$mkzip = function (array $entries, string $name) use ($U) {
+    $z = new ZipArchive(); $path = "$U/$name"; $z->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    foreach ($entries as $k => $v) { $z->addFromString($k, $v); }
+    $z->close(); return $path;
+};
+$thr = function (callable $f) { try { $f(); return null; } catch (UpdaterException $x) { return $x->getMessage(); } };
+$zipOk = $mkzip([
+    'src/a.php' => "<?php // NEW\n", 'src/same.php' => "<?php // SAME\n", 'src/b.php' => "<?php // B\n",
+    'public/assets/app.js' => '// js', 'public/install.php' => '<?php // 入れてはいけない', 'public/app_path.php' => '<?php // 上書き禁止',
+    'src/config.php' => '<?php // 上書き禁止', 'config.php' => '<?php // 上書き禁止', 'tests/run.php' => '<?php // 対象外', 'src/run.sh' => 'rm -rf /',
+    'src/.htaccess' => 'x', 'public/.env' => 'x',
+], 'ok.zip');
+$r = updater_apply($zipOk, "$U/web", "$U/app");
+check('更新: 対象の3ファイルだけが変わる', $r['changed'], ['src/a.php', 'src/b.php', 'public/assets/app.js']);
+check('更新: 同じ内容のファイルは変更なし扱い', $r['unchanged'], 1);
+check('更新: 対象外(install/app_path/config/tests/.sh/.htaccess等)は飛ばす', $r['skipped'], 8);
+check('更新: 新しい内容が書き込まれる', [file_get_contents("$U/app/src/a.php"), file_get_contents("$U/web/assets/app.js")], ["<?php // NEW\n", '// js']);
+check('更新: install.php / app_path.php / config.php は作られない・変わらない', [is_file("$U/web/install.php"), is_file("$U/web/app_path.php"), file_get_contents("$U/web/config.php"), is_file("$U/app/src/config.php")], [false, false, 'SERVER-SECRET', false]);
+check('更新: バックアップが作られる', count(updater_backups("$U/app")), 1);
+// 元に戻す
+$n = updater_restore($r['backup'], "$U/web", "$U/app");
+check('復元: 更新前の内容に戻る', [file_get_contents("$U/app/src/a.php"), is_file("$U/app/src/b.php"), is_file("$U/web/assets/app.js")], ["<?php // OLD\n", false, false]);
+// 危険な zip は全体を拒否し、何も書かない
+$before = file_get_contents("$U/app/src/a.php");
+check('拒否: ../ を含む zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/x.php' => '<?php', '../evil.php' => '<?php'], 'bad1.zip'), "$U/web", "$U/app"); }) !== null, true);
+check('拒否: 絶対パスを含む zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['/etc/evil.php' => '<?php'], 'bad2.zip'), "$U/web", "$U/app"); }) !== null, true);
+check('拒否: 文法が壊れた PHP を含む zip(全体を中止)', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/a.php' => "<?php echo 'x'", 'src/fine.php' => '<?php echo 1;'], 'bad3.zip'), "$U/web", "$U/app"); }) !== null, true);
+check('拒否した更新では、何も書き換わらない', [file_get_contents("$U/app/src/a.php"), is_file("$U/app/src/fine.php"), is_file("$U/app/src/../evil.php")], [$before, false, false]);
+check('拒否: 更新できるファイルが無い zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['README.md' => 'x', 'docs/a.md' => 'x'], 'none.zip'), "$U/web", "$U/app"); }) !== null, true);
+// GitHub の Download ZIP（先頭にフォルダが付く）
+$r2 = updater_apply($mkzip(['repo-main/src/gh.php' => '<?php // GH', 'repo-main/public/assets/gh.css' => 'a{}', 'repo-main/README.md' => 'x', 'repo-main/tests/run.php' => '<?php'], 'gh.zip'), "$U/web", "$U/app");
+check('GitHubのzip: 先頭フォルダを外して適用', [$r2['changed'], is_file("$U/app/src/gh.php"), is_file("$U/web/assets/gh.css")], [['src/gh.php', 'public/assets/gh.css'], true, true]);
+check('復元: 名前の検証(../ を拒否)', $thr(function () use ($U) { updater_restore('../x.zip', "$U/web", "$U/app"); }) !== null, true);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
-array_map('unlink', glob($tmp . '/*'));
-@rmdir($tmp);
+$rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };
+$rm($tmp);
 exit($fail ? 1 : 0);

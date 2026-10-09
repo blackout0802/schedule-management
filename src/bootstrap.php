@@ -1,6 +1,7 @@
 <?php
 // 共通の読み込み・設定・DB・小さな便利関数。PHP 7.4 以上で動くように書いています。
 define('APP_ROOT', dirname(__DIR__));
+require_once __DIR__ . '/version.php';
 
 /** 設定ファイル(config.php)の場所 */
 function config_file_path(): string
@@ -26,6 +27,11 @@ function app_config(): array
             'off_tags' => ['有給', '調整休', '午前半休', '午後半休'],
         ];
         $cfg = array_merge($defaults, require $file);
+        // 古い版の config.sample.php からコピーした設定に残っている、昔の初期値のままの分類は、新しい初期値に置き換える
+        // （自分で変えた分類は、そのまま使う）
+        if ($cfg['off_tags'] === ['有給', '午前半休', '午後半休', 'その他の休み']) {
+            $cfg['off_tags'] = $defaults['off_tags'];
+        }
     }
     return $cfg;
 }
@@ -122,6 +128,26 @@ function run_schema(): void
     migrate_data();
 }
 
+/**
+ * データベースの構造が古ければ、足りないテーブル・列を自動で作る（画面を開いたときと cron の開始時に呼ぶ）。
+ * アプリのファイルだけを差し替えて更新しても、データベースの手作業が要らないようにするための仕組み。
+ */
+function ensure_schema(): void
+{
+    try {
+        $r = row('SELECT meta_value FROM app_meta WHERE meta_key = ?', ['schema_version']);
+        $cur = $r ? (int)$r['meta_value'] : 0;
+    } catch (PDOException $e) {
+        $cur = 0; // app_meta がまだ無い（古い版からの更新）
+    }
+    if ($cur >= SCHEMA_VERSION) {
+        return;
+    }
+    run_schema();
+    q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+    q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', (string)SCHEMA_VERSION]);
+}
+
 /** 休みの分類の名称変更（その他の休み → 調整休）を、登録済みの予定にも反映する。何度実行しても安全 */
 function migrate_data(): void
 {
@@ -135,6 +161,11 @@ function migrate_schema(): void
         db()->query('SELECT must_change_password FROM users LIMIT 1')->fetchAll();
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+    }
+    try {
+        db()->query('SELECT sort_order FROM todos LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
     }
 }
 

@@ -209,3 +209,129 @@ function duplicate_event(array $src, array $dates, array $user): array
     }
     return [$created, $skipped];
 }
+
+/* ------------------------------------------------------------------
+ * 予定の移動、ToDo（本人だけの未定のやること）
+ * ToDo は持ち主本人にしか返さない。業務版では「業務」のToDoだけを返す（プライベートのToDoを画面共有で見せないため）。
+ * ------------------------------------------------------------------ */
+
+/** 予定を別の日に動かす（何日間かは変えない）。繰り返し予定の1回分を動かした場合は、以後ルール変更で上書きしない */
+function move_event(array $e, string $newStart): array
+{
+    $span = (int)round((strtotime($e['end_date']) - strtotime($e['start_date'])) / 86400);
+    $newEnd = date('Y-m-d', strtotime($newStart . " +$span day"));
+    q('UPDATE events SET start_date = ?, end_date = ?, detached = ?, updated_at = ? WHERE id = ?', [
+        $newStart, $newEnd, $e['series_id'] !== null ? 1 : 0, now_str(), $e['id'],
+    ]);
+    return row('SELECT * FROM events WHERE id = ?', [$e['id']]);
+}
+
+function todo_for_client(array $t): array
+{
+    return ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => $t['kind'], 'tag' => $t['tag'], 'note' => $t['note']];
+}
+
+/** @param string $view 'team' なら業務のToDoだけ */
+function list_todos(array $user, string $view): array
+{
+    $sql = 'SELECT * FROM todos WHERE owner_id = ?' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY sort_order, id';
+    return array_map('todo_for_client', rows($sql, [$user['id']]));
+}
+
+function find_todo(int $id, array $user): ?array
+{
+    return row('SELECT * FROM todos WHERE id = ? AND owner_id = ?', [$id, $user['id']]);
+}
+
+/** @return array{0:?array,1:?string} */
+function validate_todo_input(array $in): array
+{
+    $kind = (string)($in['kind'] ?? 'work');
+    if (!in_array($kind, ['work', 'private'], true)) {
+        return [null, 'ToDoの種類は「業務」か「プライベート」です。'];
+    }
+    $title = trim((string)($in['title'] ?? ''));
+    if ($title === '' || mb_strlen($title) > 100) {
+        return [null, '内容を100文字以内で入力してください。'];
+    }
+    $note = trim((string)($in['note'] ?? ''));
+    if (mb_strlen($note) > 500) {
+        return [null, 'メモは500文字以内にしてください。'];
+    }
+    $tag = '';
+    if ($kind === 'work') {
+        $tags = cfg('work_tags');
+        $tag = in_array((string)($in['tag'] ?? ''), $tags, true) ? (string)$in['tag'] : $tags[count($tags) - 1];
+    }
+    return [['kind' => $kind, 'title' => $title, 'tag' => $tag, 'note' => $note], null];
+}
+
+function save_todo(array $data, array $user, ?array $existing): array
+{
+    if ($existing) {
+        q('UPDATE todos SET title = ?, kind = ?, tag = ?, note = ? WHERE id = ?', [$data['title'], $data['kind'], $data['tag'], $data['note'], $existing['id']]);
+        $id = (int)$existing['id'];
+    } else {
+        $max = row('SELECT MAX(sort_order) AS m FROM todos WHERE owner_id = ?', [$user['id']]);
+        q('INSERT INTO todos (owner_id, title, kind, tag, note, sort_order, created_at) VALUES (?,?,?,?,?,?,?)', [$user['id'], $data['title'], $data['kind'], $data['tag'], $data['note'], (int)($max['m'] ?? 0) + 1, now_str()]);
+        $id = (int)db()->lastInsertId();
+    }
+    return row('SELECT * FROM todos WHERE id = ?', [$id]);
+}
+
+/** ToDo を、指定した日の予定にする（ToDo は消える）。業務のToDoは全社員に見える業務の予定になる */
+function schedule_todo(array $todo, string $date, array $user): array
+{
+    $event = save_event([
+        'kind' => $todo['kind'], 'title' => $todo['title'], 'tag' => $todo['tag'], 'start' => $date, 'end' => $date,
+        'start_time' => '', 'end_time' => '', 'note' => $todo['note'], 'owner_id' => (int)$user['id'],
+    ], $user, null);
+    q('DELETE FROM todos WHERE id = ?', [$todo['id']]);
+    return $event;
+}
+
+/** 自分の予定を、ToDo に戻す（予定は消える）。休み・繰り返し予定は戻せない */
+function event_to_todo(array $e, array $user): array
+{
+    if ($e['kind'] === 'off') {
+        throw new RuntimeException('休みはToDoに戻せません。');
+    }
+    if ($e['series_id'] !== null) {
+        throw new RuntimeException('毎月の繰り返しから作られた予定は、ToDoに戻せません。');
+    }
+    if ((int)$e['owner_id'] !== (int)$user['id']) {
+        throw new RuntimeException('他の人の予定は、ToDoに戻せません。');
+    }
+    $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note']], $user, null);
+    q('DELETE FROM events WHERE id = ?', [$e['id']]);
+    return $todo;
+}
+
+/**
+ * ToDo の並びを保存する。$ids は、画面に見えている ToDo を上から並べた id。
+ * 業務版では「業務」だけが見えているので、見えていないToDo（プライベート）の並びは変えない。
+ */
+function reorder_todos(array $ids, array $user): void
+{
+    $ids = array_values(array_unique(array_map('intval', $ids)));
+    $own = [];
+    foreach (rows('SELECT id, sort_order FROM todos WHERE owner_id = ?', [$user['id']]) as $r) {
+        $own[(int)$r['id']] = (int)$r['sort_order'];
+    }
+    $ids = array_values(array_filter($ids, function ($id) use ($own) { return isset($own[$id]); }));
+    if (count($ids) < 2) {
+        return;
+    }
+    // 見えている ToDo が使っていた順番の番号を、新しい並びに割り当て直す（見えていないものの位置は動かさない）
+    $slots = array_map(function ($id) use ($own) { return $own[$id]; }, $ids);
+    sort($slots);
+    $prev = null;
+    foreach ($ids as $i => $id) {
+        $n = $slots[$i];
+        if ($prev !== null && $n <= $prev) {
+            $n = $prev + 1; // 同じ番号が重なっていたときの保険
+        }
+        q('UPDATE todos SET sort_order = ? WHERE id = ? AND owner_id = ?', [$n, $id, $user['id']]);
+        $prev = $n;
+    }
+}

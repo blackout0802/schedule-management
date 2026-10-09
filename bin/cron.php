@@ -23,6 +23,7 @@ if (!$isCli) {
     header('Content-Type: text/plain; charset=utf-8');
 }
 $mode = $isCli ? ($argv[1] ?? 'nightly') : (string)($_GET['mode'] ?? 'nightly');
+ensure_schema();
 $cal = BizCalendar::fromDb();
 $today = date('Y-m-d');
 $tomorrow = date('Y-m-d', strtotime('+1 day'));

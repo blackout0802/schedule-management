@@ -14,7 +14,7 @@
   };
 
   var S = {
-    me: null, view: 'team', year: 0, month: 0, mode: 'cal',
+    me: null, view: 'team', year: 0, month: 0, todos: [], drag: null,
     events: [], holidays: {}, tags: null, showOff: true, loading: false
   };
 
@@ -96,6 +96,7 @@
     if (S.me.user.role === 'admin') {
       items.push(el('button', { type: 'button', text: '社員の管理', onclick: function () { closeMenu(); openUsersDialog(); } }));
       items.push(el('button', { type: 'button', text: '会社の休業日', onclick: function () { closeMenu(); openHolidaysDialog(); } }));
+      items.push(el('button', { type: 'button', text: 'システム更新', onclick: function () { location.href = 'update.php'; } }));
     }
     items.push(el('hr'));
     items.push(el('button', { type: 'button', text: 'パスワードの変更', onclick: function () { closeMenu(); openPasswordDialog(); } }));
@@ -119,9 +120,11 @@
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand', text: S.me.app_name }), tabs, el('span', { class: 'spacer' }),
       el('div', { class: 'menu' }, menuBtn))));
-    root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { id: 'filters' }), el('div', { id: 'board' })));
+    root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { id: 'filters' }),
+      el('div', { class: 'layout' }, el('div', { id: 'board', class: 'board' }), el('aside', { id: 'todo', class: 'todo', 'aria-label': 'ToDoリスト' }))));
     renderToolbar();
     renderFilters();
+    loadTodos();
   }
 
   function renderToolbar() {
@@ -134,15 +137,12 @@
       el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', text: '›', onclick: function () { nav(1); } }),
       el('button', { class: 'btn', type: 'button', text: '今日', onclick: function () { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); } }),
       el('span', { class: 'spacer', style: 'flex:1' }),
-      el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
-        [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
-          return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { S.mode = m[0]; store('sched.mode', m[0]); renderBoard(); } }), m[1]);
-        })),
       el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
     ));
     tb.appendChild(el('div', { class: 'view-banner ' + S.view, style: 'margin-top:8px',
       text: S.view === 'team' ? '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）' : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
   }
+
 
   function renderFilters() {
     var box = document.getElementById('filters');
@@ -187,15 +187,63 @@
     return (e.recurring ? '↻ ' : '') + time + t;
   }
 
-  function chipFor(e, date) {
-    var first = e.start === date;
-    var b = el('button', { type: 'button', class: 'chip ' + e.kind + (first ? '' : ' cont'), text: eventLabel(e, first),
-      title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''), onclick: function (ev) { ev.stopPropagation(); openEventDialog(e); } });
-    return b;
+  /* 土日祝か（会社の休業日を含む。祝日は読み込んだ範囲の分だけ分かる） */
+  function isOffDay(ds) { var w = parse(ds).getDay(); return w === 0 || w === 6 || !!S.holidays[ds]; }
+  function hasBizDay(e) {
+    if (e._biz !== undefined) return e._biz;
+    var r = false;
+    for (var d = parse(e.start), end = parse(e.end), n = 0; d <= end && n < 400; d = addDays(d, 1), n++) { if (!isOffDay(ymd(d))) { r = true; break; } }
+    return (e._biz = r);
+  }
+  /* その日に表示するか。期間のある「業務」は、土日祝には出さない（全期間が休日なら、そのまま出す） */
+  function shownOn(e, ds) {
+    if (e.start > ds || e.end < ds) return false;
+    if (e.kind === 'work' && e.start !== e.end && isOffDay(ds) && hasBizDay(e)) return false;
+    return true;
   }
 
-  function eventsOn(date) {
-    return S.events.filter(function (e) { return e.start <= date && e.end >= date; });
+  function daysBetween(a, b) { return Math.round((parse(b) - parse(a)) / 86400000); }
+  function canReturnToTodo(e) { return e.editable && e.kind !== 'off' && !e.recurring && e.owner_id === S.me.user.id; }
+
+  /* 1週間分の、連続する同じ予定を1本のバーにまとめる */
+  function weekSegments(days) {
+    var segs = [];
+    S.events.forEach(function (e) {
+      var cur = null;
+      for (var c = 0; c < 7; c++) {
+        if (shownOn(e, ymd(days[c]))) { if (cur) cur.e = c; else { cur = { ev: e, s: c, e: c }; segs.push(cur); } } else cur = null;
+      }
+    });
+    segs.forEach(function (g) { g.contL = g.ev.start < ymd(days[g.s]); g.contR = g.ev.end > ymd(days[g.e]); });
+    segs.sort(function (a, b) { return a.s - b.s || (b.e - b.s) - (a.e - a.s) || a.ev.id - b.ev.id; });
+    var ends = [];
+    segs.forEach(function (g) {
+      var l = 0;
+      while (ends[l] !== undefined && ends[l] >= g.s) l++;
+      g.lane = l; ends[l] = g.e;
+    });
+    return { segs: segs, lanes: ends.length };
+  }
+
+  function barFor(g, days) {
+    var e = g.ev;
+    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
+      style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2),
+      text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      draggable: e.editable ? 'true' : null,
+      onclick: function (ev) { ev.stopPropagation(); openEventDialog(e); },
+      onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
+    if (e.editable) {
+      bar.addEventListener('dragstart', function (ev) {
+        // つかんだ日（何日目か）を覚えておく。ドロップ先の日付から開始日を逆算するため
+        var rect = bar.parentNode.getBoundingClientRect();
+        var col = Math.max(g.s, Math.min(g.e, Math.floor((ev.clientX - rect.left) / (rect.width / 7))));
+        var off = Math.max(0, daysBetween(e.start, ymd(days[col])));
+        startDrag(ev, { t: 'event', id: e.id, off: off, ok: canReturnToTodo(e) });
+      });
+      bar.addEventListener('dragend', endDrag);
+    }
+    return bar;
   }
 
   function renderBoard() {
@@ -207,41 +255,90 @@
     var days = [];
     for (var d = r.start; d <= r.end; d = addDays(d, 1)) days.push(d);
 
-    if (S.mode === 'list') {
-      var list = el('div', { class: 'list' });
-      var any = false;
-      days.forEach(function (d) {
-        if (d.getMonth() + 1 !== S.month) return;
-        var s = ymd(d), evs = eventsOn(s), hol = S.holidays[s];
-        if (!evs.length && !hol) return;
-        any = true;
-        var cls = 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
-        list.appendChild(el('div', { class: cls },
-          el('div', { class: 'dt' }, (d.getMonth() + 1) + '/' + d.getDate(), el('small', { text: DOW[d.getDay()] + '曜日' + (hol ? '・' + hol : '') })),
-          el('div', { class: 'list-items' }, evs.map(function (e) { return chipFor(e, s); }))));
-      });
-      if (!any) list.appendChild(el('p', { class: 'empty-note', text: 'この月の予定はまだありません。「＋ 予定を追加」から登録できます。' }));
-      board.appendChild(list);
-      return;
-    }
+    var head = el('div', { class: 'cal-dow' });
+    DOW.forEach(function (w, i) { head.appendChild(el('div', { class: 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), text: w })); });
+    var weeks = el('div', { class: 'cal-weeks', role: 'grid', 'aria-label': S.year + '年' + S.month + '月のカレンダー' });
 
-    var grid = el('div', { class: 'cal', role: 'grid', 'aria-label': S.year + '年' + S.month + '月のカレンダー' });
-    DOW.forEach(function (w, i) { grid.appendChild(el('div', { class: 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), text: w })); });
-    days.forEach(function (d) {
-      var s = ymd(d), hol = S.holidays[s];
-      var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
-      grid.appendChild(el('div', { class: cls, role: 'gridcell', onclick: function () { openEventDialog(null, s); } },
-        el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) })),
-        hol ? el('div', { class: 'hname', text: hol }) : null,
-        eventsOn(s).map(function (e) { return chipFor(e, s); })));
-    });
-    board.appendChild(el('div', { class: 'cal-wrap' }, grid));
+    for (var w = 0; w < days.length; w += 7) {
+      weeks.appendChild(renderWeek(days.slice(w, w + 7), todayStr));
+    }
+    board.appendChild(el('div', { class: 'cal-wrap' }, el('div', { class: 'cal' }, head, weeks)));
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
       el('span', null, el('i', { style: 'background:var(--work)' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--off)' }), '休み'),
       S.view === 'me' ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
-      el('span', { text: '↻ 毎月の繰り返しから自動で作られた予定' })));
+      el('span', { text: '↻ 毎月の繰り返し' }),
+      el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
+      el('span', { text: '予定はドラッグで別の日へ動かせます' })));
   }
+
+  function renderWeek(days, todayStr) {
+    var pack = weekSegments(days);
+    var L = Math.max(pack.lanes, 3);
+    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:24px repeat(' + L + ',22px) minmax(6px,1fr)' });
+    days.forEach(function (d, c) {
+      var s = ymd(d), hol = S.holidays[s];
+      var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
+      week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
+        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { openEventDialog(null, s); } },
+        el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
+    });
+    pack.segs.forEach(function (g) { week.appendChild(barFor(g, days)); });
+
+    // ドロップ先: ポインタのある列が、その日になる（バーの上でも同じ）
+    var colAt = function (ev) {
+      var rect = week.getBoundingClientRect();
+      return Math.max(0, Math.min(6, Math.floor((ev.clientX - rect.left) / (rect.width / 7))));
+    };
+    var mark = function (col) {
+      week.querySelectorAll('.cell.drop').forEach(function (x) { x.classList.remove('drop'); });
+      if (col !== null) week.querySelector('.cell[data-col="' + col + '"]').classList.add('drop');
+    };
+    week.addEventListener('dragover', function (ev) {
+      if (!S.drag || S.drag.t === 'tdorder') return;
+      ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; mark(colAt(ev));
+    });
+    week.addEventListener('dragleave', function (ev) { if (!week.contains(ev.relatedTarget)) mark(null); });
+    week.addEventListener('drop', function (ev) {
+      if (!S.drag) return;
+      ev.preventDefault();
+      var date = ymd(days[colAt(ev)]), p = S.drag;
+      mark(null); endDrag();
+      dropOnDate(p, date);
+    });
+    return week;
+  }
+
+  /* ---------- ドラッグ&ドロップ ---------- */
+  function startDrag(ev, payload) {
+    S.drag = payload;
+    ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
+    ev.dataTransfer.effectAllowed = 'move';
+    document.body.classList.add('is-dragging');
+    document.body.classList.toggle('drag-event', payload.t === 'event');
+    document.body.classList.toggle('drag-ok', !!payload.ok);
+  }
+  function endDrag() {
+    S.drag = null;
+    document.body.classList.remove('is-dragging', 'drag-event', 'drag-ok');
+    document.querySelectorAll('.drop, .ins-before, .ins-after').forEach(function (x) { x.classList.remove('drop', 'ins-before', 'ins-after'); });
+  }
+
+  function dropOnDate(p, date) {
+    if (p.t === 'todo') {
+      api('todo_schedule', { body: { id: p.id, date: date } }).then(function () {
+        toast('予定に追加しました: ' + mdw(date)); loadTodos(); load();
+      }).catch(fail);
+    } else if (p.t === 'event') {
+      var e = S.events.filter(function (x) { return x.id === p.id; })[0];
+      var start = ymd(addDays(parse(date), -p.off));
+      if (!e || e.start === start) return;
+      api('event_move', { body: { id: p.id, start: start } }).then(function () {
+        toast('予定を ' + mdw(start) + ' に動かしました'); load();
+      }).catch(fail);
+    }
+  }
+
 
   /* ---------- 予定の追加・編集 ---------- */
   function openEventDialog(ev, dateStr) {
@@ -318,11 +415,142 @@
       err,
       el('div', { class: 'actions' }, del,
         ev ? el('button', { class: 'btn', type: 'button', text: '複製', title: 'この予定を、他の日にも作る', onclick: function () { ov.close(); openDuplicateDialog(ev); } }) : null,
+        ev && canReturnToTodo(ev) ? el('button', { class: 'btn', type: 'button', text: 'ToDoに戻す', title: '日付のない ToDo に戻す', onclick: function () { ov.close(); returnEventToTodo(ev.id, null, false); } }) : null,
         el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal(isNew ? '予定を追加' : '予定を編集', form);
     if (ev) tag.value = ev.tag;
     syncKind();
     if (ev) tag.value = ev.tag || tag.value;
+  }
+
+  /* ---------- ToDo ---------- */
+  function loadTodos() {
+    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; renderTodo(); }).catch(fail);
+  }
+
+  /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
+  function reorderTo(dragId, targetId, after) {
+    var byId = {};
+    S.todos.forEach(function (t) { byId[t.id] = t; });
+    var ids = S.todos.map(function (t) { return t.id; }).filter(function (id) { return id !== dragId; });
+    var i = targetId === null ? ids.length : ids.indexOf(targetId) + (after ? 1 : 0);
+    ids.splice(i, 0, dragId);
+    S.todos = ids.map(function (id) { return byId[id]; });
+    renderTodo(); // 先に見た目を更新し、保存は裏で行う
+    api('todo_reorder', { body: { ids: ids } }).catch(function (x) { fail(x); loadTodos(); });
+  }
+
+  /* 予定をToDoに戻す。targetId があれば、その位置に入れる */
+  function returnEventToTodo(eventId, targetId, after) {
+    return api('event_to_todo', { body: { id: eventId } }).then(function (j) {
+      toast('ToDoに戻しました');
+      load();
+      return loadTodos().then(function () { if (targetId !== null && targetId !== undefined) reorderTo(j.todo.id, targetId, after); });
+    }).catch(fail);
+  }
+
+  function renderTodo() {
+    var box = document.getElementById('todo');
+    if (!box) return;
+    box.textContent = '';
+    var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容' });
+    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類' }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
+    var form = el('form', { class: 'todo-add', onsubmit: function (e) {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { input.value = ''; loadTodos(); }).catch(fail);
+    } }, input, kindSel, el('button', { class: 'btn primary small', type: 'submit', text: '追加' }));
+
+    var list = el('div', { class: 'todo-list' });
+    S.todos.forEach(function (t) { list.appendChild(todoItem(t)); });
+    if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: 'ToDoはありません。上の欄に入力して追加できます。' }));
+
+    box.appendChild(el('h2', { text: 'ToDo' }));
+    box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。日付へドラッグすると、会社に共有される予定になります。' : 'あなただけに見えるToDoです。日付へドラッグすると予定になります。' }));
+    box.appendChild(form);
+    box.appendChild(list);
+    box.appendChild(el('p', { class: 'hint todo-foot', text: 'カレンダーの予定をここへドラッグすると、ToDoに戻ります。ToDoは、ドラッグで並べ替えられます。' }));
+
+    // 欄の空いたところへのドロップ（末尾に入る）
+    box.ondragover = function (ev) {
+      if (!S.drag || !(S.drag.t === 'todo' || (S.drag.t === 'event' && S.drag.ok))) return;
+      ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; box.classList.add('drop');
+    };
+    box.ondragleave = function (ev) { if (!box.contains(ev.relatedTarget)) box.classList.remove('drop'); };
+    box.ondrop = function (ev) {
+      if (!S.drag) return;
+      ev.preventDefault();
+      var p = S.drag; box.classList.remove('drop'); endDrag();
+      if (p.t === 'todo') reorderTo(p.id, null, false); else if (p.t === 'event' && p.ok) returnEventToTodo(p.id, null, false);
+    };
+  }
+
+  function todoItem(t) {
+    var btn = function (label, title, fn) { return el('button', { class: 'btn small ghost', type: 'button', text: label, title: title, onclick: function (e) { e.stopPropagation(); fn(); } }); };
+    var item = el('div', { class: 'todo-item ' + t.kind, draggable: 'true', 'data-id': String(t.id) },
+      el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
+        t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null)),
+      el('div', { class: 't-actions' },
+        btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),
+        btn('編集', 'ToDoを編集', function () { openTodoDialog(t); }),
+        btn('削除', 'ToDoを削除', function () {
+          if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
+          api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+        })));
+    item.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
+    item.addEventListener('dragend', endDrag);
+    item.addEventListener('dragover', function (ev) {
+      if (!S.drag || !((S.drag.t === 'todo' && S.drag.id !== t.id) || (S.drag.t === 'event' && S.drag.ok))) return;
+      ev.preventDefault(); ev.stopPropagation(); ev.dataTransfer.dropEffect = 'move';
+      var r = item.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2;
+      document.querySelectorAll('.ins-before, .ins-after').forEach(function (x) { x.classList.remove('ins-before', 'ins-after'); });
+      item.classList.add(after ? 'ins-after' : 'ins-before');
+    });
+    item.addEventListener('dragleave', function () { item.classList.remove('ins-before', 'ins-after'); });
+    item.addEventListener('drop', function (ev) {
+      if (!S.drag) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var r = item.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2, p = S.drag;
+      endDrag();
+      if (p.t === 'todo') reorderTo(p.id, t.id, after); else if (p.t === 'event' && p.ok) returnEventToTodo(p.id, t.id, after);
+    });
+    return item;
+  }
+
+  function openTodoDialog(t) {
+    var title = el('input', { name: 'title', maxlength: '100', required: true, value: t.title });
+    var kinds = S.view === 'me' ? [['work', '業務'], ['private', 'プライベート']] : [['work', '業務']];
+    var radios = kinds.map(function (k) { return el('label', { class: k[0] }, el('input', { type: 'radio', name: 'tkind', value: k[0], checked: t.kind === k[0], onchange: sync }), k[1]); });
+    var tag = el('select', { name: 'tag' }, S.me.work_tags.map(function (x) { return el('option', { value: x, text: x, selected: x === t.tag }); }));
+    var tagLabel = el('label', null, '分類（予定にしたときの分類）', tag);
+    var note = el('textarea', { maxlength: '500' }); note.value = t.note || '';
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    function kindNow() { var c = form.querySelector('input[name=tkind]:checked'); return c ? c.value : 'work'; }
+    function sync() { tagLabel.hidden = kindNow() === 'private'; }
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('todo_save', { body: { id: t.id, title: title.value, kind: kindNow(), tag: tag.value, note: note.value } })
+        .then(function () { ov.close(); toast('ToDoを更新しました'); loadTodos(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), el('label', null, '内容', title), tagLabel, el('label', null, 'メモ（任意）', note), err,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
+    var ov = openModal('ToDoを編集', form);
+    sync();
+  }
+
+  function openTodoScheduleDialog(t) {
+    var date = el('input', { type: 'date', required: true, value: ymd(new Date()) });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('todo_schedule', { body: { id: t.id, date: date.value } }).then(function () {
+        ov.close(); toast('予定に追加しました: ' + mdw(date.value)); loadTodos(); load();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('div', { class: 'notice' }, el('b', { text: t.title }), el('p', { text: t.kind === 'private' ? 'プライベートの予定になります（本人以外には見えません）。' : '業務の予定になり、会社の全員に表示されます。' })),
+      el('label', null, '日付', date), err,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '予定にする' })));
+    var ov = openModal('日付を選んで予定にする', form);
   }
 
   /* ---------- 予定の複製 ---------- */
@@ -604,7 +832,6 @@
     S.tags = f && Array.isArray(f.tags) ? f.tags.filter(function (t) { return me.work_tags.indexOf(t) >= 0; }) : me.work_tags.filter(function (t) { return t !== '個人作業'; });
     S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
-    S.mode = store('sched.mode') || (window.innerWidth < 700 ? 'list' : 'cal');
     var start = function () { renderShell(); load(); };
     if (me.user.must_change_password) {
       root.textContent = '';
