@@ -2,11 +2,17 @@
 // 共通の読み込み・設定・DB・小さな便利関数。PHP 7.4 以上で動くように書いています。
 define('APP_ROOT', dirname(__DIR__));
 
+/** 設定ファイル(config.php)の場所 */
+function config_file_path(): string
+{
+    return getenv('SCHEDULE_CONFIG') ?: APP_ROOT . '/config.php';
+}
+
 function app_config(): array
 {
     static $cfg = null;
     if ($cfg === null) {
-        $file = getenv('SCHEDULE_CONFIG') ?: APP_ROOT . '/config.php';
+        $file = config_file_path();
         if (!is_file($file)) {
             throw new RuntimeException('config.php が見つかりません。config.sample.php をコピーして作成してください。');
         }
@@ -30,7 +36,7 @@ function cfg(string $key, $default = null)
     return array_key_exists($key, $c) ? $c[$key] : $default;
 }
 
-date_default_timezone_set((string)(is_file(getenv('SCHEDULE_CONFIG') ?: APP_ROOT . '/config.php') ? cfg('timezone', 'Asia/Tokyo') : 'Asia/Tokyo'));
+date_default_timezone_set((string)(is_file(config_file_path()) ? cfg('timezone', 'Asia/Tokyo') : 'Asia/Tokyo'));
 
 function db(): PDO
 {
