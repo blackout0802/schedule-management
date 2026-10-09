@@ -273,6 +273,21 @@ $rec2 = row('SELECT * FROM events WHERE series_id IS NOT NULL LIMIT 1');
 check('予定→ToDo: 繰り返し由来は戻せない', $rec2 === null ? true : $thrown(function () use ($rec2, $a) { event_to_todo($rec2, $a); }), true);
 check('予定→ToDo: 他人の予定は戻せない', $thrown(function () use ($admin, $mv) { event_to_todo(row('SELECT * FROM events WHERE id = ?', [$mv['id']]), $admin); }), true);
 
+// ---- 日報メモ ----
+check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
+check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');
+check('メモ: p は div になる', sanitize_memo_html('<p>x</p>'), '<div>x</div>');
+check('メモ: 属性は全て消える', sanitize_memo_html('<div onclick="alert(1)" style="color:red"><s class="x" onmouseover="y()">t</s></div>'), '<div><s>t</s></div>');
+check('メモ: script・style は中身ごと消える', sanitize_memo_html('a<script>alert(1)</script>b<style>*{}</style>c'), 'abc');
+check('メモ: 許可外のタグ(a/img/iframe)は消え、文字は残る', sanitize_memo_html('<a href="javascript:x">link</a><img src=x onerror=y>z<iframe src=x></iframe>'), 'linkz');
+check('メモ: 文字としての < は無害のまま', strpos(sanitize_memo_html('1 &lt; 2 &lt;script&gt;'), '<script') === false, true);
+save_memo('<div><s>終わった業務</s></div><div>これから</div>', $a);
+check('メモ: 保存して読み出せる', get_memo($a), '<div><s>終わった業務</s></div><div>これから</div>');
+check('メモ: 他の人のメモは空（本人だけ）', [get_memo($b), get_memo($admin)], ['', '']);
+save_memo('<div>上書き</div>', $a);
+check('メモ: 上書き保存', get_memo($a), '<div>上書き</div>');
+check('メモ: 長すぎると拒否', $thrown(function () use ($a) { save_memo(str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);
+
 // ---- 自動更新(ensure_schema) ----
 ensure_schema();
 check('スキーマの版が記録される', (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v'], SCHEMA_VERSION);

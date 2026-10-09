@@ -250,6 +250,17 @@ function handle_api(): void
             }
             api_out(['todo' => todo_for_client(save_todo($data, $user, $existing))]);
 
+        case 'memo_get':
+            api_out(['html' => get_memo($user)]);
+
+        case 'memo_save':
+            try {
+                save_memo((string)($in['html'] ?? ''), $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'saved_at' => date('H:i')]);
+
         case 'todo_reorder':
             reorder_todos(is_array($in['ids'] ?? null) ? $in['ids'] : [], $user);
             api_out(['ok' => true]);

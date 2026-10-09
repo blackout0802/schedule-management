@@ -78,3 +78,9 @@ CREATE TABLE IF NOT EXISTS app_meta (
   meta_key TEXT NOT NULL PRIMARY KEY,
   meta_value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS memos (
+  owner_id INTEGER NOT NULL PRIMARY KEY,
+  body TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

@@ -14,7 +14,7 @@
   };
 
   var S = {
-    me: null, view: 'team', year: 0, month: 0, todos: [], drag: null,
+    me: null, view: 'team', year: 0, month: 0, todos: [], drag: null, memoHtml: '', memoLoaded: false,
     events: [], holidays: {}, tags: null, showOff: true, loading: false
   };
 
@@ -58,6 +58,8 @@
   }
   function toast(msg) {
     var t = el('div', { class: 'toast', role: 'status', text: msg });
+    var n = document.querySelectorAll('.toast').length;
+    t.style.bottom = (16 + n * 46) + 'px'; // 同時に複数出ても重ならないよう、下から積み上げる
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 2800);
   }
@@ -87,6 +89,7 @@
 
   /* ---------- 画面の骨組み ---------- */
   function renderShell() {
+    flushMemo();
     root.textContent = '';
     var menuList = null;
     var menuBtn = el('button', { class: 'btn small', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', text: S.me.user.name + ' ▾' });
@@ -121,10 +124,12 @@
       el('span', { class: 'brand', text: S.me.app_name }), tabs, el('span', { class: 'spacer' }),
       el('div', { class: 'menu' }, menuBtn))));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { id: 'filters' }),
-      el('div', { class: 'layout' }, el('div', { id: 'board', class: 'board' }), el('aside', { id: 'todo', class: 'todo', 'aria-label': 'ToDoリスト' }))));
+      el('div', { class: 'layout' }, el('div', { id: 'board', class: 'board' }),
+        el('div', { class: 'side' }, el('aside', { id: 'todo', class: 'todo', 'aria-label': 'ToDoリスト' }), el('section', { id: 'memo', class: 'todo memo', 'aria-label': 'メモ（日報用）' })))));
     renderToolbar();
     renderFilters();
     loadTodos();
+    renderMemo();
   }
 
   function renderToolbar() {
@@ -551,6 +556,236 @@
       el('label', null, '日付', date), err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '予定にする' })));
     var ov = openModal('日付を選んで予定にする', form);
+  }
+
+  /* ---------- メモ（日報用） ----------
+   * 書式は「改行」と「取り消し線」だけ。コピーすると、書式つき(HTML)と文字だけ(text)の両方がクリップボードに入る。
+   * メールなど書式を受け付ける貼り付け先では取り消し線がそのまま残り、書式を受け付けない所でも、
+   * 取り消し線の文字には「線の結合文字(U+0336)」が付くので、線が消えない。 */
+  var memoEditor = null, memoTimer = null, memoStatusEl = null;
+  var STRIKE_TAGS = { S: 1, STRIKE: 1, DEL: 1 };
+  var BLOCK_TAGS = /^(DIV|P|LI|TR|H[1-6]|UL|OL|TABLE|BLOCKQUOTE)$/;
+
+  function escHtml(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  /* 貼り付けられた/保存された内容を、改行と取り消し線だけの安全なDOMにする */
+  function cleanInto(n, out) {
+    if (n.nodeType === 3) { out.appendChild(document.createTextNode(n.nodeValue)); return; }
+    if (n.nodeType !== 1) return;
+    var tag = n.nodeName.toUpperCase();
+    if (/^(SCRIPT|STYLE|HEAD|TITLE|META|LINK|NOSCRIPT|TEMPLATE|IFRAME|OBJECT|EMBED)$/.test(tag)) return;
+    if (tag === 'BR') { out.appendChild(document.createElement('br')); return; }
+    var target = out;
+    if (BLOCK_TAGS.test(tag) && tag !== 'BODY') { var d = document.createElement('div'); out.appendChild(d); target = d; }
+    var style = (n.getAttribute && n.getAttribute('style') || '').toLowerCase();
+    if (STRIKE_TAGS[tag] || /line-through/.test(style)) { var sEl = document.createElement('s'); target.appendChild(sEl); target = sEl; }
+    Array.prototype.forEach.call(n.childNodes, function (c) { cleanInto(c, target); });
+  }
+  function memoFragmentFromHtml(html) {
+    var doc = new DOMParser().parseFromString(html || '', 'text/html');
+    var frag = document.createDocumentFragment();
+    cleanInto(doc.body, frag);
+    return frag;
+  }
+
+  /* 編集欄の中身を、行ごとの [{t:文字, s:取り消し線か}] にする */
+  function memoLines(root) {
+    var lines = [], cur = [];
+    function flush() { lines.push(cur); cur = []; }
+    function walk(n, strike) {
+      if (n.nodeType === 3) { if (n.nodeValue) cur.push({ t: n.nodeValue.replace(/ /g, ' ').replace(/[\r\n]+/g, ' '), s: strike }); return; }
+      if (n.nodeType !== 1) return;
+      var tag = n.nodeName.toUpperCase();
+      if (tag === 'BR') { flush(); return; }
+      var blk = BLOCK_TAGS.test(tag);
+      if (blk && cur.length) flush();
+      var st = strike || !!STRIKE_TAGS[tag] || /line-through/.test((n.getAttribute('style') || '').toLowerCase());
+      Array.prototype.forEach.call(n.childNodes, function (c) { walk(c, st); });
+      if (blk && cur.length) flush();
+    }
+    Array.prototype.forEach.call(root.childNodes, function (c) { walk(c, false); });
+    if (cur.length) flush();
+    while (lines.length && !lines[lines.length - 1].length) lines.pop(); // 末尾の空行は捨てる
+    return lines;
+  }
+  function addStrikeChars(t) { return Array.from(t).map(function (ch) { return /\s/.test(ch) ? ch : ch + '̶'; }).join(''); }
+  function linesToSaveHtml(lines) {
+    return lines.map(function (segs) {
+      return '<div>' + (segs.length ? segs.map(function (g) { var t = escHtml(g.t); return g.s ? '<s>' + t + '</s>' : t; }).join('') : '<br>') + '</div>';
+    }).join('');
+  }
+  /* 行を <br> でつないだ、1つの塊のHTML（カーソル位置への挿入用） */
+  function linesToInlineHtml(lines) {
+    return lines.map(function (segs) { return segs.map(function (g) { var t = escHtml(g.t); return g.s ? '<s>' + t + '</s>' : t; }).join(''); }).join('<br>');
+  }
+  /* メール等に貼るためのHTML。段落の余白をなくし、取り消し線は <s> と style の両方で指定（貼り付け先ごとの差を減らす） */
+  function linesToClipHtml(lines) {
+    return lines.map(function (segs) {
+      return '<p style="margin:0;padding:0">' + (segs.length ? segs.map(function (g) {
+        var t = escHtml(g.t); return g.s ? '<s style="text-decoration:line-through">' + t + '</s>' : t;
+      }).join('') : '<br>') + '</p>';
+    }).join('');
+  }
+  function linesToPlain(lines) {
+    return lines.map(function (segs) { return segs.map(function (g) { return g.s ? addStrikeChars(g.t) : g.t; }).join(''); }).join('\n');
+  }
+
+  function memoSetStatus(t) { if (memoStatusEl) memoStatusEl.textContent = t; }
+  function saveMemoNow() {
+    if (memoTimer) { clearTimeout(memoTimer); memoTimer = null; }
+    if (!memoEditor) return Promise.resolve();
+    var html = linesToSaveHtml(memoLines(memoEditor));
+    S.memoHtml = html; S.memoLoaded = true;
+    return api('memo_save', { body: { html: html } }).then(function (j) { memoSetStatus('保存しました ' + j.saved_at); })
+      .catch(function (x) { memoSetStatus('保存できませんでした: ' + x.message); });
+  }
+  function flushMemo() { if (memoTimer) saveMemoNow(); }
+  function memoChanged() {
+    S.memoHtml = linesToSaveHtml(memoLines(memoEditor)); S.memoLoaded = true;
+    memoSetStatus('編集中…');
+    if (memoTimer) clearTimeout(memoTimer);
+    memoTimer = setTimeout(saveMemoNow, 900);
+  }
+
+  function fillMemo(html) {
+    memoEditor.textContent = '';
+    memoEditor.appendChild(memoFragmentFromHtml(html));
+  }
+
+  /* 取り消し線の切り替え。何も選んでいなければ、カーソルのある行全体に付ける */
+  function toggleStrike() {
+    memoEditor.focus();
+    var sel = window.getSelection();
+    if (!sel.rangeCount || !memoEditor.contains(sel.anchorNode)) return;
+    if (sel.isCollapsed) {
+      var node = sel.anchorNode;
+      while (node && node.parentNode !== memoEditor) node = node.parentNode;
+      if (!node) return;
+      var r = document.createRange(); r.selectNodeContents(node); sel.removeAllRanges(); sel.addRange(r);
+    }
+    document.execCommand('strikeThrough');
+    sel.collapseToEnd();
+    memoChanged();
+  }
+
+  function writeClipboard(html, plain) {
+    if (navigator.clipboard && window.ClipboardItem && html) {
+      return navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([plain], { type: 'text/plain' }) })]);
+    }
+    if (navigator.clipboard && !html) return navigator.clipboard.writeText(plain);
+    return Promise.reject(new Error('unsupported'));
+  }
+  function fallbackCopy(html, plain) {
+    var ta = document.createElement('textarea'); ta.value = plain; ta.style.cssText = 'position:fixed;opacity:0;top:0';
+    document.body.appendChild(ta); ta.select();
+    var onCopy = function (e) { if (html) e.clipboardData.setData('text/html', html); e.clipboardData.setData('text/plain', plain); e.preventDefault(); };
+    document.addEventListener('copy', onCopy, { once: true });
+    var ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.removeEventListener('copy', onCopy); ta.remove();
+    return ok;
+  }
+  function copyMemo(plainOnly) {
+    var lines = memoLines(memoEditor);
+    var plain = linesToPlain(lines);
+    if (!plain.trim()) { toast('メモが空です'); return; }
+    var html = plainOnly ? null : linesToClipHtml(lines);
+    var okMsg = plainOnly ? 'テキストでコピーしました（取り消し線は線の文字で表します）' : 'コピーしました。日報に貼り付けてください（取り消し線も残ります）';
+    writeClipboard(html, plain).then(function () { toast(okMsg); }).catch(function () {
+      if (fallbackCopy(html, plain)) toast(okMsg); else toast('コピーできませんでした。メモを選択して Ctrl + C を押してください。');
+    });
+  }
+
+  /* 日報の雛形: 本日と次の営業日の「予定・To Do」を入れる（業務の予定と、業務のToDoだけ） */
+  function buildReportLines() {
+    var today = new Date(), from = ymd(today), to = ymd(addDays(today, 14));
+    return api('events', { params: { from: from, to: to, view: 'team' } }).then(function (j) {
+      var me = S.me.user.id, hol = j.holidays;
+      var off = function (ds) { var w = parse(ds).getDay(); return w === 0 || w === 6 || !!hol[ds]; };
+      var todos = S.todos.filter(function (t) { return t.kind === 'work'; }).map(function (t) { return t.title; });
+      var itemsFor = function (ds) {
+        var list = [];
+        j.events.forEach(function (e) {
+          if (e.kind !== 'work' || e.owner_id !== me || e.start > ds || e.end < ds) return;
+          if (e.start !== e.end && off(ds)) return; // 期間のある業務は土日祝に出さない（カレンダーと同じ）
+          list.push((e.start_time ? e.start_time + ' ' : '') + e.title);
+        });
+        return list.concat(todos);
+      };
+      var next = addDays(today, 1);
+      for (var i = 0; i < 14 && off(ymd(next)); i++) next = addDays(next, 1);
+      var head = function (d) { return (d.getMonth() + 1) + '/' + d.getDate() + '　予定・To Do'; };
+      var L = ['お疲れ様です。', '業務終了しました。', '', '以下、本日の業務報告です。', '', head(today), ''].concat(itemsFor(from), ['', head(next), ''], itemsFor(ymd(next)), ['', '以上となります。']);
+      if (today.getDay() === 5) L.push('今週もありがとうございました。');
+      L.push('よろしくお願いいたします。');
+      return L;
+    });
+  }
+
+  function renderMemo() {
+    var box = document.getElementById('memo');
+    if (!box) return;
+    box.textContent = '';
+    memoStatusEl = el('span', { class: 'memo-status', role: 'status' });
+    memoEditor = el('div', { class: 'memo-editor', contenteditable: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'メモ（日報用）', spellcheck: 'false' });
+    var tool = function (label, title, fn, cls) { return el('button', { class: 'btn small ' + (cls || ''), type: 'button', title: title, onmousedown: function (e) { e.preventDefault(); }, onclick: fn }, label); };
+    box.appendChild(el('h2', { text: 'メモ（日報用）' }));
+    box.appendChild(el('p', { class: 'hint', text: '終わった業務に取り消し線を付けて、そのまま日報に貼り付けられます。自動で保存されます。' }));
+    box.appendChild(el('div', { class: 'memo-bar' },
+      tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
+      tool('日報の雛形', '本日と次の営業日の予定・ToDoを入れた日報の下書きを作る', function () {
+        if (memoLines(memoEditor).length && !window.confirm('いまのメモを、日報の雛形で置き換えます。よろしいですか？')) return;
+        buildReportLines().then(function (L) { fillMemo(linesToSaveHtml(L.map(function (t) { return t === '' ? [] : [{ t: t, s: false }]; }))); memoChanged(); }).catch(fail);
+      }),
+      tool('クリア', 'メモを空にする', function () {
+        if (!memoLines(memoEditor).length || !window.confirm('メモを空にします。よろしいですか？')) return;
+        memoEditor.textContent = ''; memoChanged();
+      }, 'ghost')));
+    box.appendChild(el('div', { class: 'memo-bar' },
+      tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
+      tool('テキストでコピー', '文字だけでコピー（取り消し線は線の文字で表す）', function () { copyMemo(true); })));
+    box.appendChild(memoEditor);
+    box.appendChild(memoStatusEl);
+
+    memoEditor.addEventListener('input', memoChanged);
+    memoEditor.addEventListener('blur', function () { if (memoTimer) saveMemoNow(); });
+    memoEditor.addEventListener('keydown', function (e) { if (e.ctrlKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) { e.preventDefault(); toggleStrike(); } });
+    // 貼り付け: 書式つきでも、取り消し線だけを残して他の書式は捨てる。文字だけの貼り付けは、線の結合文字を取り消し線に戻す
+    memoEditor.addEventListener('paste', function (e) {
+      var cd = e.clipboardData; if (!cd) return;
+      e.preventDefault();
+      var html = cd.getData('text/html'), tmp = document.createElement('div');
+      if (html) {
+        tmp.appendChild(memoFragmentFromHtml(html));
+      } else {
+        cd.getData('text/plain').split(/\r?\n/).forEach(function (line) {
+          var d = document.createElement('div');
+          if (!line) d.appendChild(document.createElement('br'));
+          line.split(/((?:[^̶]̶)+)/).forEach(function (part, i) {
+            if (!part) return;
+            if (i % 2 === 1) { var sEl = document.createElement('s'); sEl.textContent = part.replace(/̶/g, ''); d.appendChild(sEl); } else d.appendChild(document.createTextNode(part));
+          });
+          tmp.appendChild(d);
+        });
+      }
+      document.execCommand('insertHTML', false, linesToInlineHtml(memoLines(tmp)));
+      memoChanged();
+    });
+    // Ctrl + C でも、書式つき + 文字だけ の両方をコピーする（選んだ部分の取り消し線を保つ）
+    memoEditor.addEventListener('copy', function (e) {
+      var sel = window.getSelection();
+      if (!sel.rangeCount || sel.isCollapsed || !e.clipboardData) return;
+      var range = sel.getRangeAt(0), tmp = document.createElement('div'), holder = tmp;
+      var anc = range.commonAncestorContainer; anc = anc.nodeType === 3 ? anc.parentNode : anc;
+      if (anc && anc.closest && memoEditor.contains(anc) && anc.closest('s,strike,del')) { holder = document.createElement('s'); tmp.appendChild(holder); }
+      holder.appendChild(range.cloneContents());
+      var lines = memoLines(tmp);
+      e.clipboardData.setData('text/html', linesToClipHtml(lines));
+      e.clipboardData.setData('text/plain', linesToPlain(lines));
+      e.preventDefault();
+    });
+
+    if (S.memoLoaded) fillMemo(S.memoHtml);
+    else api('memo_get').then(function (j) { S.memoHtml = j.html; S.memoLoaded = true; if (!memoEditor.textContent && !memoTimer) fillMemo(j.html); }).catch(fail);
   }
 
   /* ---------- 予定の複製 ---------- */

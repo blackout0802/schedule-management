@@ -335,3 +335,42 @@ function reorder_todos(array $ids, array $user): void
         $prev = $n;
     }
 }
+
+/* ------------------------------------------------------------------
+ * 日報用のメモ（本人だけ）。書式は「改行」と「取り消し線」だけを残す。
+ * ------------------------------------------------------------------ */
+
+const MEMO_MAX_CHARS = 12000;
+
+/** メモのHTMLを安全な形にする。許すのは div / br / s（取り消し線）だけ。属性・スクリプトは全て消す */
+function sanitize_memo_html(string $html): string
+{
+    $html = mb_substr($html, 0, MEMO_MAX_CHARS * 3);
+    $html = preg_replace('#<(script|style|iframe|object|embed|template)\b[^>]*>.*?</\1\s*>#is', '', $html);
+    $html = strip_tags($html, '<div><p><br><s><strike><del>');
+    $html = preg_replace('#<\s*(/?)\s*([a-z0-9]+)\b[^>]*>#i', '<$1$2>', $html); // 属性を全て取り除く
+    $html = preg_replace('#<(/?)(strike|del)>#i', '<$1s>', $html);
+    $html = preg_replace('#<(/?)p>#i', '<$1div>', $html);
+    $html = preg_replace('#<br\s*/?>#i', '<br>', $html);
+    return $html;
+}
+
+function get_memo(array $user): string
+{
+    $r = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
+    return $r ? sanitize_memo_html($r['body']) : '';
+}
+
+function save_memo(string $html, array $user): string
+{
+    $clean = sanitize_memo_html($html);
+    if (mb_strlen(strip_tags($clean)) > MEMO_MAX_CHARS) {
+        throw new RuntimeException('メモが長すぎます（' . MEMO_MAX_CHARS . '文字まで）。');
+    }
+    if (row('SELECT owner_id FROM memos WHERE owner_id = ?', [$user['id']])) {
+        q('UPDATE memos SET body = ?, updated_at = ? WHERE owner_id = ?', [$clean, now_str(), $user['id']]);
+    } else {
+        q('INSERT INTO memos (owner_id, body, updated_at) VALUES (?,?,?)', [$user['id'], $clean, now_str()]);
+    }
+    return $clean;
+}
