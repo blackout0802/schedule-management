@@ -192,6 +192,30 @@ function handle_api(): void
             $saved['owner_name'] = (row('SELECT name FROM users WHERE id = ?', [$saved['owner_id']]))['name'];
             api_out(['event' => event_for_client($saved, $user)]);
 
+        case 'event_duplicate':
+            $src = find_event((int)($in['id'] ?? 0), $user);
+            if (!$src) {
+                api_fail('予定が見つかりません。', 404);
+            }
+            if (!can_edit_event($src, $user)) {
+                api_fail('この予定は複製できません。', 403);
+            }
+            $dates = is_array($in['dates'] ?? null) ? array_values(array_filter($in['dates'], 'is_string')) : [];
+            if (!$dates || count($dates) > 31) {
+                api_fail('複製先の日付を1〜31件で指定してください。');
+            }
+            foreach ($dates as $d) {
+                if (!valid_date($d)) {
+                    api_fail('日付を正しく入力してください。');
+                }
+            }
+            [$created, $skipped] = duplicate_event($src, $dates, $user);
+            if ($created && $src['kind'] === 'off') {
+                $owner = row('SELECT id,name,slack_id FROM users WHERE id = ?', [$src['owner_id']]);
+                notify_offs_registered($created, $owner, $user);
+            }
+            api_out(['created' => count($created), 'skipped' => $skipped]);
+
         case 'event_delete':
             $e = find_event((int)($in['id'] ?? 0), $user);
             if (!$e) {

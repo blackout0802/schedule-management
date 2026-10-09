@@ -180,3 +180,32 @@ function delete_event(array $e): void
     }
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
 }
+
+/**
+ * 予定を、指定した日付へ複製する。件名・分類・時刻・メモ・持ち主を引き継ぎ、期間（何日間か）も同じにする。
+ * 繰り返しルール由来の予定を複製した場合、コピーは通常の予定になる。
+ * 同じ内容の予定がすでにある日付は、二重にならないよう飛ばす。
+ * @param string[] $dates 複製先の開始日（Y-m-d）
+ * @return array{0:array,1:int} [作った予定の一覧, 飛ばした件数]
+ */
+function duplicate_event(array $src, array $dates, array $user): array
+{
+    $span = (int)round((strtotime($src['end_date']) - strtotime($src['start_date'])) / 86400);
+    $created = [];
+    $skipped = 0;
+    foreach (array_values(array_unique($dates)) as $d) {
+        $end = date('Y-m-d', strtotime($d . " +$span day"));
+        $dup = row('SELECT id FROM events WHERE owner_id = ? AND kind = ? AND title = ? AND start_date = ? AND end_date = ? AND start_time = ? AND end_time = ?', [
+            $src['owner_id'], $src['kind'], $src['title'], $d, $end, $src['start_time'], $src['end_time'],
+        ]);
+        if ($dup) {
+            $skipped++;
+            continue;
+        }
+        $created[] = save_event([
+            'kind' => $src['kind'], 'title' => $src['title'], 'tag' => $src['tag'], 'start' => $d, 'end' => $end,
+            'start_time' => $src['start_time'], 'end_time' => $src['end_time'], 'note' => $src['note'], 'owner_id' => (int)$src['owner_id'],
+        ], $user, null);
+    }
+    return [$created, $skipped];
+}

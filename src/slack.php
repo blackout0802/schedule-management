@@ -78,11 +78,23 @@ function off_line(array $e, string $who): string
     return '• ' . $who . '　' . ($e['tag'] !== '' ? $e['tag'] : '休み') . '　' . $range;
 }
 
-/** 休みが登録されたときの通知（件名と日付だけを送る） */
+/** 休みが登録されたときの通知（件名と日付だけを送る）。複数件は1通にまとめる */
+function notify_offs_registered(array $events, array $owner, array $actor): void
+{
+    if (!$events) {
+        return;
+    }
+    $by = (int)$owner['id'] !== (int)$actor['id'] ? "\n（{$actor['name']} さんが登録）" : '';
+    $lines = [];
+    foreach ($events as $e) {
+        $lines[] = off_line($e, slack_person($owner));
+    }
+    slack_post("【休みの登録】\n" . implode("\n", $lines) . $by . slack_link_suffix());
+}
+
 function notify_off_registered(array $event, array $owner, array $actor): void
 {
-    $by = (int)$owner['id'] !== (int)$actor['id'] ? "\n（{$actor['name']} さんが登録）" : '';
-    slack_post("【休みの登録】\n" . off_line($event, slack_person($owner)) . $by . slack_link_suffix());
+    notify_offs_registered([$event], $owner, $actor);
 }
 
 /** その日の休みをまとめて通知（$label は「本日」「明日」） */

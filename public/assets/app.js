@@ -316,11 +316,70 @@
       ev && ev.recurring ? el('p', { class: 'hint', text: '↻ 毎月の繰り返しから作られた予定です。この回を編集すると、以後ルールを変更してもこの回は変わりません。' }) : null,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
       err,
-      el('div', { class: 'actions' }, del, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
+      el('div', { class: 'actions' }, del,
+        ev ? el('button', { class: 'btn', type: 'button', text: '複製', title: 'この予定を、他の日にも作る', onclick: function () { ov.close(); openDuplicateDialog(ev); } }) : null,
+        el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal(isNew ? '予定を追加' : '予定を編集', form);
     if (ev) tag.value = ev.tag;
     syncKind();
     if (ev) tag.value = ev.tag || tag.value;
+  }
+
+  /* ---------- 予定の複製 ---------- */
+  function openDuplicateDialog(ev) {
+    var span = Math.round((parse(ev.end) - parse(ev.start)) / 86400000);
+    var rows = [];
+    var list = el('div', { class: 'dup-list' });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+
+    function addRow(val) {
+      var inp = el('input', { type: 'date', required: true, value: val || '', 'aria-label': '複製先の日付' });
+      var info = el('span', { class: 'hint' });
+      var update = function () {
+        info.textContent = !inp.value ? '' : span > 0 ? mdw(inp.value) + ' 〜 ' + mdw(ymd(addDays(parse(inp.value), span))) : mdw(inp.value);
+      };
+      inp.addEventListener('input', update);
+      update();
+      var item = {};
+      var rm = el('button', { class: 'btn small ghost', type: 'button', 'aria-label': 'この日付を外す', text: '✕', onclick: function () {
+        if (rows.length <= 1) return;
+        rows = rows.filter(function (r) { return r !== item; });
+        item.node.remove();
+      } });
+      item.input = inp;
+      item.node = el('div', { class: 'dup-row' }, inp, info, rm);
+      rows.push(item);
+      list.appendChild(item.node);
+      return inp;
+    }
+    addRow(ymd(addDays(parse(ev.end), 1)));
+
+    var kindName = ev.kind === 'off' ? '休み' : ev.kind === 'private' ? 'プライベート' : '業務';
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      err.hidden = true;
+      var dates = rows.map(function (r) { return r.input.value; }).filter(Boolean);
+      if (!dates.length) { err.textContent = '複製先の日付を入力してください。'; err.hidden = false; return; }
+      api('event_duplicate', { body: { id: ev.id, dates: dates } }).then(function (j) {
+        ov.close();
+        toast(j.created + '件を複製しました' + (j.skipped ? '（同じ予定がすでにある ' + j.skipped + '件は飛ばしました）' : ''));
+        load();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('div', { class: 'notice' }, el('b', { text: '複製する予定' }),
+        el('p', { text: '[' + kindName + '] ' + eventLabel(ev, true) + '　' + (ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)) })),
+      el('p', { class: 'hint', text: span > 0 ? '複製先の日付を選ぶと、同じ ' + (span + 1) + '日間の予定が作られます。' : '複製先の日付を選んでください。複数の日付をまとめて指定できます。' }),
+      list,
+      el('div', null, el('button', { class: 'btn small', type: 'button', text: '＋ 日付を追加', onclick: function () {
+        var last = rows[rows.length - 1].input.value;
+        var next = addRow(last ? ymd(addDays(parse(last), 1)) : '');
+        next.focus();
+      } })),
+      ev.kind === 'off' ? el('p', { class: 'hint', text: '休みを複製すると、Slackにも1通にまとめて通知されます。' }) : null,
+      ev.kind === 'private' ? el('p', { class: 'hint', text: 'プライベートの予定のまま複製されます（本人以外には表示されません）。' }) : null,
+      err,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '複製する' })));
+    var ov = openModal('予定を複製', form);
   }
 
   function openEventView(ev) {

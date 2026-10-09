@@ -181,6 +181,34 @@ delete_series($sid);
 check('ルール削除後、未編集の将来分は消える', (int)row("SELECT COUNT(*) AS c FROM events WHERE title = '月次締め'")['c'], 0);
 check('編集済みの回は通常の予定として残る', (int)row("SELECT COUNT(*) AS c FROM events WHERE title = '月次締め(前倒し)' AND series_id IS NULL")['c'], 1);
 
+// ---- 予定の複製 ----
+$d0 = date('Y-m-d', strtotime('+30 day')); $d1 = date('Y-m-d', strtotime('+32 day'));
+$srcOff = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '調整休', 'start' => $d0, 'end' => $d1, 'note' => 'メモ', 'start_time' => '09:00', 'end_time' => '12:00']);
+$t1 = date('Y-m-d', strtotime('+40 day')); $t2 = date('Y-m-d', strtotime('+50 day'));
+[$cr, $sk] = duplicate_event($srcOff, [$t1, $t2, $t1], $a);
+check('複製: 日付の重複を除いて2件作られる', [count($cr), $sk], [2, 0]);
+check('複製: 3日間の期間が引き継がれる', [$cr[0]['start_date'], $cr[0]['end_date']], [$t1, date('Y-m-d', strtotime($t1 . ' +2 day'))]);
+check('複製: 件名・分類・時刻・メモ・種類・持ち主が同じ', [$cr[1]['title'], $cr[1]['tag'], $cr[1]['start_time'], $cr[1]['end_time'], $cr[1]['note'], $cr[1]['kind'], (int)$cr[1]['owner_id']], ['休み', '調整休', '09:00', '12:00', 'メモ', 'off', (int)$a['id']]);
+[$cr2, $sk2] = duplicate_event($srcOff, [$t1], $a);
+check('複製: 同じ予定がある日付は飛ばす（二重登録しない）', [count($cr2), $sk2], [0, 1]);
+// 管理者が他の社員の休みを複製 → 持ち主は元の社員のまま
+[$cr3] = duplicate_event($srcOff, [date('Y-m-d', strtotime('+60 day'))], $admin);
+check('複製: 管理者が複製しても持ち主は元の社員', (int)$cr3[0]['owner_id'], (int)$a['id']);
+// プライベートの複製はプライベートのまま、他人には見えない
+$srcPriv = $mk($a, ['kind' => 'private', 'title' => '秘密の予定', 'start' => $d0]);
+[$cr4] = duplicate_event($srcPriv, [$t1], $a);
+check('複製: プライベートはプライベートのまま', $cr4[0]['kind'], 'private');
+check('複製: 他の社員・管理者にはコピーも見えない', [in_array('秘密の予定', $titles(list_events($b, $t1, $t1, 'team')), true), in_array('秘密の予定', $titles(list_events($admin, $t1, $t1, 'me', ['tags' => cfg('work_tags'), 'showOff' => true])), true)], [false, false]);
+check('複製: 他人のプライベートは複製元として見つからない', find_event((int)$srcPriv['id'], $b), null);
+check('複製: 一般社員は他人の休みを複製できない（編集権限なし）', can_edit_event($srcOff, $b), false);
+// 繰り返し予定の複製 → 通常の予定になる
+$sid2 = (int)(function () use ($a) { q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$a['id'], '複製元ルール', '定例業務', 'day', 15, 'none', now_str()]); return db()->lastInsertId(); })();
+materialize_series($sid2);
+$srcSeries = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$sid2]);
+[$cr5] = duplicate_event($srcSeries, [date('Y-m-d', strtotime($srcSeries['start_date'] . ' +3 day'))], $a);
+check('複製: 繰り返し予定のコピーは通常の予定', [$cr5[0]['series_id'], $cr5[0]['ym']], [null, null]);
+delete_series($sid2);
+
 // Slack 通知の重複防止
 check('通知は1回目だけ true', notify_once('test:1'), true);
 check('同じ通知は2回目 false', notify_once('test:1'), false);
