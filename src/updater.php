@@ -130,6 +130,9 @@ function updater_write(string $target, string $code): void
     if (@file_put_contents($tmp, $code, LOCK_EX) === false) {
         throw new UpdaterException('書き込めませんでした（権限を確認してください）: ' . basename($target));
     }
+    // サーバーによっては、新しく作ったファイルが誰でも書ける権限(666)になり、公開側のPHPがWebサーバーに拒否される（403）。
+    // 必ず、ふつうの権限（644）にそろえる
+    @chmod($tmp, 0644);
     if (!@rename($tmp, $target)) {
         @unlink($tmp);
         throw new UpdaterException('置き換えられませんでした: ' . basename($target));

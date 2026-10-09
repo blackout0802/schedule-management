@@ -564,7 +564,10 @@ $zipOk = $mkzip([
     'src/config.php' => '<?php // 上書き禁止', 'config.php' => '<?php // 上書き禁止', 'tests/run.php' => '<?php // 対象外', 'src/run.sh' => 'rm -rf /',
     'src/.htaccess' => 'x', 'public/.env' => 'x',
 ], 'ok.zip');
+$um = umask(0); // 新しいファイルが666になってしまうサーバーを想定
 $r = updater_apply($zipOk, "$U/web", "$U/app");
+umask($um);
+check('更新: 作られるファイルの権限は644（誰でも書ける666にならない）', [substr(sprintf('%o', fileperms("$U/web/assets/app.js")), -3), substr(sprintf('%o', fileperms("$U/app/src/a.php")), -3)], ['644', '644']);
 check('更新: 対象の3ファイルだけが変わる', $r['changed'], ['src/a.php', 'src/b.php', 'public/assets/app.js']);
 check('更新: 同じ内容のファイルは変更なし扱い', $r['unchanged'], 1);
 check('更新: 対象外(install/app_path/config/tests/.sh/.htaccess等)は飛ばす', $r['skipped'], 8);
