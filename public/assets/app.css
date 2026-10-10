@@ -3,13 +3,14 @@
   --work: #2155d6; --work-soft: #e2eafc; --off: #0d7f62; --off-soft: #d9f2ea;
   --private: #8337c9; --private-soft: #efe4fa; --danger: #c0392b; --danger-soft: #fbe5e2;
   --overlay: rgba(10, 18, 32, .5);
+  --rec: #9a4a00; /* 毎月の繰り返し業務の文字色（単発の業務は青） */
   --font: "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0e1522; --surface: #162033; --surface-2: #1e2b43; --ink: #e8eef8; --muted: #9aa8bd; --line: #2a3850;
     --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
-    --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; color-scheme: dark;
+    --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -326,3 +327,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .list-day.drop { outline: 2px solid var(--work); outline-offset: -2px; background: var(--work-soft); }
 .bar.plain[draggable="true"] { cursor: grab; }
 .month-sum h3 .btn.small { padding: 0 8px; font-size: 12px; line-height: 1.6; }
+
+/* 毎月の繰り返し業務は、文字を茶色（ダークでは橙）にして、単発の業務（青）と見分ける。重要な予定は、塗りつぶしの強調を優先 */
+.bar.work.rec:not(.imp) { color: var(--rec); }
+.legend .rec-sample { color: var(--rec); font-weight: 700; }

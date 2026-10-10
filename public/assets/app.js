@@ -418,7 +418,7 @@
 
   function barFor(g, days) {
     var e = g.ev;
-    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2),
       text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
@@ -439,7 +439,7 @@
 
   /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
   function plainBar(e, ds) {
-    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, class: 'bar plain ' + e.kind + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
     if (!SHARE && e.editable) { // リストの予定を、ToDoの列へ・別の日の行へドラッグできる
@@ -512,7 +512,7 @@
       el('span', null, el('i', { style: 'background:var(--work)' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--off)' }), '休み'),
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
-      el('span', { text: '↻ 毎月の繰り返し' }),
+      el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務（茶色の文字）' }), '／単発の業務は青の文字'),
       el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
       SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます・画面の右端へ持っていくとToDoにできます' }),
       el('span', { text: 'ショートカット: ? で一覧' }),
