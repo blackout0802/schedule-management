@@ -503,3 +503,11 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .au-label { font-weight: 700; overflow-wrap: anywhere; } .au-target { color: var(--muted); font-size: 13px; }
 .au-detail { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .audit-item.delete .au-label { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* ---- スマホ: 左右にスワイプして月を切り替える ---- */
+@media (max-width: 640px) { .cal-wrap { touch-action: pan-y; } }
+@keyframes slide-from-right { from { transform: translateX(26px); opacity: .35; } to { transform: none; opacity: 1; } }
+@keyframes slide-from-left { from { transform: translateX(-26px); opacity: .35; } to { transform: none; opacity: 1; } }
+.cal-wrap.slide-next { animation: slide-from-right .22s ease-out; }
+.cal-wrap.slide-prev { animation: slide-from-left .22s ease-out; }
+@media (prefers-reduced-motion: reduce) { .cal-wrap.slide-next, .cal-wrap.slide-prev { animation: none; } }

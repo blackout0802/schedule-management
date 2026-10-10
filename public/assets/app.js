@@ -530,7 +530,26 @@
   function whoName() { var id = whoId(); var u = S.me.users.filter(function (x) { return x.id === id; })[0]; return u ? u.name : ''; }
 
   /* 月の移動・今日・版（業務／プライベート）・「表示する人」の切り替え。ボタンとショートカットキーの両方から使う */
-  function navMonth(delta) { var d = new Date(S.year, S.month - 1 + delta, 1); S.year = d.getFullYear(); S.month = d.getMonth() + 1; renderToolbar(); load(); }
+  function navMonth(delta, slide) { var d = new Date(S.year, S.month - 1 + delta, 1); S.year = d.getFullYear(); S.month = d.getMonth() + 1; S.slide = slide ? (delta > 0 ? 'next' : 'prev') : ''; renderToolbar(); load(); }
+
+  /* スマホ: カレンダーを、左右にスワイプして、月を切り替える（左へ＝次の月、右へ＝前の月）。
+     縦のスクロール・日付のタップ・入力中・ダイアログを開いている間は、動かさない */
+  var swipe = null;
+  function swipeTarget(t) { return !!(t && t.closest && t.closest('#board .cal-wrap') && S.mode === 'cal' && S.page !== 'settings' && !modals.length && !S.drag); }
+  document.addEventListener('touchstart', function (e) {
+    swipe = null;
+    if (e.touches.length !== 1 || !swipeTarget(e.target)) return;
+    var t = e.touches[0]; swipe = { x: t.clientX, y: t.clientY, at: Date.now() };
+  }, { passive: true });
+  document.addEventListener('touchmove', function (e) { if (swipe && e.touches.length !== 1) swipe = null; }, { passive: true });
+  document.addEventListener('touchcancel', function () { swipe = null; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    var sw = swipe; swipe = null;
+    if (!sw || !e.changedTouches.length || S.mode !== 'cal' || S.page === 'settings' || modals.length || S.drag) return;
+    var t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+    if (Date.now() - sw.at > 800 || Math.abs(dx) < Math.max(56, window.innerWidth * 0.16) || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    navMonth(dx < 0 ? 1 : -1, true);
+  }, { passive: true });
   function goToday() { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); }
   function setView(v) { if (S.view === v) return; S.view = v; store('sched.view', v); renderShell(); load(); }
   function selectWho(val) { S.who = val; store('sched.who', S.who); renderToolbar(); load(); }
@@ -838,7 +857,8 @@
     for (var w = 0; w < days.length; w += 7) {
       weeks.appendChild(renderWeek(days.slice(w, w + 7), todayStr));
     }
-    board.appendChild(el('div', { class: 'cal-wrap' }, el('div', { class: 'cal', style: offdayPref().color ? '--offday-bg:' + offdayBg(offdayPref().color) : null }, head, weeks)));
+    var slide = S.slide; S.slide = '';
+    board.appendChild(el('div', { class: 'cal-wrap' + (slide ? ' slide-' + slide : '') }, el('div', { class: 'cal', style: offdayPref().color ? '--offday-bg:' + offdayBg(offdayPref().color) : null }, head, weeks)));
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
       el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み'),
@@ -847,7 +867,8 @@
       FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' }), '／単発の業務（標準では文字の色で区別・色は右上の「設定」→「予定の色の設定」で変更）'),
       FAMILY ? null : el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
       SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます・画面の右端へ持っていくとToDoにできます' }),
-      FAMILY ? null : el('span', { text: 'ショートカット: ? で一覧' }),
+      FAMILY || NARROW() ? null : el('span', { text: 'ショートカット: ? で一覧' }),
+      NARROW() ? el('span', { text: '左右にスワイプすると、前の月・次の月に切り替わります' }) : null,
       POLL_MS && !FAMILY ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null,
       FAMILY && delCount() ? el('span', null, el('span', { class: 'del-sample', text: '取消線' }), '＝削除された予定（押して「確認した」を選ぶと消えます）') : null));
     var sum = monthSummary();
