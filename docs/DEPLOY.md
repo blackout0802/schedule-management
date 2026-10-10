@@ -103,7 +103,7 @@
 1. <https://api.slack.com/apps> で **Create New App → From scratch** を選び、アプリ名とワークスペースを選びます。
 2. **Incoming Webhooks** を ON にし、**Add New Webhook to Workspace** で通知先のチャンネルを選びます。
 3. 表示された `https://hooks.slack.com/services/…` のURLをコピーします。次のどちらかで登録します。
-   - **画面から（おすすめ）**: 管理者でログインし、右上の **「設定」→「Slack通知の設定・テスト」** を開いて、URLを貼り付けて「保存」。FTPでファイルを触る必要はありません（Slackの Webhook URL だけ登録できます）。
+   - **画面から（おすすめ）**: 管理者でログインし、右上の **「設定」→「Slack通知の設定・テスト」** を開いて、**チャンネル名**（自分で分かる名前）と URL を入れて「追加して保存」。チャンネルごとに最大10件まで登録でき、**プルダウンで通知先を選ぶ**と、すぐ切り替わります。FTPでファイルを触る必要はありません（Slackの Webhook URL だけ登録できます）。URL は画面に全部は表示されず、サーバーに保存されます。
    - `config.php` に書く:
 
 ```php

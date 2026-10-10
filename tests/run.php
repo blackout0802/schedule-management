@@ -494,13 +494,35 @@ check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($
 
 // ---- Slack通知の設定とテスト ----
 check('Slack: 画面から登録できるのは、Slack の Webhook URL だけ', array_map('slack_valid_webhook', ['https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234', 'http://hooks.slack.com/services/T0/B0/x', 'https://evil.example.com/services/T0/B0/x', 'https://hooks.slack.com/services/T0/B0', 'https://hooks.slack.com/services/T0/B0/x/../../y', '']), [true, false, false, false, false, false]);
+$U1 = 'https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234';
+$U2 = 'https://hooks.slack.com/services/T0123ABC/B0456DEF/zyxwVUTS9876zyxwVUTS9876';
 $wasUrl = slack_webhook_url();
-slack_save_webhook('https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234');
-check('Slack: 画面から登録した送り先が、設定として使われる', [slack_webhook_url(), slack_enabled(), slack_status()['source']], ['https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234', true, 'ui']);
+check('Slack: 最初は、画面での登録なし', [slack_dests(), slack_status()['source']], [[], $wasUrl !== '' ? 'config' : 'none']);
+$d1 = slack_dest_add('#休み連絡', $U1);
+check('Slack: 最初の1件は、そのまま使う送り先になる', [slack_webhook_url(), slack_active_id() === $d1['id'], slack_enabled(), slack_status()['source'], slack_status()['active_name']], [$U1, true, true, 'ui', '#休み連絡']);
+$d2 = slack_dest_add('#全体連絡', $U2);
+check('Slack: 2件目を足しても、使う送り先は変わらない。一覧は名前で分かる', [slack_webhook_url(), array_column(slack_status()['dests'], 'name')], [$U1, array_merge($wasUrl !== '' ? ['config.php の設定'] : [], ['#休み連絡', '#全体連絡'])]);
+slack_dest_use($d2['id']);
+check('Slack: プルダウンで選んだ送り先に切り替わる', [slack_webhook_url(), slack_status()['active_name']], [$U2, '#全体連絡']);
 $st = slack_status();
-check('Slack: 状態には URL そのものを含めない（伏せた形だけ）', [strpos(json_encode($st), 'abcdEFGH1234abcdEFGH1234') === false, $st['masked']], [true, 'https://hooks.slack.com/…1234']);
-slack_save_webhook('');
-check('Slack: 画面の登録を消すと、config.php の設定に戻る', [slack_webhook_url(), slack_status()['source']], [$wasUrl, $wasUrl !== '' ? 'config' : 'none']);
+check('Slack: 状態には URL そのものを含めない（伏せた形だけ）', [strpos(json_encode($st), 'abcdEFGH1234abcdEFGH1234') === false, strpos(json_encode($st), 'zyxwVUTS9876zyxwVUTS9876') === false, $st['masked']], [true, true, 'https://hooks.slack.com/…9876']);
+$bad = [];
+foreach ([['', $U1], ['x', 'https://evil.example.com/services/T0/B0/x'], ['#全体連絡', 'https://hooks.slack.com/services/T9/B9/zzzz'], ['#別名', $U1], [str_repeat('あ', 31), 'https://hooks.slack.com/services/T9/B9/zzzz']] as $c) {
+    try { slack_dest_add($c[0], $c[1]); $bad[] = 'ok'; } catch (RuntimeException $e) { $bad[] = 'ng'; }
+}
+check('Slack: 名前なし・Slack以外のURL・同じ名前・同じURL・長すぎる名前は、登録できない', $bad, ['ng', 'ng', 'ng', 'ng', 'ng']);
+$n = 0; try { slack_dest_use('nothing'); } catch (RuntimeException $e) { $n = 1; }
+check('Slack: 登録にない送り先は選べない', $n, 1);
+slack_dest_delete($d2['id']);
+check('Slack: 使用中の送り先を消すと、残りの先頭に切り替わる', [slack_webhook_url(), count(slack_dests())], [$U1, 1]);
+slack_dest_delete($d1['id']);
+check('Slack: 全部消すと、config.php の設定に戻る', [slack_webhook_url(), slack_status()['source']], [$wasUrl, $wasUrl !== '' ? 'config' : 'none']);
+slack_meta_set('slack_webhook', $U1); // 古い版（1件だけ登録）のデータ
+check('Slack: 古い版で登録した1件は、「登録済みの送り先」として引き継がれる', [slack_webhook_url(), array_column(slack_dests(), 'name')], [$U1, ['登録済みの送り先']]);
+$d3 = slack_dest_add('#新しい', $U2);
+check('Slack: 引き継いだ後に追加しても、古い登録は消えない（一覧に取り込まれる）', [array_column(slack_dests(), 'name'), slack_meta_get('slack_webhook'), slack_webhook_url()], [['登録済みの送り先', '#新しい'], '', $U1]);
+slack_dest_delete($d3['id']); slack_dest_delete('old');
+check('Slack: 引き継いだ1件も消せる', [slack_dests(), slack_webhook_url()], [[], $wasUrl]);
 check('Slack: 送り先が無いとき、テスト送信は失敗として詳細を返す', (function () { $r = slack_post_detailed('x'); return [$r['ok'], $r['error'] !== '']; })(), slack_enabled() ? [false, true] : [false, true]);
 check('Slack: テスト文面（接続確認）にアプリ名・送信者が入る', (function () use ($a) { $m = slack_test_message('simple', $a); return strpos($m, 'テスト') !== false && strpos($m, $a['name']) !== false; })(), true);
 check('Slack: テスト文面（見本）は、実際の「休みの登録」と同じ形（メンション付き）', (function () use ($a) { $m = slack_test_message('sample', array_merge($a, ['slack_id' => 'U01ABCDEF23'])); return strpos($m, '【休みの登録】') !== false && strpos($m, '<@U01ABCDEF23>') !== false && strpos($m, 'テスト') !== false; })(), true);

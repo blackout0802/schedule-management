@@ -317,13 +317,31 @@ function handle_api(): void
             require_admin($user);
             api_out(['slack' => slack_status()]);
 
-        case 'slack_save': // 送り先のWebhook URLを、画面から登録・削除する（管理者）
+        case 'slack_add': // 送り先を、チャンネル名を付けて登録する（管理者）
             require_admin($user);
-            $url = trim((string)($in['webhook'] ?? ''));
-            if ($url !== '' && !slack_valid_webhook($url)) {
-                api_fail('Webhook URL の形が違います。Slackで発行した https://hooks.slack.com/services/… の URL を、そのまま貼り付けてください。');
+            try {
+                slack_dest_add((string)($in['name'] ?? ''), trim((string)($in['webhook'] ?? '')));
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage());
             }
-            slack_save_webhook($url);
+            api_out(['slack' => slack_status()]);
+
+        case 'slack_delete': // 登録した送り先を消す（管理者）
+            require_admin($user);
+            try {
+                slack_dest_delete((string)($in['id'] ?? ''));
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage());
+            }
+            api_out(['slack' => slack_status()]);
+
+        case 'slack_use': // 使う送り先を選ぶ（管理者）
+            require_admin($user);
+            try {
+                slack_dest_use((string)($in['id'] ?? ''));
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage());
+            }
             api_out(['slack' => slack_status()]);
 
         case 'slack_test': // テスト通知を送る（管理者）

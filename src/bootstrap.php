@@ -280,6 +280,14 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
     }
+    // app_meta の値の欄が 100 文字だった版（Slack の送り先を複数登録するには足りない）。MySQL/MariaDB だけ広げる（SQLite の TEXT は制限なし）
+    if (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+        try {
+            db()->exec('ALTER TABLE app_meta MODIFY meta_value VARCHAR(2000) NOT NULL');
+        } catch (PDOException $e) {
+            error_log('[schedule] app_meta の拡張に失敗しました: ' . $e->getMessage());
+        }
+    }
 }
 
 /** 画面ごとに作る使い捨ての印。これを付けた <script> だけが動く（外から差し込まれた文字列は動かない） */

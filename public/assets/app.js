@@ -1907,22 +1907,42 @@
     function draw(st) {
       body.textContent = '';
       var url = el('input', { type: 'text', id: 'slack-url', placeholder: 'https://hooks.slack.com/services/…', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Slack の Webhook URL' });
+      var nm = el('input', { type: 'text', id: 'slack-name', placeholder: '例: #休み連絡', maxlength: '30', autocomplete: 'off', 'aria-label': 'チャンネル名' });
       var err = el('p', { class: 'error', role: 'alert', hidden: true });
-      var srcText = st.source === 'ui' ? '設定済み（この画面から登録）' : st.source === 'config' ? '設定済み（サーバーの config.php）' : '未設定';
+      var fail2 = function (x) { err.textContent = x.message; err.hidden = false; };
       var t1 = el('button', { class: 'btn primary', type: 'button', text: 'テスト通知を送る', disabled: !st.configured, onclick: function () { send('simple', this); } });
       var t2 = el('button', { class: 'btn', type: 'button', text: '休みの通知の見本を送る', disabled: !st.configured, title: '実際に休みを登録したときと同じ形の通知を、1通送ります（あなたの Slack メンバーID があれば、メンション付き）', onclick: function () { send('sample', this); } });
+      var dests = st.dests || [];
+      var pick = el('select', { id: 'slack-pick', 'aria-label': '通知の送り先', disabled: !dests.length, onchange: function () {
+        api('slack_use', { body: { id: pick.value } }).then(function (j) { toast('送り先を「' + j.slack.active_name + '」に切り替えました'); draw(j.slack); }).catch(function (x) { fail(x); draw(st); });
+      } });
+      if (!dests.length) pick.appendChild(el('option', { value: '', text: '（まだ登録がありません）' }));
+      dests.forEach(function (d) { pick.appendChild(el('option', { value: d.id, text: d.name + '　' + d.masked, selected: d.id === st.active })); });
       body.appendChild(el('div', { class: 'slack-status ' + (st.configured ? 'on' : 'off') },
-        el('span', { class: 'pill' + (st.configured ? ' admin' : ''), text: srcText }), st.masked ? el('code', { text: st.masked }) : null));
-      body.appendChild(el('p', { class: 'hint', text: '送り先を決めると、休みを登録したとき（複数日・複製は1通にまとめて）と、毎朝・前日の「お休み」の自動通知（cron の設定が必要）が、Slack に届きます。' }));
-      body.appendChild(el('form', { class: 'form', onsubmit: function (e) {
+        el('span', { class: 'pill' + (st.configured ? ' admin' : ''), text: st.configured ? '通知先: ' + st.active_name : '未設定' })));
+      body.appendChild(el('label', null, '通知の送り先（選ぶと、すぐに切り替わります）', pick));
+      body.appendChild(el('p', { class: 'hint', text: '選んだ送り先に、休みを登録したとき（複数日・複製は1通にまとめて）と、毎朝・前日の「お休み」の自動通知（cron の設定が必要）が、届きます。' }));
+      var mine = dests.filter(function (d) { return d.id !== 'config'; });
+      if (mine.length) {
+        body.appendChild(el('div', { class: 'slack-dests' }, mine.map(function (d) {
+          return el('div', { class: 'slack-dest' }, el('b', { text: d.name }), el('code', { text: d.masked }), d.id === st.active ? el('span', { class: 'pill admin', text: '使用中' }) : null,
+            el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
+              if (!window.confirm('「' + d.name + '」を削除します。よろしいですか？' + (d.id === st.active ? '\n（使用中のため、残りの送り先に自動で切り替わります）' : ''))) return;
+              api('slack_delete', { body: { id: d.id } }).then(function (j) { toast('削除しました'); draw(j.slack); }).catch(fail);
+            } }));
+        })));
+      }
+      body.appendChild(el('form', { class: 'form slack-add', onsubmit: function (e) {
         e.preventDefault(); err.hidden = true;
-        api('slack_save', { body: { webhook: url.value.trim() } }).then(function (j) { toast(url.value.trim() ? '送り先を保存しました' : '画面での登録を消しました'); draw(j.slack); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+        api('slack_add', { body: { name: nm.value.trim(), webhook: url.value.trim() } }).then(function (j) { toast('送り先を保存しました'); draw(j.slack); }).catch(fail2);
       } },
-        el('label', null, 'Slack の Webhook URL（保存すると、この画面の登録が、サーバーの設定より優先されます）', url),
-        el('p', { class: 'hint', text: '取得方法: Slack の「アプリを追加」→「Incoming Webhooks」→「Slack に追加」→ 送り先のチャンネルを選ぶと、URL が表示されます。空にして保存すると、画面での登録を消します。' }),
-        err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: url.value ? '保存' : '保存（空なら登録を消す）' }))));
-      body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1, t2), result));
-      if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。上の欄に Webhook URL を入れて保存してください。' }));
+        el('h3', { text: '送り先を追加' }),
+        el('label', null, 'チャンネル名（プルダウンに出る名前。自分で分かる名前を付けてください）', nm),
+        el('label', null, 'Slack の Webhook URL', url),
+        el('p', { class: 'hint', text: '取得方法: Slack の「アプリを追加」→「Incoming Webhooks」→「Slack に追加」→ 送り先のチャンネルを選ぶと、URL が表示されます。チャンネルごとに1つずつ作り、ここに名前を付けて保存します（最大10件）。URL は画面に全部は出さず、サーバーに保存されます。' }),
+        err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: '追加して保存' }))));
+      body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' + (st.configured ? '（送り先: ' + st.active_name + '）' : '') }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1, t2), result));
+      if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。「送り先を追加」に、チャンネル名と Webhook URL を入れて保存してください。' }));
       body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
         : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
         : '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
