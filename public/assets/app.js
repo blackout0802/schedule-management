@@ -248,7 +248,7 @@
      日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
   var SHORTCUTS = [
     ['c', 'カレンダーを表示'], ['l', 'リストを表示'], ['t', '今月に戻る（今日）'], ['← / →', '前の月 / 次の月'],
-    ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
+    ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['s', 'システム更新（管理者のみ）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
   ];
   function shortcutKey(e) {
     var m = /^Key([A-Z])$/.exec(e.code || '');
@@ -259,7 +259,7 @@
   }
   function openShortcuts() {
     if (modals.some(function (m) { return m.shortcuts; })) return;
-    var rows = SHORTCUTS.map(function (s) { return el('tr', null, el('th', { scope: 'row' }, el('kbd', { text: s[0] })), el('td', { text: s[1] })); });
+    var rows = SHORTCUTS.filter(function (s) { return s[0] !== 's' || S.me.user.role === 'admin'; }).map(function (s) { return el('tr', null, el('th', { scope: 'row' }, el('kbd', { text: s[0] })), el('td', { text: s[1] })); });
     var body = el('div', { class: 'form' }, el('table', { class: 't sc-table' }, el('tbody', null, rows)),
       el('p', { class: 'hint', text: '入力欄に文字を打っているときと、ダイアログを開いているときは、使えません。' }),
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
@@ -281,6 +281,7 @@
     else if (k === '?') openShortcuts();
     else if (!SHARE && k === 'n') openEventDialog(null, ymd(new Date()));
     else if (!SHARE && k === 'd' && S.mode === 'cal') { if (document.getElementById('todo-panel')) closeTodoPanel(true); else openTodoPanel(); }
+    else if (!SHARE && k === 's' && S.me.user.role === 'admin') location.href = 'update.php';
     else if (!SHARE && k === 'b') setView('team');
     else if (!SHARE && k === 'p') setView('me');
     else done = false;
@@ -329,7 +330,8 @@
       ];
       if (S.me.user.role === 'admin') {
         items.push(el('hr'), el('div', { class: 'menu-h', text: '管理者向け' }),
-          item('社員の管理', openUsersDialog, close), item('会社の休業日', openHolidaysDialog, close), item('システム更新', function () { location.href = 'update.php'; }, close));
+          item('社員の管理', openUsersDialog, close), item('会社の休業日', openHolidaysDialog, close), item('Slack通知の設定・テスト', openSlackDialog, close),
+          item('システム更新（s）', function () { location.href = 'update.php'; }, close));
       }
       return items;
     });
@@ -1877,6 +1879,55 @@
     var ov = openModal(s ? 'ルールを編集' : 'ルールを追加', form, true);
     renderFields();
     showPreview();
+  }
+
+  /* ---------- Slack通知の設定とテスト（管理者） ---------- */
+  function slackFailHint(r) {
+    var b = (r.body || '').trim();
+    if (r.code === 0) return 'サーバーから Slack へ接続できませんでした。' + (r.error ? '（' + r.error + '）' : '') + 'サーバーが外部へ通信できない設定になっていないか、確認してください。';
+    if (r.code === 404 || b === 'no_service') return 'この Webhook URL は、無効か、削除されています。Slack で、新しい Webhook URL を発行し直してください。';
+    if (b === 'invalid_token' || r.code === 403) return 'Webhook URL が正しくないか、権限がありません。URL を貼り付け直してください。';
+    if (b === 'channel_not_found' || b === 'channel_is_archived') return '送り先のチャンネルが見つからない、またはアーカイブされています。Webhook を作り直してください。';
+    if (b === 'invalid_payload') return 'Slack が、送った内容を受け付けませんでした（invalid_payload）。';
+    if (r.code === 429) return 'Slack から、短時間に送りすぎと言われました。少し待ってからもう一度お試しください。';
+    return 'Slack からの応答: ' + r.code + (b ? ' ' + b : '');
+  }
+  function openSlackDialog() {
+    var body = el('div', { class: 'form' });
+    var ov = openModal('Slack通知の設定・テスト', body, true);
+    var result = el('div', { class: 'slack-result', role: 'status', 'aria-live': 'polite' });
+    function send(kind, btn) {
+      btn.disabled = true; result.className = 'slack-result wait'; result.textContent = '送信しています…';
+      api('slack_test', { body: { kind: kind } }).then(function (j) {
+        var r = j.result;
+        if (r.ok) { result.className = 'slack-result ok'; result.textContent = '✓ 送信できました（' + (kind === 'sample' ? '休みの通知の見本' : 'テスト通知') + '）。Slack の送り先チャンネルに、届いているか確認してください。'; }
+        else { result.className = 'slack-result ng'; result.textContent = '✕ 送信できませんでした。' + slackFailHint(r); }
+      }).catch(function (x) { result.className = 'slack-result ng'; result.textContent = '✕ ' + x.message; }).then(function () { btn.disabled = false; });
+    }
+    function draw(st) {
+      body.textContent = '';
+      var url = el('input', { type: 'text', id: 'slack-url', placeholder: 'https://hooks.slack.com/services/…', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Slack の Webhook URL' });
+      var err = el('p', { class: 'error', role: 'alert', hidden: true });
+      var srcText = st.source === 'ui' ? '設定済み（この画面から登録）' : st.source === 'config' ? '設定済み（サーバーの config.php）' : '未設定';
+      var t1 = el('button', { class: 'btn primary', type: 'button', text: 'テスト通知を送る', disabled: !st.configured, onclick: function () { send('simple', this); } });
+      var t2 = el('button', { class: 'btn', type: 'button', text: '休みの通知の見本を送る', disabled: !st.configured, title: '実際に休みを登録したときと同じ形の通知を、1通送ります（あなたの Slack メンバーID があれば、メンション付き）', onclick: function () { send('sample', this); } });
+      body.appendChild(el('div', { class: 'slack-status ' + (st.configured ? 'on' : 'off') },
+        el('span', { class: 'pill' + (st.configured ? ' admin' : ''), text: srcText }), st.masked ? el('code', { text: st.masked }) : null));
+      body.appendChild(el('p', { class: 'hint', text: '送り先を決めると、休みを登録したとき（複数日・複製は1通にまとめて）と、毎朝・前日の「お休み」の自動通知（cron の設定が必要）が、Slack に届きます。' }));
+      body.appendChild(el('form', { class: 'form', onsubmit: function (e) {
+        e.preventDefault(); err.hidden = true;
+        api('slack_save', { body: { webhook: url.value.trim() } }).then(function (j) { toast(url.value.trim() ? '送り先を保存しました' : '画面での登録を消しました'); draw(j.slack); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+      } },
+        el('label', null, 'Slack の Webhook URL（保存すると、この画面の登録が、サーバーの設定より優先されます）', url),
+        el('p', { class: 'hint', text: '取得方法: Slack の「アプリを追加」→「Incoming Webhooks」→「Slack に追加」→ 送り先のチャンネルを選ぶと、URL が表示されます。空にして保存すると、画面での登録を消します。' }),
+        err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: url.value ? '保存' : '保存（空なら登録を消す）' }))));
+      body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1, t2), result));
+      if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。上の欄に Webhook URL を入れて保存してください。' }));
+      if (!st.base_url) body.appendChild(el('p', { class: 'hint', text: '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
+      body.appendChild(el('p', { class: 'hint', text: '通知で本人にメンションを付けるには、「社員の管理」で、各社員の Slack メンバーID（U から始まる英数字）を登録してください。' }));
+      body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    }
+    api('slack_status').then(function (j) { draw(j.slack); }).catch(function (x) { fail(x); ov.close(); });
   }
 
   /* ---------- 管理者向け ---------- */

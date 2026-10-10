@@ -378,3 +378,13 @@ option { font-weight: var(--fw); }
 .tp-drop { display: none; border: 2px dashed var(--line); border-radius: 8px; padding: 10px 8px; text-align: center; color: var(--muted); font-size: 12.5px; font-weight: 700; }
 body.is-dragging.drag-event .tp-drop { display: block; }
 .tp-zone.drop .tp-drop { border-color: var(--work); color: var(--work); }
+
+/* Slack通知の設定・テスト */
+.slack-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.slack-status code { font-size: 12px; color: var(--muted); }
+.slack-test { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
+.slack-test h3 { margin: 0; font-size: 14px; }
+.slack-result:empty { display: none; }
+.slack-result { padding: 8px 10px; border-radius: 6px; font-size: 13px; background: var(--surface-2); }
+.slack-result.ok { background: var(--off-soft); color: var(--off); font-weight: 700; }
+.slack-result.ng { background: var(--danger-soft); color: var(--danger); font-weight: 700; }

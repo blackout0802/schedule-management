@@ -313,6 +313,27 @@ function handle_api(): void
         case 'share_options':
             api_out(['family_share' => save_family_share($user, !empty($in['off']), is_array($in['tags'] ?? null) ? $in['tags'] : [])]);
 
+        case 'slack_status': // Slack通知の状態（管理者）
+            require_admin($user);
+            api_out(['slack' => slack_status()]);
+
+        case 'slack_save': // 送り先のWebhook URLを、画面から登録・削除する（管理者）
+            require_admin($user);
+            $url = trim((string)($in['webhook'] ?? ''));
+            if ($url !== '' && !slack_valid_webhook($url)) {
+                api_fail('Webhook URL の形が違います。Slackで発行した https://hooks.slack.com/services/… の URL を、そのまま貼り付けてください。');
+            }
+            slack_save_webhook($url);
+            api_out(['slack' => slack_status()]);
+
+        case 'slack_test': // テスト通知を送る（管理者）
+            require_admin($user);
+            if (!slack_enabled()) {
+                api_fail('送り先（Webhook URL）がまだ設定されていません。', 400);
+            }
+            $kind = ($in['kind'] ?? 'simple') === 'sample' ? 'sample' : 'simple';
+            api_out(['result' => slack_post_detailed(slack_test_message($kind, $user)), 'kind' => $kind]);
+
         case 'prefs_save': // 予定の色（本人の画面だけ）
             api_out(['prefs' => save_color_prefs($user, is_array($in['colors'] ?? null) ? $in['colors'] : [])]);
 

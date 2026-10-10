@@ -492,6 +492,19 @@ q("DELETE FROM events WHERE start_date >= '2027-07-01' AND start_date <= '2027-0
 save_color_prefs($a, []);
 check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
 
+// ---- Slack通知の設定とテスト ----
+check('Slack: 画面から登録できるのは、Slack の Webhook URL だけ', array_map('slack_valid_webhook', ['https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234', 'http://hooks.slack.com/services/T0/B0/x', 'https://evil.example.com/services/T0/B0/x', 'https://hooks.slack.com/services/T0/B0', 'https://hooks.slack.com/services/T0/B0/x/../../y', '']), [true, false, false, false, false, false]);
+$wasUrl = slack_webhook_url();
+slack_save_webhook('https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234');
+check('Slack: 画面から登録した送り先が、設定として使われる', [slack_webhook_url(), slack_enabled(), slack_status()['source']], ['https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234', true, 'ui']);
+$st = slack_status();
+check('Slack: 状態には URL そのものを含めない（伏せた形だけ）', [strpos(json_encode($st), 'abcdEFGH1234abcdEFGH1234') === false, $st['masked']], [true, 'https://hooks.slack.com/…1234']);
+slack_save_webhook('');
+check('Slack: 画面の登録を消すと、config.php の設定に戻る', [slack_webhook_url(), slack_status()['source']], [$wasUrl, $wasUrl !== '' ? 'config' : 'none']);
+check('Slack: 送り先が無いとき、テスト送信は失敗として詳細を返す', (function () { $r = slack_post_detailed('x'); return [$r['ok'], $r['error'] !== '']; })(), slack_enabled() ? [false, true] : [false, true]);
+check('Slack: テスト文面（接続確認）にアプリ名・送信者が入る', (function () use ($a) { $m = slack_test_message('simple', $a); return strpos($m, 'テスト') !== false && strpos($m, $a['name']) !== false; })(), true);
+check('Slack: テスト文面（見本）は、実際の「休みの登録」と同じ形（メンション付き）', (function () use ($a) { $m = slack_test_message('sample', array_merge($a, ['slack_id' => 'U01ABCDEF23'])); return strpos($m, '【休みの登録】') !== false && strpos($m, '<@U01ABCDEF23>') !== false && strpos($m, 'テスト') !== false; })(), true);
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');
