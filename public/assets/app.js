@@ -745,7 +745,12 @@
         if (shownOn(e, ymd(days[c]))) { if (cur) cur.e = c; else { cur = { ev: e, s: c, e: c }; segs.push(cur); } } else cur = null;
       }
     });
-    segs.forEach(function (g) { g.contL = g.ev.start < ymd(days[g.s]); g.contR = g.ev.end > ymd(days[g.e]); });
+    /* 週をまたぐ予定のうち、行の端（日・土）でそのまま次の週へ続くものだけを「続き」とする（端を平らにして「… 」を付ける）。
+       土日祝や休みで間があいて次の週に出る予定は、続きではなく、前後とも丸くして「… 」も付けない */
+    segs.forEach(function (g) {
+      g.contL = g.s === 0 && g.ev.start < ymd(days[0]) && shownOn(g.ev, ymd(addDays(days[0], -1)));
+      g.contR = g.e === 6 && g.ev.end > ymd(days[6]) && shownOn(g.ev, ymd(addDays(days[6], 1)));
+    });
     segs.sort(function (a, b) { return a.s - b.s || (b.e - b.s) - (a.e - a.s) || a.ev.id - b.ev.id; });
     var ends = [];
     segs.forEach(function (g) {
@@ -760,7 +765,7 @@
     var e = g.ev;
     var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
-      text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL, NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      text: (g.contL ? '… ' : '') + eventLabel(e, e.start === ymd(days[g.s]), NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
       onclick: function (ev) {
         ev.stopPropagation();
