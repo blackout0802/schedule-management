@@ -782,7 +782,15 @@ function event_changed(?array $before, ?array $after): void
 
 const COLOR_KEYS = ['work', 'rec', 'off', 'private']; // 単発の業務・繰り返しの業務・休み・プライベート
 
-/** @return array{colors:array<string,string>} 色は '#rrggbb'。空文字なら、標準の色 */
+/** カレンダーで「休みの人がいる日」のセルを薄く塗りつぶす設定（本人の画面だけ）。色は '#rrggbb'、空文字なら標準の色 */
+function clean_offday($v): array
+{
+    $v = is_array($v) ? $v : [];
+    $c = isset($v['color']) ? (string)$v['color'] : '';
+    return ['on' => !array_key_exists('on', $v) || !empty($v['on']), 'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $c) ? strtolower($c) : ''];
+}
+
+/** @return array{colors:array<string,string>,offday:array{on:bool,color:string}} 色は '#rrggbb'。空文字なら、標準の色 */
 function get_prefs(array $user): array
 {
     $r = row('SELECT prefs FROM users WHERE id = ?', [$user['id']]);
@@ -792,17 +800,18 @@ function get_prefs(array $user): array
         $v = is_array($j) && isset($j['colors'][$k]) ? (string)$j['colors'][$k] : '';
         $colors[$k] = preg_match('/^#[0-9a-fA-F]{6}$/', $v) ? strtolower($v) : '';
     }
-    return ['colors' => $colors];
+    return ['colors' => $colors, 'offday' => clean_offday(is_array($j) ? ($j['offday'] ?? null) : null)];
 }
 
-/** 色の設定を保存する。#rrggbb 以外（空欄を含む）は「標準の色」に戻す */
-function save_color_prefs(array $user, array $in): array
+/** 色の設定を保存する。#rrggbb 以外（空欄を含む）は「標準の色」に戻す。$offday が null なら、休みの日のセルの設定は、いまのまま */
+function save_color_prefs(array $user, array $in, $offday = null): array
 {
     $colors = [];
     foreach (COLOR_KEYS as $k) {
         $v = isset($in[$k]) ? (string)$in[$k] : '';
         $colors[$k] = preg_match('/^#[0-9a-fA-F]{6}$/', $v) ? strtolower($v) : '';
     }
-    q('UPDATE users SET prefs = ? WHERE id = ?', [json_encode(['colors' => $colors]), $user['id']]);
-    return ['colors' => $colors];
+    $off = $offday === null ? get_prefs($user)['offday'] : clean_offday($offday);
+    q('UPDATE users SET prefs = ? WHERE id = ?', [json_encode(['colors' => $colors, 'offday' => $off]), $user['id']]);
+    return ['colors' => $colors, 'offday' => $off];
 }

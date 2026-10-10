@@ -17,7 +17,8 @@
 
   var S = {
     me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memoHtml: '', memoLoaded: false,
-    events: [], holidays: {}, tags: null, showOff: true, loading: false
+    events: [], holidays: {}, tags: null, showOff: true, loading: false,
+    page: !SHARE && location.hash === '#settings' ? 'settings' : 'main' // 'settings' = 設定のページ（URL の #settings）
   };
 
   /* ---------- 小さな道具 ---------- */
@@ -121,7 +122,20 @@
 
   /* ---------- モーダル ---------- */
   var modals = [];
+  /* 設定のページでは、各設定の画面を、ポップアップではなく、ページの中に並べて出す（embedHost に入れ先をセットして呼ぶと、最初の openModal だけがそこに入る） */
+  var embedHost = null;
+  function embedInto(host, body, rerender) {
+    host.appendChild(body);
+    var ov = { embedded: true, locked: false, close: rerender };
+    var prune = function () { // ページの中では「閉じる」は要らない
+      host.querySelectorAll('button').forEach(function (b) { if (b.textContent === '閉じる') b.remove(); });
+    };
+    prune();
+    new MutationObserver(prune).observe(host, { childList: true, subtree: true });
+    return ov;
+  }
   function openModal(title, body, wide, locked) {
+    if (embedHost) { var host = embedHost.host, re = embedHost.rerender; embedHost = null; return embedInto(host, body, re); }
     var ov = el('div', { class: 'overlay' });
     ov.locked = !!locked; // true の間は ✕・Esc・外側クリックで閉じられない
     var close = function () { ov.remove(); modals = modals.filter(function (m) { return m !== ov; }); setTimeout(maybeRefresh, 0); };
@@ -223,9 +237,13 @@
     var x = l(a), y = l(b);
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
   }
+  /* 休みの人がいる日のセルを薄く塗りつぶす設定（本人の画面だけ）。標準の色は、休みの色（緑）の薄い色 */
+  function offdayPref() { var o = S.me && S.me.prefs && S.me.prefs.offday; return o ? { on: o.on !== false, color: o.color || '' } : { on: true, color: '' }; }
+  function offdayBg(c) { return c ? 'color-mix(in srgb, ' + c + ' 55%, var(--surface))' : ''; }
   function openColorDialog() {
     var pending = {};
     COLOR_DEFS.forEach(function (d) { pending[d[0]] = (S.me.prefs && S.me.prefs.colors && S.me.prefs.colors[d[0]]) || ''; });
+    var pOff = offdayPref();
     var rows = el('div', { class: 'cs-rows' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     function styleOf() { var v = colorVars(pending); return Object.keys(v).map(function (k) { return k + ':' + v[k]; }).join(';'); }
@@ -244,18 +262,28 @@
         var bar = sample.querySelector('.bar'), cs = getComputedStyle(bar), fg = parseRgb(cs.color), bg = parseRgb(cs.backgroundColor);
         if (cur && fg && bg && contrastRatio(fg, bg) < 4.5) warn.hidden = false;
       });
+      // 休みの人がいる日のセル
+      var cell = el('div', { class: 'cs-sample' }, el('div', { class: 'cell' + (pOff.on ? ' offday' : ''), style: pOff.color ? '--offday-bg:' + offdayBg(pOff.color) : null }, el('div', { class: 'num' }, el('span', { class: 'd', text: '14' })), el('div', { class: 'bar off', text: '山田 花子 有給' })));
+      var onCb = el('input', { type: 'checkbox', checked: pOff.on, onchange: function () { pOff.on = this.checked; draw(); } });
+      var osw = el('div', { class: 'cs-sw' }, el('div', { class: 'pal', role: 'group', 'aria-label': '休みの人がいる日のセルの色の候補' }, COLOR_PRESETS.map(function (c, i) {
+        var nm = COLOR_NAMES[Math.floor(i / 3)] + '（' + TONE_NAMES[i % 3] + '）';
+        return el('button', { type: 'button', class: 'sw', disabled: !pOff.on, style: 'background:' + c, 'aria-label': nm + ' ' + c, 'aria-pressed': pOff.color === c ? 'true' : 'false', title: nm + ' ' + c, onclick: function () { pOff.color = c; draw(); } });
+      })), el('input', { type: 'color', disabled: !pOff.on, 'aria-label': '休みの人がいる日のセルの色を自由に選ぶ', value: pOff.color || '#cfe4fc', onchange: function () { pOff.color = this.value.toLowerCase(); draw(); } }),
+        el('button', { type: 'button', class: 'btn small', text: '標準に戻す', disabled: !pOff.on || !pOff.color, onclick: function () { pOff.color = ''; draw(); } }));
+      rows.appendChild(el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: '休みの人がいる日（カレンダーのセル）' })),
+        el('label', { class: 'check' }, onCb, ' 休みの人がいる日のセルを、薄く塗りつぶす'), osw, cell));
     }
     draw();
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      api('prefs_save', { body: { colors: pending } }).then(function (j) {
+      api('prefs_save', { body: { colors: pending, offday: pOff } }).then(function (j) {
         S.me.prefs = j.prefs; ov.close(); toast('色を保存しました'); load(); // 自分の予定の色が変わるので、予定を読み直す（他の人の画面にも、自動で反映される）
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
       el('p', { class: 'hint', text: 'あなたの予定の色を決めます。保存すると、他の人の画面（共有リンクを含む）でも、あなたの予定がこの色で表示されます。選んだ色が、予定の帯の背景の色になり、文字は、読みやすい濃さに自動で変わります。重要な予定は、太字・★・縁取りで目立ちます。プライベートの予定の色は、あなたの画面だけです。' }),
       rows, err,
       el('div', { class: 'actions' },
-        el('button', { class: 'btn left', type: 'button', text: 'すべて標準に戻す', onclick: function () { COLOR_DEFS.forEach(function (d) { pending[d[0]] = ''; }); draw(); } }),
+        el('button', { class: 'btn left', type: 'button', text: 'すべて標準に戻す', onclick: function () { COLOR_DEFS.forEach(function (d) { pending[d[0]] = ''; }); pOff = { on: true, color: '' }; draw(); } }),
         el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal('予定の色の設定', form, true);
   }
@@ -290,6 +318,9 @@
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (a && a.isContentEditable)) return;
     var k = shortcutKey(e);
     if (!k) return;
+    if (S.page === 'settings') { // 設定のページ: カレンダーに関わるキーは、カレンダーに戻ってから動かす。それ以外（予定の追加など）は動かさない
+      if (['c', 'l', 't', 'b', 'p', 'ArrowLeft', 'ArrowRight'].indexOf(k) >= 0) leaveSettings(); else if (k !== '?' && k !== 's') return;
+    }
     var done = true;
     if (k === 'c') setMode('cal');
     else if (k === 'l' && !FAMILY) setMode('list');
@@ -318,6 +349,7 @@
   function renderShell() {
     if (SHARE) return renderShareShell();
     flushMemo();
+    if (S.page === 'settings') return renderSettingsPage();
     root.textContent = '';
     /* 右上のメニュー: 「設定」ボタン（設定の項目）と、ユーザー名のボタン（パスワード・ログアウト）。同時に開くのは1つだけ */
     var openMenus = [];
@@ -338,22 +370,7 @@
       return el('div', { class: 'menu' + (extraClass ? ' ' + extraClass : '') }, btn);
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
-    var settingsMenu = makeMenu('⚙ 設定', function (close) {
-      var items = [
-        el('div', { class: 'menu-h', text: '予定・表示' }),
-        item('画面の色（ライト／ダーク）', openThemeDialog, close),
-        item('予定の色の設定', openColorDialog, close),
-        item('繰り返し業務の設定', openSeriesDialog, close),
-        item('共有リンク（家族・会社へ）', openShareDialog, close),
-        item('ショートカットキー（?）', openShortcuts, close)
-      ];
-      if (S.me.user.role === 'admin') {
-        items.push(el('hr'), el('div', { class: 'menu-h', text: '管理者向け' }),
-          item('社員の管理', openUsersDialog, close), item('会社の休業日', openHolidaysDialog, close), item('Slack通知の設定・テスト', openSlackDialog, close), item('Slack通知の時間・文面', openSlackCfgDialog, close),
-          item('システム更新（s）', function () { location.href = 'update.php'; }, close));
-      }
-      return items;
-    });
+    var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', text: '⚙ 設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
     });
@@ -375,6 +392,74 @@
     renderFilters();
     loadTodos();
     renderMemo();
+  }
+
+  /* ---------- 設定のページ ----------
+     「設定」を押すと、ポップアップではなく、1つの大きなページに、すべての設定が項目ごとに並ぶ（URL は #settings。戻るボタンで、カレンダーに戻れる）。
+     各項目は、これまでのポップアップの画面を、そのままページの中に埋め込んでいる（embedHost）。 */
+  function openSettingsPage() { location.hash = 'settings'; }
+  function leaveSettings() { // カレンダーに戻る（ショートカットキーからも使う）
+    if (S.page !== 'settings') return;
+    S.page = 'main';
+    if (location.hash === '#settings') history.pushState(null, '', location.pathname + location.search);
+    renderShell(); load();
+  }
+  window.addEventListener('hashchange', function () {
+    if (SHARE || !S.me) return;
+    var want = location.hash === '#settings' ? 'settings' : 'main';
+    if (want === S.page) return;
+    S.page = want; renderShell(); if (want === 'main') load();
+  });
+  function settingsSections() {
+    var admin = S.me.user.role === 'admin';
+    var list = [
+      { id: 'theme', title: '画面の色（ライト／ダーク）', build: openThemeDialog },
+      { id: 'colors', title: '予定の色', build: openColorDialog },
+      { id: 'series', title: '繰り返し業務', build: openSeriesDialog },
+      { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
+      { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts },
+      { id: 'password', title: 'パスワードの変更', build: function () { openPasswordDialog(false); } }
+    ];
+    if (admin) {
+      list.push({ id: 'users', title: '社員の管理', admin: true, build: openUsersDialog },
+        { id: 'holidays', title: '会社の休業日', admin: true, build: openHolidaysDialog },
+        { id: 'slack', title: 'Slack通知の送り先・テスト', admin: true, build: openSlackDialog },
+        { id: 'slackcfg', title: 'Slack通知の時間・文面', admin: true, build: openSlackCfgDialog },
+        { id: 'update', title: 'システム更新', admin: true, build: function () {
+          openModal('システム更新', el('div', { class: 'form' },
+            el('p', { class: 'hint', text: '新しい版の更新ファイル（zip）を選んで、システムを更新します。更新の前の状態に戻すこともできます。ショートカットキー「s」でも開けます。' }),
+            el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'update.php', text: 'システム更新の画面を開く' }))));
+        } });
+    }
+    return list;
+  }
+  function renderSettingsPage() {
+    root.textContent = '';
+    syncTodoHover(); // 右端のToDoの取っ手は、カレンダーのときだけ
+    var secs = settingsSections();
+    var nav = el('nav', { class: 'set-nav', 'aria-label': '設定の項目' });
+    var content = el('div', { class: 'set-content' });
+    secs.forEach(function (sec) {
+      var host = el('div', { class: 'set-body' });
+      var card = el('section', { class: 'set-sec' + (sec.admin ? ' admin' : ''), id: 'set-' + sec.id, 'aria-label': sec.title },
+        el('h3', null, sec.title, sec.admin ? el('span', { class: 'pill admin', text: '管理者' }) : null), host);
+      var render = function () {
+        host.textContent = '';
+        sec.t = Date.now();
+        embedHost = { host: host, rerender: function () { if (Date.now() - sec.t < 800) return; render(); } }; // 保存・キャンセルのあとは、最新の内容で描き直す
+        try { sec.build(); } finally { embedHost = null; }
+      };
+      content.appendChild(card);
+      nav.appendChild(el('a', { href: '#set-' + sec.id, text: sec.title, onclick: function (e) { e.preventDefault(); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
+      render();
+    });
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
+      el('span', { class: 'brand', text: S.me.app_name }),
+      el('button', { class: 'btn small', type: 'button', text: '← カレンダーに戻る', title: 'カレンダー（c）', onclick: leaveSettings }),
+      el('span', { class: 'spacer' }), el('span', { class: 'muted', text: S.me.user.name }),
+      el('button', { class: 'btn small', type: 'button', text: 'ログアウト', onclick: doLogout }))));
+    root.appendChild(el('main', { class: 'settings-page' }, el('h2', { text: '設定' }), el('div', { class: 'set-layout' }, nav, content)));
+    window.scrollTo(0, 0);
   }
 
   /* 業務版で見る人。'all' = 全社（全員）、数字 = その社員だけ（自分を含む）。いまの社員一覧に無いidは、全社に戻す */
@@ -442,6 +527,7 @@
   }
 
   function load() {
+    if (S.page === 'settings' || !document.getElementById('board')) return; // 設定のページを開いている間は、カレンダーを読み込まない（戻ったときに読み込む）
     var r = gridRange();
     var params = { from: ymd(r.start), to: ymd(r.end), view: S.view };
     if (S.view === 'me' && !SHARE) { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
@@ -553,6 +639,13 @@
       for (var d = parse(e.start), end = parse(e.end), n = 0; d <= end && n < 120; d = addDays(d, 1), n++) m[ymd(d)] = true;
     });
     S.leaveIdx = idx;
+    // 休みの人がいる日（セルを薄く塗りつぶす）
+    var od = {};
+    S.events.forEach(function (e) {
+      if (e.kind !== 'off' || e.deleted) return;
+      for (var d = parse(e.start), end = parse(e.end), n = 0; d <= end && n < 120; d = addDays(d, 1), n++) od[ymd(d)] = true;
+    });
+    S.offDays = od;
   }
   function shownOn(e, ds) {
     if (e.start > ds || e.end < ds) return false;
@@ -686,10 +779,11 @@
     for (var w = 0; w < days.length; w += 7) {
       weeks.appendChild(renderWeek(days.slice(w, w + 7), todayStr));
     }
-    board.appendChild(el('div', { class: 'cal-wrap' }, el('div', { class: 'cal' }, head, weeks)));
+    board.appendChild(el('div', { class: 'cal-wrap' }, el('div', { class: 'cal', style: offdayPref().color ? '--offday-bg:' + offdayBg(offdayPref().color) : null }, head, weeks)));
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
       el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み'),
+      offdayPref().on ? el('span', null, el('i', { class: 'offday-sw', style: offdayPref().color ? 'background:' + offdayBg(offdayPref().color) : null }), '休みの人がいる日') : null,
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--uc-private, var(--private))' }), 'プライベート') : null,
       FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' }), '／単発の業務（標準では文字の色で区別・色は右上の「設定」→「予定の色の設定」で変更）'),
       FAMILY ? null : el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
@@ -738,7 +832,7 @@
     var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + (NARROW() ? '20px repeat(' + L + ',19px)' : '24px repeat(' + L + ',22px)') + ' minmax(6px,1fr)' });
     days.forEach(function (d, c) {
       var s = ymd(d), hol = S.holidays[s];
-      var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
+      var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
         style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
         el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
@@ -807,7 +901,7 @@
   /* ---------- カレンダーの右端にカーソルを持っていくと、ToDoが出る（そこからカレンダーの日付へドラッグして予定にできる） ---------- */
   var todoPanelTimer = null, tpDraft = '';
   function syncTodoHover() {
-    var want = !SHARE && S.me && S.mode === 'cal';
+    var want = !SHARE && S.me && S.mode === 'cal' && S.page !== 'settings';
     var z = document.getElementById('todo-hover');
     if (want && !z) {
       z = el('div', { id: 'todo-hover', class: 'todo-hover', title: 'ToDoを表示（d）', text: 'ToDo' });
@@ -1130,6 +1224,7 @@
 
   /* ---------- ToDo ---------- */
   function loadTodos() {
+    if (S.page === 'settings') return Promise.resolve();
     return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; S.revTd = j.rev; renderTodo(); }).catch(fail);
   }
 
@@ -2027,7 +2122,7 @@
       body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
         : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
         : '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
-      body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn', type: 'button', text: '通知の時間・文面を変える', onclick: function () { ov.close(); openSlackCfgDialog(); } })));
+      if (!ov.embedded) body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn', type: 'button', text: '通知の時間・文面を変える', onclick: function () { ov.close(); openSlackCfgDialog(); } })));
       body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     }
     api('slack_status').then(function (j) { draw(j.slack); }).catch(function (x) { fail(x); ov.close(); });
@@ -2124,6 +2219,22 @@
   }
 
   /* ---------- 管理者向け ---------- */
+  /* 社員のパスワードのリセット（管理者）。一時パスワードを1度だけ表示する。本人は、次にログインしたとき、自分のパスワードに変更する */
+  function resetPasswordFor(u, done) {
+    if (!window.confirm(u.name + ' さんのパスワードをリセットします。\n今のパスワードでは、ログインできなくなります。よろしいですか？')) return;
+    api('user_reset_password', { body: { id: u.id } }).then(function (j) {
+      var pw = el('input', { type: 'text', readonly: true, value: j.password, class: 'temp-pw', 'aria-label': '一時パスワード', onfocus: function () { this.select(); } });
+      var ov = openModal('パスワードをリセットしました', el('div', { class: 'form' },
+        el('p', { text: u.name + ' さんの一時パスワードです。本人に伝えてください。' }),
+        el('div', { class: 'row' }, pw, el('button', { class: 'btn', type: 'button', text: 'コピー', onclick: function () {
+          pw.select();
+          var ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(j.password).then(function () { toast('コピーしました'); }, function () { toast(ok ? 'コピーしました' : '選択しました。コピーしてください'); }); else toast(ok ? 'コピーしました' : '選択しました。コピーしてください');
+        } })),
+        el('p', { class: 'hint', text: 'この画面を閉じると、二度と表示されません（忘れたときは、もう一度リセットしてください）。本人は、次にログインしたとき、自分だけのパスワードに変更します。' }),
+        el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', text: '伝えた（閉じる）', onclick: function () { ov.close(); done(); } }))), false, true); // 閉じ忘れを防ぐため、ボタンを押すまで閉じられない
+    }).catch(fail);
+  }
   function openUsersDialog() {
     var body = el('div', { class: 'form' });
     var ov = openModal('社員の管理', body, true);
@@ -2135,7 +2246,8 @@
           el('tbody', null, j.users.map(function (u) {
             return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') + (u.must_change_password ? '（初回パスワード未変更）' : '') }), el('td', { text: u.email }),
               el('td', null, el('span', { class: 'pill' + (u.role === 'admin' ? ' admin' : ''), text: u.role === 'admin' ? '管理者' : '一般' })),
-              el('td', null, el('button', { class: 'btn small', type: 'button', text: '編集', onclick: function () { openUserForm(u, refresh); } })));
+              el('td', { class: 'row-btns' }, el('button', { class: 'btn small', type: 'button', text: '編集', onclick: function () { openUserForm(u, refresh); } }),
+                u.id === S.me.user.id ? null : el('button', { class: 'btn small', type: 'button', text: 'パスワードをリセット', title: '新しい一時パスワードを作ります（本人は、次のログインで変更します）', onclick: function () { resetPasswordFor(u, refresh); } })));
           })))));
         body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', text: '＋ 社員を追加', onclick: function () { openUserForm(null, refresh); } }),
           el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));

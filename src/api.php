@@ -364,7 +364,7 @@ function handle_api(): void
             api_out(['result' => slack_post_detailed(slack_test_message($kind, $user)), 'kind' => $kind]);
 
         case 'prefs_save': // 予定の色（本人の画面だけ）
-            api_out(['prefs' => save_color_prefs($user, is_array($in['colors'] ?? null) ? $in['colors'] : [])]);
+            api_out(['prefs' => save_color_prefs($user, is_array($in['colors'] ?? null) ? $in['colors'] : [], array_key_exists('offday', $in) ? $in['offday'] : null)]);
 
         case 'share_create':
             try {
@@ -575,6 +575,19 @@ function handle_api(): void
                 create_user($name, $email, $pw, $role, null, true);
             }
             api_out(['ok' => true]);
+
+        case 'user_reset_password': // パスワードのリセット（管理者）。一時パスワードを作り、本人は次のログインで変更する
+            require_admin($user);
+            $tid = (int)($in['id'] ?? 0);
+            if ($tid === (int)$user['id']) {
+                api_fail('自分のパスワードは、「設定」の「パスワードの変更」で変えられます。');
+            }
+            try {
+                $tmp = reset_user_password($tid);
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage(), 404);
+            }
+            api_out(['password' => $tmp]);
 
         case 'holidays_list':
             api_out(['holidays' => rows('SELECT id, hdate, name FROM company_holidays ORDER BY hdate')]);

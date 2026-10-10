@@ -491,6 +491,15 @@ check('色の設定: 共有リンク（会社用）にも、持ち主の色が�
 q("DELETE FROM events WHERE start_date >= '2027-07-01' AND start_date <= '2027-07-31'");
 save_color_prefs($a, []);
 check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
+check('休みの日のセル: 初期は、オン・標準の色', get_prefs($b)['offday'], ['on' => true, 'color' => '']);
+save_color_prefs($b, [], ['on' => false, 'color' => '#CFE4FC']);
+check('休みの日のセル: オフ・色を保存できる（小文字にそろう）。色の設定とは別に保たれる', [get_prefs($b)['offday'], get_prefs($b)['colors']['work']], [['on' => false, 'color' => '#cfe4fc'], '']);
+save_color_prefs($b, ['work' => '#2155d6']);
+check('休みの日のセル: 色の設定だけを保存しても、この設定は変わらない', get_prefs($b)['offday'], ['on' => false, 'color' => '#cfe4fc']);
+save_color_prefs($b, [], ['on' => true, 'color' => 'red']);
+check('休みの日のセル: 不正な色は標準に戻る', get_prefs($b)['offday'], ['on' => true, 'color' => '']);
+save_color_prefs($b, []);
+check('休みの日のセル: 他の人の設定には影響しない', get_prefs($a)['offday'], ['on' => true, 'color' => '']);
 
 // ---- Slack通知の設定とテスト ----
 check('Slack: 画面から登録できるのは、Slack の Webhook URL だけ', array_map('slack_valid_webhook', ['https://hooks.slack.com/services/T0123ABC/B0123ABC/abcdEFGH1234abcdEFGH1234', 'http://hooks.slack.com/services/T0/B0/x', 'https://evil.example.com/services/T0/B0/x', 'https://hooks.slack.com/services/T0/B0', 'https://hooks.slack.com/services/T0/B0/x/../../y', '']), [true, false, false, false, false, false]);
@@ -601,6 +610,21 @@ slack_meta_set('slack_cfg', '{壊れたJSON');
 check('Slack文面: 設定が壊れていても、初期値で動く', slack_cfg(), slack_cfg_defaults());
 slack_meta_set('slack_cfg', '');
 q("DELETE FROM events WHERE kind = 'off' AND start_date BETWEEN '2031-03-12' AND '2031-03-15'");
+
+// ---- パスワードのリセット ----
+$rid = create_user('リセット太郎', 'reset@example.com', 'oldpassword1');
+for ($i = 0; $i < 3; $i++) { login_attempt('reset@example.com', 'bad'); }
+$tmpPw = reset_user_password($rid);
+check('リセット: 一時パスワードは12文字で、読み間違えやすい文字（0 O 1 l I）を含まない', [strlen($tmpPw), preg_match('/[0O1lI]/', $tmpPw)], [12, 0]);
+check('リセット: 古いパスワードでは入れず、一時パスワードで入れる', [login_attempt('reset@example.com', 'oldpassword1') === null, login_attempt('reset@example.com', $tmpPw) !== null], [true, true]);
+check('リセット: 次のログインで、パスワードの変更を求める', (int)row('SELECT must_change_password AS m FROM users WHERE id = ?', [$rid])['m'], 1);
+check('リセット: ログイン失敗のロックも解除される', (int)row("SELECT COUNT(*) AS c FROM login_fails WHERE email = 'reset@example.com'")['c'], 0);
+check('リセット: 毎回違うパスワードになる', reset_user_password($rid) !== $tmpPw, true);
+check('リセット: 指定したパスワードにもできる（8文字以上）', [reset_user_password($rid, 'my-new-pass1'), login_attempt('reset@example.com', 'my-new-pass1') !== null], ['my-new-pass1', true]);
+$e1 = null; try { reset_user_password($rid, 'short'); } catch (RuntimeException $x) { $e1 = 'ng'; }
+$e2 = null; try { reset_user_password(999999); } catch (RuntimeException $x) { $e2 = 'ng'; }
+check('リセット: 短いパスワード・存在しない社員は、エラー', [$e1, $e2], ['ng', 'ng']);
+q('DELETE FROM users WHERE id = ?', [$rid]);
 
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');

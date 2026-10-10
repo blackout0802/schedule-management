@@ -122,6 +122,36 @@ function csrf_valid(?string $token): bool
     return !empty($_SESSION['csrf']) && is_string($token) && hash_equals($_SESSION['csrf'], $token);
 }
 
+/** 一時パスワードを作る（読み間違えやすい 0 O 1 l I を除いた12文字） */
+function make_temp_password(int $len = 12): string
+{
+    $chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    $out = '';
+    for ($i = 0; $i < $len; $i++) {
+        $out .= $chars[random_int(0, strlen($chars) - 1)];
+    }
+    return $out;
+}
+
+/**
+ * パスワードをリセットする。新しい一時パスワードを作って設定し、本人が次にログインしたとき変更してもらう。
+ * ログインの失敗回数（ロック）も解除する。一時パスワードは、ここで1度だけ返す（保存しているのはハッシュだけ）。
+ */
+function reset_user_password(int $userId, ?string $password = null): string
+{
+    $u = row('SELECT id, email FROM users WHERE id = ?', [$userId]);
+    if (!$u) {
+        throw new RuntimeException('社員が見つかりません。');
+    }
+    $pw = $password ?? make_temp_password();
+    if (mb_strlen($pw) < 8) {
+        throw new RuntimeException('パスワードは8文字以上にしてください。');
+    }
+    q('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?', [password_hash($pw, PASSWORD_DEFAULT), $userId]);
+    q('DELETE FROM login_fails WHERE email = ?', [$u['email']]);
+    return $pw;
+}
+
 /** $mustChange=true なら、最初のログイン時にパスワードの変更を求める（管理者が初期パスワードを決めて登録する場合） */
 function create_user(string $name, string $email, string $password, string $role = 'member', ?string $slackId = null, bool $mustChange = false): int
 {
