@@ -395,3 +395,18 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .slack-result { padding: 8px 10px; border-radius: 6px; font-size: 13px; background: var(--surface-2); }
 .slack-result.ok { background: var(--off-soft); color: var(--off); font-weight: 700; }
 .slack-result.ng { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+
+/* ---- Slack通知の時間・文面 ---- */
+.slack-cfg .slack-sec { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
+.slack-cfg .slack-sec h3 { margin: 0; font-size: 14px; }
+.slack-cfg textarea { min-height: 84px; font-family: inherit; }
+.slack-time { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.slack-time label { display: flex; gap: 8px; align-items: center; }
+.slack-time input { width: 7.5em; }
+.slack-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.slack-chips .chip { padding: 2px 9px; font-size: 12.5px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); cursor: pointer; }
+.slack-chips .chip:hover { border-color: var(--accent, var(--ink)); }
+.slack-preview { margin: 0; padding: 8px 10px; background: var(--surface-2); border-left: 3px solid var(--line); border-radius: 4px; font: inherit; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.slack-preview.bad { opacity: .45; }
+.slack-cfg label.work { display: inline-flex; align-items: center; gap: 8px; }
+.slack-cfg input[type=checkbox] { width: auto; flex: none; }

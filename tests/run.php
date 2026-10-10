@@ -531,13 +531,53 @@ $tok = static function (): string { $l = row("SELECT token FROM share_links WHER
 q("DELETE FROM share_links WHERE kind = 'company'");
 check('Slack: 会社用リンクが無いときは、ログイン後に業務版が開く入口', [slack_open_url(), slack_link_kind()], ['https://example.test/public/index.php?view=team', 'login']);
 $lk = share_link_create('company', array_merge($a, ['role' => 'admin']));
-check('Slack: 会社用リンクがあれば、通知のリンクはそれ（ログイン不要の業務版）', [slack_open_url(), slack_link_kind(), strpos(slack_link_suffix(), '<https://example.test/public/share.php?t=' . $lk['token'] . '|スケジュールを開く>') !== false], ['https://example.test/public/share.php?t=' . $lk['token'], 'company', true]);
+check('Slack: 会社用リンクがあれば、通知のリンクはそれ（ログイン不要の業務版）', [slack_open_url(), slack_link_kind(), strpos(slack_link_text(), '<https://example.test/public/share.php?t=' . $lk['token'] . '|スケジュールを開く>') !== false], ['https://example.test/public/share.php?t=' . $lk['token'], 'company', true]);
 $old = $lk['token'];
 $lk = share_link_create('company', array_merge($a, ['role' => 'admin']));
 check('Slack: 会社用リンクを作り直すと、通知のリンクも新しいものになる', [slack_open_url() === 'https://example.test/public/share.php?t=' . $lk['token'], $old !== $lk['token']], [true, true]);
 share_link_revoke('company', array_merge($a, ['role' => 'admin']));
 check('Slack: 会社用リンクを止めると、入口に戻る', slack_link_kind(), 'login');
 check('Slack: 見本の通知にも、同じリンクが付く', strpos(slack_test_message('sample', $a), 'view=team|スケジュールを開く>') !== false, true);
+
+// ---- Slack: 通知の時間・文面 ----
+$dflt = slack_cfg_defaults();
+$aM = array_merge($a, ['slack_id' => 'U01ABCDEF23']);
+$e1 = ['start_date' => '2031-03-12', 'end_date' => '2031-03-12', 'tag' => '有給'];
+check('Slack文面: 初期値は、従来どおりの形（休みの登録）', slack_register_text([off_line($e1, slack_person($aM))], '（鈴木 さんが登録）', $dflt), "【休みの登録】\n• <@U01ABCDEF23>　有給　3/12（水）\n（鈴木 さんが登録）\n" . slack_link_text());
+check('Slack文面: 初期値は、従来どおりの形（朝）。登録した人が空の行は消える', [slack_register_text(['• X'], '', $dflt), slack_day_text('morning', '2031-03-12', ['• X'], $dflt)], ["【休みの登録】\n• X\n" . slack_link_text(), "【本日のお休み】3/12（水）\n• X\n" . slack_link_text()]);
+$c = $dflt; $c['line'] = '{名前}さん（{分類}）'; $c['morning']['tpl'] = "おはようございます！{日付}は{人数}名がお休みです。\n\n{休み一覧}";
+check('Slack文面: 好きな文面・1人分の表示・差し込みが使える（空行は残る）', slack_day_text('morning', '2031-03-12', [off_line($e1, '山田', $c), off_line($e1, '鈴木', $c)], $c), "おはようございます！3/12（水）は2名がお休みです。\n\n山田さん（有給）\n鈴木さん（有給）");
+$bad = [];
+foreach ([['morning', ['tpl' => '休みなし']], ['morning', ['tpl' => "{休み一覧} {なまえ}"]], ['morning', ['tpl' => '']], ['morning', ['tpl' => str_repeat('あ', 251) . '{休み一覧}']], ['morning', ['tpl' => '{休み一覧}', 'time' => '25:00']], ['line', 'abc']] as [$k, $v]) {
+    $in = $dflt; $in[$k] = is_array($v) ? array_merge($in[$k], $v) : $v;
+    try { slack_cfg_clean($in); $bad[] = 'ok'; } catch (RuntimeException $x) { $bad[] = 'ng'; }
+}
+check('Slack文面: {休み一覧}が無い・使えない差し込み・空・長すぎ・おかしい時刻・名前が無い1人分は、保存できない', $bad, ['ng', 'ng', 'ng', 'ng', 'ng', 'ng']);
+$in = $dflt; $in['morning']['time'] = '9:05'; $in['evening']['on'] = false; $in['mention'] = false;
+$saved = slack_cfg_save($in);
+check('Slack文面: 保存した設定が使われる（時刻は 09:05 にそろう）', [$saved['morning']['time'], slack_cfg()['evening']['on'], slack_person($aM)], ['09:05', false, $aM['name']]);
+q("DELETE FROM events WHERE kind = 'off' AND start_date = '2031-03-12'");
+$mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-03-12', 'end' => '2031-03-12']);
+$t = function ($hm) { return strtotime("2031-03-12 $hm:00"); };
+$nr = function () { q("DELETE FROM notification_log WHERE ref LIKE 'today:2031%' OR ref LIKE 'tomorrow:2031%'"); };
+$nr(); $r0 = notify_due($t('09:04')); $nr(); $r1 = notify_due($t('09:10')); $r2 = notify_due($t('09:20')); $nr(); $r3 = notify_due($t('12:30'));
+check('Slack時間: 設定した時刻の前は送らない／過ぎたら送る／同じ日に2回は送らない／3時間以上過ぎたら送らない', [count($r0), count($r1), count($r2), count($r3)], [0, 1, 0, 0]);
+$in = $saved; $in['morning']['on'] = false; slack_cfg_save($in); $nr();
+check('Slack時間: 画面で止めた通知は、送らない（従来の cron.php morning でも）', [count(notify_due($t('09:10'))), notify_offs_for_day('2031-03-12', '本日')], [0, 0]);
+$in = $saved; $in['morning']['on'] = true; $in['evening']['on'] = true; $in['evening']['time'] = '17:00'; slack_cfg_save($in); $nr();
+$mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-03-13', 'end' => '2031-03-13']);
+check('Slack時間: 夕方の通知は、翌営業日の休みを送る', array_map(function ($x) { return strpos($x, '明日の休み') === 0; }, notify_due($t('17:05'))), [true]);
+$sat = strtotime('2031-03-15 09:10:00'); // 土曜日
+$mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-03-15', 'end' => '2031-03-15']); $nr();
+check('Slack時間: 土日・休業日は送らない', count(notify_due($sat)), 0);
+$pv = slack_preview(slack_cfg_clean(array_merge($dflt, ['mention' => false])));
+check('Slack文面: プレビューは、保存前の入力のまま作れる', [strpos($pv['reg'], '山田 花子') !== false, strpos($pv['morning'], '鈴木 一郎') !== false, strpos($pv['evening'], '明日のお休み') !== false], [true, true, true]);
+slack_meta_set('slack_cfg', '');
+check('Slack文面: 設定を消すと、初期値に戻る', slack_cfg(), slack_cfg_defaults());
+slack_meta_set('slack_cfg', '{壊れたJSON');
+check('Slack文面: 設定が壊れていても、初期値で動く', slack_cfg(), slack_cfg_defaults());
+slack_meta_set('slack_cfg', '');
+q("DELETE FROM events WHERE kind = 'off' AND start_date BETWEEN '2031-03-12' AND '2031-03-15'");
 
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');

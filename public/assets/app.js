@@ -330,7 +330,7 @@
       ];
       if (S.me.user.role === 'admin') {
         items.push(el('hr'), el('div', { class: 'menu-h', text: '管理者向け' }),
-          item('社員の管理', openUsersDialog, close), item('会社の休業日', openHolidaysDialog, close), item('Slack通知の設定・テスト', openSlackDialog, close),
+          item('社員の管理', openUsersDialog, close), item('会社の休業日', openHolidaysDialog, close), item('Slack通知の設定・テスト', openSlackDialog, close), item('Slack通知の時間・文面', openSlackCfgDialog, close),
           item('システム更新（s）', function () { location.href = 'update.php'; }, close));
       }
       return items;
@@ -1946,10 +1946,100 @@
       body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
         : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
         : '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
+      body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn', type: 'button', text: '通知の時間・文面を変える', onclick: function () { ov.close(); openSlackCfgDialog(); } })));
       body.appendChild(el('p', { class: 'hint', text: '通知で本人にメンションを付けるには、「社員の管理」で、各社員の Slack メンバーID（U から始まる英数字）を登録してください。' }));
       body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     }
     api('slack_status').then(function (j) { draw(j.slack); }).catch(function (x) { fail(x); ov.close(); });
+  }
+
+  /* ---------- Slack通知の時間・文面（管理者） ---------- */
+  function openSlackCfgDialog() {
+    var body = el('div', { class: 'form slack-cfg' });
+    var ov = openModal('Slack通知の時間・文面', body, true);
+    var last = null; // 最後に入力していた欄（差し込みボタンの入れ先）
+    var timer = null;
+    var F = {};      // 入力欄
+    var PV = {};     // プレビュー欄
+    var result = el('div', { class: 'slack-result', role: 'status', 'aria-live': 'polite' });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    function track(inp) { inp.addEventListener('focus', function () { last = inp; }); inp.addEventListener('input', schedulePreview); return inp; }
+    function insert(ph) {
+      var t = last && document.body.contains(last) ? last : null;
+      if (!t) return toast('差し込みたい欄を、先に押してください');
+      var a = t.selectionStart == null ? t.value.length : t.selectionStart, b = t.selectionEnd == null ? a : t.selectionEnd;
+      t.value = t.value.slice(0, a) + ph + t.value.slice(b); t.focus(); t.setSelectionRange(a + ph.length, a + ph.length); schedulePreview();
+    }
+    function chips(list) { return el('div', { class: 'slack-chips' }, el('span', { class: 'hint', text: '差し込み（押すと、入力中の欄に入ります）: ' }), list.map(function (ph) { return el('button', { class: 'chip', type: 'button', text: ph, onclick: function () { insert(ph); } }); })); }
+    function read() {
+      return {
+        mention: F.mention.checked, line: F.line.value,
+        reg: { on: F.regOn.checked, tpl: F.reg.value },
+        morning: { on: F.morOn.checked, time: timeVal(F.morTime), tpl: F.morning.value },
+        evening: { on: F.eveOn.checked, time: timeVal(F.eveTime), tpl: F.evening.value }
+      };
+    }
+    // 見本では、Slack のリンク <URL|文字> を、リンクの文字だけで見せる（Slack ではその文字がリンクになる）
+    function showPv(pv) { err.hidden = true; ['reg', 'morning', 'evening'].forEach(function (k) { PV[k].textContent = pv[k].replace(/<([^|>]+)\|([^>]+)>/g, '$2'); PV[k].classList.remove('bad'); }); }
+    function schedulePreview() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        api('slack_cfg_preview', { body: { cfg: read() } }).then(function (j) {
+          if (j.error) { ['reg', 'morning', 'evening'].forEach(function (k) { PV[k].classList.add('bad'); }); err.textContent = j.error; err.hidden = false; } else showPv(j.preview);
+        }).catch(function () { /* 入力途中の通信エラーは、無視する */ });
+      }, 350);
+    }
+    function fill(c) {
+      F.mention.checked = c.mention; F.line.value = c.line;
+      F.regOn.checked = c.reg.on; F.reg.value = c.reg.tpl;
+      F.morOn.checked = c.morning.on; F.morTime.value = c.morning.time; F.morning.value = c.morning.tpl;
+      F.eveOn.checked = c.evening.on; F.eveTime.value = c.evening.time; F.evening.value = c.evening.tpl;
+    }
+    function save(after) {
+      err.hidden = true;
+      api('slack_cfg_save', { body: { cfg: read() } }).then(function (j) { fill(j.cfg); showPv(j.preview); toast('保存しました'); if (after) after(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    }
+    function sample(kind, btn) {
+      var go = function () {
+        btn.disabled = true; result.className = 'slack-result wait'; result.textContent = '送信しています…';
+        api('slack_test', { body: { kind: kind } }).then(function (j) {
+          if (j.result.ok) { result.className = 'slack-result ok'; result.textContent = '✓ 送信できました。Slack に、届いているか確認してください（保存した文面で送っています）。'; }
+          else { result.className = 'slack-result ng'; result.textContent = '✕ 送信できませんでした。' + slackFailHint(j.result); }
+        }).catch(function (x) { result.className = 'slack-result ng'; result.textContent = '✕ ' + x.message; }).then(function () { btn.disabled = false; });
+      };
+      save(go); // 画面の入力を保存してから、その文面で見本を送る
+    }
+    function section(title, onBox, extra, ta, key) {
+      PV[key] = el('pre', { class: 'slack-preview', 'aria-label': 'プレビュー' });
+      return el('section', { class: 'slack-sec' }, el('h3', null, el('label', { class: 'work' }, onBox, ' ' + title)), extra,
+        track(ta), el('div', { class: 'hint', text: 'Slack での見え方（見本）' }), PV[key],
+        el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn small', type: 'button', text: '保存して、この文面の見本を Slack に送る', onclick: function () { sample(key === 'reg' ? 'sample' : key, this); } })));
+    }
+    api('slack_cfg').then(function (j) {
+      var c = j.cfg, ph = j.placeholders;
+      F.mention = el('input', { type: 'checkbox' }); F.line = track(el('input', { type: 'text', maxlength: '100', autocomplete: 'off' }));
+      F.regOn = el('input', { type: 'checkbox' }); F.morOn = el('input', { type: 'checkbox' }); F.eveOn = el('input', { type: 'checkbox' });
+      F.morTime = timeInput('morTime', c.morning.time); F.eveTime = timeInput('eveTime', c.evening.time);
+      F.reg = el('textarea', { rows: '4', maxlength: '250' }); F.morning = el('textarea', { rows: '4', maxlength: '250' }); F.evening = el('textarea', { rows: '4', maxlength: '250' });
+      F.morTime.addEventListener('input', schedulePreview); F.eveTime.addEventListener('input', schedulePreview);
+      [F.mention, F.regOn, F.morOn, F.eveOn].forEach(function (x) { x.addEventListener('change', schedulePreview); });
+      body.appendChild(el('p', { class: 'hint', text: 'Slack に送る通知の「いつ」と「どんな文章か」を変えられます。保存すると、すぐに次の通知から変わります。' }));
+      body.appendChild(section('休みを登録したとき（すぐに送る）', F.regOn, chips(ph.reg), F.reg, 'reg'));
+      body.appendChild(section('朝の通知（その日の休み）', F.morOn,
+        [el('div', { class: 'slack-time' }, el('label', null, '送る時刻', F.morTime), el('span', { class: 'hint', text: '土日祝・会社の休業日、休みの人がいない日は送りません' })), chips(ph.day)], F.morning, 'morning'));
+      body.appendChild(section('夕方の通知（次の営業日の休み）', F.eveOn,
+        [el('div', { class: 'slack-time' }, el('label', null, '送る時刻', F.eveTime), el('span', { class: 'hint', text: '翌日が営業日で、休みの人がいるときだけ送ります' })), chips(ph.day)], F.evening, 'evening'));
+      body.appendChild(el('section', { class: 'slack-sec' }, el('h3', { text: '1人分の表示' }),
+        el('label', null, '休みの一覧に出る、1人分の書き方（{名前} は必須）', F.line), chips(ph.line),
+        el('label', { class: 'work' }, F.mention, ' 名前を、Slack のメンション（@名前）にする（社員の管理で Slack メンバーID を登録している人だけ）')));
+      body.appendChild(el('p', { class: 'hint', text: '※ 通知の時刻は、サーバーの cron が「php bin/cron.php notify」を5〜10分おきに動かしているときに、有効になります。設定した時刻から3時間以内に、1回だけ送ります。cron の登録方法は、docs/DEPLOY.md の「9. 毎日の自動処理」にあります。以前の「morning」「evening」の cron を使っている場合は、その時刻に従来どおり送られます（時刻は cron の設定のまま）。' }));
+      body.appendChild(err); body.appendChild(result);
+      body.appendChild(el('div', { class: 'actions' },
+        el('button', { class: 'btn', type: 'button', text: '初期値に戻す（まだ保存しません）', onclick: function () { fill(j.defaults); schedulePreview(); } }),
+        el('button', { class: 'btn primary', type: 'button', text: '保存', onclick: function () { save(); } }),
+        el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+      fill(c); showPv(j.preview);
+    }).catch(function (x) { fail(x); ov.close(); });
   }
 
   /* ---------- 管理者向け ---------- */

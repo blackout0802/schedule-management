@@ -267,9 +267,122 @@ function notify_once(string $ref): bool
     return true;
 }
 
+// ---- 通知の時間と文面（管理者が画面で変えられる）----
+//   app_meta.slack_cfg に JSON で保存。何も保存していなければ、下の初期値（従来どおりの通知）
+const SLACK_PLACEHOLDERS = [
+    'line' => ['{名前}', '{分類}', '{期間}'],
+    'reg' => ['{休み一覧}', '{件数}', '{登録した人}', '{リンク}'],
+    'day' => ['{日付}', '{休み一覧}', '{人数}', '{リンク}'],
+];
+
+function slack_cfg_defaults(): array
+{
+    return [
+        'mention' => true,
+        'line' => '• {名前}　{分類}　{期間}',
+        'reg' => ['on' => true, 'tpl' => "【休みの登録】\n{休み一覧}\n{登録した人}\n{リンク}"],
+        'morning' => ['on' => true, 'time' => '08:30', 'tpl' => "【本日のお休み】{日付}\n{休み一覧}\n{リンク}"],
+        'evening' => ['on' => true, 'time' => '17:00', 'tpl' => "【明日のお休み】{日付}\n{休み一覧}\n{リンク}"],
+    ];
+}
+
+/** 保存されている設定（足りない項目は初期値で補う）。壊れていても、初期値に戻るだけ */
+function slack_cfg(): array
+{
+    $d = slack_cfg_defaults();
+    $j = json_decode(slack_meta_get('slack_cfg'), true);
+    if (!is_array($j)) {
+        return $d;
+    }
+    $d['mention'] = isset($j['mention']) ? (bool)$j['mention'] : $d['mention'];
+    if (isset($j['line']) && is_string($j['line']) && $j['line'] !== '') {
+        $d['line'] = $j['line'];
+    }
+    foreach (['reg', 'morning', 'evening'] as $k) {
+        if (!isset($j[$k]) || !is_array($j[$k])) {
+            continue;
+        }
+        $d[$k]['on'] = isset($j[$k]['on']) ? (bool)$j[$k]['on'] : $d[$k]['on'];
+        if (isset($j[$k]['tpl']) && is_string($j[$k]['tpl']) && $j[$k]['tpl'] !== '') {
+            $d[$k]['tpl'] = $j[$k]['tpl'];
+        }
+        if ($k !== 'reg' && isset($j[$k]['time']) && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', (string)$j[$k]['time'])) {
+            $d[$k]['time'] = $j[$k]['time'];
+        }
+    }
+    return $d;
+}
+
+/** 画面から来た設定を検べて、保存できる形にする。問題があれば RuntimeException（画面に出せる文） */
+function slack_cfg_clean(array $in): array
+{
+    $d = slack_cfg_defaults();
+    $out = ['mention' => !empty($in['mention'])];
+    $check = function (string $label, $tpl, array $allowed, bool $needList, int $max) {
+        $tpl = str_replace("\r", '', trim((string)$tpl));
+        if ($tpl === '') {
+            throw new RuntimeException("「{$label}」の文面が空です。");
+        }
+        if (mb_strlen($tpl) > $max) {
+            throw new RuntimeException("「{$label}」の文面は、{$max}文字以内にしてください。");
+        }
+        preg_match_all('/\{[^{}\n]*\}/u', $tpl, $m);
+        foreach ($m[0] as $ph) {
+            if (!in_array($ph, $allowed, true)) {
+                throw new RuntimeException("「{$label}」に、使えない差し込み {$ph} があります。使えるのは " . implode(' ', $allowed) . ' です。');
+            }
+        }
+        if ($needList && strpos($tpl, '{休み一覧}') === false) {
+            throw new RuntimeException("「{$label}」には、{休み一覧} を入れてください（入れないと、誰が休みか分かりません）。");
+        }
+        return $tpl;
+    };
+    $out['line'] = $check('1人分の表示', $in['line'] ?? $d['line'], SLACK_PLACEHOLDERS['line'], false, 100);
+    if (strpos($out['line'], '{名前}') === false) {
+        throw new RuntimeException('「1人分の表示」には、{名前} を入れてください。');
+    }
+    $names = ['reg' => '休みを登録したとき', 'morning' => '朝の通知（本日の休み）', 'evening' => '夕方の通知（明日の休み）'];
+    foreach ($names as $k => $label) {
+        $x = is_array($in[$k] ?? null) ? $in[$k] : [];
+        $out[$k] = ['on' => !empty($x['on']), 'tpl' => $check($label, $x['tpl'] ?? $d[$k]['tpl'], SLACK_PLACEHOLDERS[$k === 'reg' ? 'reg' : 'day'], true, 250)];
+        if ($k !== 'reg') {
+            $t = (string)($x['time'] ?? $d[$k]['time']);
+            if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $t, $mm)) {
+                throw new RuntimeException("「{$label}」の時刻が読み取れません（例 8:30）。");
+            }
+            $out[$k]['time'] = sprintf('%02d:%02d', $mm[1], $mm[2]);
+        }
+    }
+    if (mb_strlen(json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) > 1900) {
+        throw new RuntimeException('文面が長すぎます。短くしてください。');
+    }
+    return $out;
+}
+
+function slack_cfg_save(array $in): array
+{
+    $clean = slack_cfg_clean($in);
+    slack_meta_set('slack_cfg', json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    return slack_cfg();
+}
+
+/** 差し込み文字を置き換える。置き換えた結果が空になった行（{リンク} が無いときなど）は、行ごと消す */
+function slack_render(string $tpl, array $vars): string
+{
+    $out = [];
+    foreach (explode("\n", str_replace("\r", '', $tpl)) as $line) {
+        $r = strtr($line, $vars);
+        if (trim($r) === '' && trim($line) !== '') {
+            continue;
+        }
+        $out[] = $r;
+    }
+    return rtrim(implode("\n", $out));
+}
+
 function slack_person(array $u): string
 {
-    return !empty($u['slack_id']) ? '<@' . $u['slack_id'] . '>' : $u['name'];
+    return !empty($u['slack_id']) && slack_cfg()['mention'] ? '<@' . $u['slack_id'] . '>' : $u['name'];
 }
 
 /** 通知のリンク先の、元になるフォルダのURL（base_url の末尾の index.php などは外し、最後を / にそろえる） */
@@ -313,32 +426,47 @@ function slack_link_kind(): string
     return $u === '' ? 'none' : (strpos($u, 'share.php?t=') !== false ? 'company' : 'login');
 }
 
-function slack_link_suffix(): string
+/** 通知に差し込む「スケジュールを開く」のリンク（base_url が空なら、空） */
+function slack_link_text(): string
 {
     $u = slack_open_url();
-    return $u !== '' ? "\n<{$u}|スケジュールを開く>" : '';
+    return $u !== '' ? "<{$u}|スケジュールを開く>" : '';
 }
 
-function off_line(array $e, string $who): string
+function off_line(array $e, string $who, ?array $cfg = null): string
 {
     $range = $e['start_date'] === $e['end_date']
         ? md_ja($e['start_date'])
         : md_ja($e['start_date']) . '〜' . md_ja($e['end_date']);
-    return '• ' . $who . '　' . ($e['tag'] !== '' ? $e['tag'] : '休み') . '　' . $range;
+    return strtr(($cfg ?? slack_cfg())['line'], ['{名前}' => $who, '{分類}' => $e['tag'] !== '' ? $e['tag'] : '休み', '{期間}' => $range]);
+}
+
+/** 「休みを登録したとき」の通知の本文 */
+function slack_register_text(array $lines, string $actorNote, ?array $cfg = null): string
+{
+    $cfg = $cfg ?? slack_cfg();
+    return slack_render($cfg['reg']['tpl'], ['{休み一覧}' => implode("\n", $lines), '{件数}' => (string)count($lines), '{登録した人}' => $actorNote, '{リンク}' => slack_link_text()]);
+}
+
+/** 朝・夕方の通知の本文（$kind: 'morning' | 'evening'） */
+function slack_day_text(string $kind, string $date, array $lines, ?array $cfg = null): string
+{
+    $cfg = $cfg ?? slack_cfg();
+    return slack_render($cfg[$kind]['tpl'], ['{日付}' => md_ja($date), '{休み一覧}' => implode("\n", $lines), '{人数}' => (string)count($lines), '{リンク}' => slack_link_text()]);
 }
 
 /** 休みが登録されたときの通知（件名と日付だけを送る）。複数件は1通にまとめる */
 function notify_offs_registered(array $events, array $owner, array $actor): void
 {
-    if (!$events) {
+    if (!$events || !slack_cfg()['reg']['on']) {
         return;
     }
-    $by = (int)$owner['id'] !== (int)$actor['id'] ? "\n（{$actor['name']} さんが登録）" : '';
+    $note = (int)$owner['id'] !== (int)$actor['id'] ? "（{$actor['name']} さんが登録）" : '';
     $lines = [];
     foreach ($events as $e) {
         $lines[] = off_line($e, slack_person($owner));
     }
-    slack_post("【休みの登録】\n" . implode("\n", $lines) . $by . slack_link_suffix());
+    slack_post(slack_register_text($lines, $note));
 }
 
 function notify_off_registered(array $event, array $owner, array $actor): void
@@ -349,36 +477,91 @@ function notify_off_registered(array $event, array $owner, array $actor): void
 /** その日の休みをまとめて通知（$label は「本日」「明日」） */
 function notify_offs_for_day(string $date, string $label): int
 {
+    $kind = $label === '本日' ? 'morning' : 'evening';
+    if (!slack_cfg()[$kind]['on']) {
+        return 0; // 画面でこの通知を止めている
+    }
     $offs = rows("SELECT e.*, u.name AS owner_name, u.slack_id AS owner_slack FROM events e JOIN users u ON u.id = e.owner_id
                   WHERE e.kind = 'off' AND e.start_date <= ? AND e.end_date >= ? AND u.active = 1 ORDER BY u.name", [$date, $date]);
     if (!$offs) {
         return 0;
     }
-    $ref = ($label === '本日' ? 'today:' : 'tomorrow:') . $date;
+    $ref = ($kind === 'morning' ? 'today:' : 'tomorrow:') . $date;
     if (!notify_once($ref)) {
         return 0;
     }
     $lines = [];
     foreach ($offs as $e) {
-        $who = !empty($e['owner_slack']) ? '<@' . $e['owner_slack'] . '>' : $e['owner_name'];
-        $lines[] = off_line($e, $who);
+        $lines[] = off_line($e, slack_person(['name' => $e['owner_name'], 'slack_id' => $e['owner_slack']]));
     }
-    $ok = slack_post("【{$label}のお休み】" . md_ja($date) . "\n" . implode("\n", $lines) . slack_link_suffix());
+    $ok = slack_post(slack_day_text($kind, $date, $lines));
     if (!$ok && slack_enabled()) {
         q('DELETE FROM notification_log WHERE ref = ?', [$ref]); // 送れなかったので次回やり直せるようにする
     }
     return count($offs);
 }
 
+/**
+ * 時刻を過ぎた朝・夕方の通知を送る。cron から5〜10分おきに呼ぶ（bin/cron.php notify）。
+ * 設定した時刻から3時間以内で、まだ送っていなければ送る（同じ日に二重には送らない。土日祝・会社の休業日は送らない）
+ * @return string[] 実行結果のメッセージ
+ */
+function notify_due(?int $now = null): array
+{
+    $now = $now ?? time();
+    $cal = BizCalendar::fromDb();
+    $cfg = slack_cfg();
+    $msg = [];
+    foreach (['morning' => ['本日', 0], 'evening' => ['明日', 1]] as $kind => [$label, $plus]) {
+        if (!$cfg[$kind]['on']) {
+            continue;
+        }
+        $due = strtotime(date('Y-m-d', $now) . ' ' . $cfg[$kind]['time'] . ':00');
+        if ($now < $due || $now >= $due + 3 * 3600) {
+            continue; // まだ時刻前、または3時間以上過ぎた
+        }
+        $date = date('Y-m-d', strtotime("+{$plus} day", $now));
+        if (!$cal->isBusinessDay($date)) {
+            continue;
+        }
+        $n = notify_offs_for_day($date, $label);
+        if ($n > 0) {
+            $msg[] = "{$label}の休み: {$n} 件を通知しました";
+        }
+    }
+    return $msg;
+}
 
-/** テスト送信の文面。$kind: 'simple' = 接続の確認 / 'sample' = 実際の「休みの登録」通知と同じ形の見本 */
+/** 設定画面のプレビュー（まだ保存していない入力のまま、3つの通知の見本文を作る。実在の社員は使わない） */
+function slack_preview(array $cfg): array
+{
+    $today = date('Y-m-d');
+    $tomorrow = date('Y-m-d', strtotime('+1 day'));
+    $nm = function ($e, $who) use ($cfg) { return off_line($e, $who, $cfg); };
+    $a = ['start_date' => $today, 'end_date' => $today, 'tag' => '有給'];
+    $b = ['start_date' => $today, 'end_date' => $tomorrow, 'tag' => '調整休'];
+    $who1 = $cfg['mention'] ? '@山田 花子' : '山田 花子';
+    $who2 = $cfg['mention'] ? '@鈴木 一郎' : '鈴木 一郎';
+    return [
+        'reg' => slack_register_text([$nm($a, $who1)], '（鈴木 一郎 さんが登録）', $cfg),
+        'morning' => slack_day_text('morning', $today, [$nm($a, $who1), $nm($b, $who2)], $cfg),
+        'evening' => slack_day_text('evening', $tomorrow, [$nm($b, $who2)], $cfg),
+    ];
+}
+
+/** テスト送信の文面。$kind: 'simple' = 接続の確認 / 'sample'（休みの登録）・'morning'・'evening' = 実際の通知と同じ文面の見本 */
 function slack_test_message(string $kind, array $user): string
 {
     $name = (string)cfg('app_name', 'スケジュール管理');
+    if ($kind === 'simple') {
+        return "【{$name}】Slack通知のテストです。この通知が見えていれば、設定は正しくできています。（{$user['name']} さんが送信・" . date('Y/m/d H:i') . '）';
+    }
+    $head = "※これはテスト送信です（{$user['name']} さんが、通知の見本を送りました）\n";
     if ($kind === 'sample') {
         $today = date('Y-m-d');
-        $e = ['start_date' => $today, 'end_date' => $today, 'tag' => '有給'];
-        return "【休みの登録】（これはテスト送信です）\n" . off_line($e, slack_person($user)) . "\n（{$user['name']} さんが、通知の見本を送りました）" . slack_link_suffix();
+        return $head . slack_register_text([off_line(['start_date' => $today, 'end_date' => $today, 'tag' => '有給'], slack_person($user))], '');
     }
-    return "【{$name}】Slack通知のテストです。この通知が見えていれば、設定は正しくできています。（{$user['name']} さんが送信・" . date('Y/m/d H:i') . '）';
+    $kind = $kind === 'evening' ? 'evening' : 'morning';
+    $date = date('Y-m-d', strtotime($kind === 'evening' ? '+1 day' : 'today'));
+    return $head . slack_day_text($kind, $date, [off_line(['start_date' => $date, 'end_date' => $date, 'tag' => '有給'], slack_person($user))]);
 }

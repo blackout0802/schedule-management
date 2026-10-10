@@ -2,8 +2,9 @@
 // サーバーの cron から毎日実行するスクリプト。
 //
 //   php bin/cron.php nightly   繰り返し業務を12か月先まで作る（深夜 0:30 ごろ）
-//   php bin/cron.php morning   今日の休みを Slack へ通知（平日の朝 8:30 ごろ）
-//   php bin/cron.php evening   明日の休みを Slack へ通知（平日の夕方 17:00 ごろ）
+//   php bin/cron.php notify    Slack の朝・夕方の通知（5〜10分おきに実行。送る時刻は、画面の「Slack通知の時間・文面」で決める）
+//   php bin/cron.php morning   今日の休みを Slack へ今すぐ通知（時刻を cron で決める従来の方法。notify を使うなら不要）
+//   php bin/cron.php evening   明日の休みを Slack へ今すぐ通知（同上）
 //
 // cron が使えない場合は、config.php に cron_token を設定し、
 //   https://…/bin/cron.php?mode=nightly&token=合言葉
@@ -33,6 +34,9 @@ try {
         case 'nightly':
             echo '繰り返し予定: ' . materialize_all() . " 件を更新しました\n";
             break;
+        case 'notify':
+            echo implode("\n", notify_due() ?: ['送る通知はありません']) . "\n";
+            break;
         case 'morning':
             materialize_all();
             if (!$cal->isBusinessDay($today)) {
@@ -49,7 +53,7 @@ try {
             echo '明日の休み: ' . notify_offs_for_day($tomorrow, '明日') . " 件\n";
             break;
         default:
-            fwrite(STDERR, "mode は nightly / morning / evening のいずれかです\n");
+            fwrite(STDERR, "mode は nightly / notify / morning / evening のいずれかです\n");
             exit(1);
     }
 } catch (Throwable $e) {

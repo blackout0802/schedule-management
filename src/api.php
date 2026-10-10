@@ -344,12 +344,33 @@ function handle_api(): void
             }
             api_out(['slack' => slack_status()]);
 
+        case 'slack_cfg': // 通知の時間・文面の設定（管理者）
+            require_admin($user);
+            api_out(['cfg' => slack_cfg(), 'defaults' => slack_cfg_defaults(), 'placeholders' => SLACK_PLACEHOLDERS, 'preview' => slack_preview(slack_cfg())]);
+
+        case 'slack_cfg_preview': // 保存前の入力のまま、文面の見本を返す（管理者）
+            require_admin($user);
+            try {
+                api_out(['preview' => slack_preview(slack_cfg_clean(is_array($in['cfg'] ?? null) ? $in['cfg'] : []))]);
+            } catch (RuntimeException $e) {
+                api_out(['error' => $e->getMessage()]);
+            }
+
+        case 'slack_cfg_save': // 通知の時間・文面を保存する（管理者）
+            require_admin($user);
+            try {
+                $c = slack_cfg_save(is_array($in['cfg'] ?? null) ? $in['cfg'] : []);
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage());
+            }
+            api_out(['cfg' => $c, 'preview' => slack_preview($c)]);
+
         case 'slack_test': // テスト通知を送る（管理者）
             require_admin($user);
             if (!slack_enabled()) {
                 api_fail('送り先（Webhook URL）がまだ設定されていません。', 400);
             }
-            $kind = ($in['kind'] ?? 'simple') === 'sample' ? 'sample' : 'simple';
+            $kind = in_array($in['kind'] ?? 'simple', ['sample', 'morning', 'evening'], true) ? $in['kind'] : 'simple';
             api_out(['result' => slack_post_detailed(slack_test_message($kind, $user)), 'kind' => $kind]);
 
         case 'prefs_save': // 予定の色（本人の画面だけ）
