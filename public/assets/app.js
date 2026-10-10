@@ -341,7 +341,7 @@
   /* 共有リンクの閲覧ページ: 月の移動と、予定の詳細を見るだけ。編集・ToDo・メモは無い */
   function renderShareShell() {
     root.textContent = '';
-    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: '画面の色', title: 'ライト（白い背景）／ダーク（黒い背景）', onclick: openThemeDialog }))));
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('button', { class: 'btn small', type: 'button', text: '画面の色', title: 'ライト（白い背景）／ダーク（黒い背景）', onclick: openThemeDialog }))));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
     renderToolbar();
   }
@@ -414,6 +414,7 @@
     var admin = S.me.user.role === 'admin';
     var list = [
       { id: 'theme', title: '画面の色（ライト／ダーク）', build: openThemeDialog },
+      { id: 'install', title: 'ホーム画面に追加（スマホ）', build: openInstallHelp },
       { id: 'colors', title: '予定の色', build: openColorDialog },
       { id: 'series', title: '繰り返し業務', build: openSeriesDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
@@ -425,6 +426,7 @@
         { id: 'holidays', title: '会社の休業日', admin: true, build: openHolidaysDialog },
         { id: 'slack', title: 'Slack通知の送り先・テスト', admin: true, build: openSlackDialog },
         { id: 'slackcfg', title: 'Slack通知の時間・文面', admin: true, build: openSlackCfgDialog },
+        { id: 'audit', title: '変更履歴', admin: true, build: openAuditPanel },
         { id: 'update', title: 'システム更新', admin: true, build: function () {
           openModal('システム更新', el('div', { class: 'form' },
             el('p', { class: 'hint', text: '新しい版の更新ファイル（zip）を選んで、システムを更新します。更新の前の状態に戻すこともできます。ショートカットキー「s」でも開けます。' }),
@@ -433,6 +435,63 @@
     }
     return list;
   }
+  /* ---------- ホーム画面に追加（スマホにアプリのアイコンを置く） ---------- */
+  function isStandalone() { return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone); }
+  function openInstallHelp() {
+    var steps = function (title, list) { return el('div', { class: 'inst-box' }, el('h4', { text: title }), el('ol', null, list.map(function (t) { return el('li', { text: t }); }))); };
+    var body = el('div', { class: 'form install' },
+      isStandalone() ? el('p', { class: 'notice ok-note', text: '✓ いま、ホーム画面のアプリとして開いています。' }) : null,
+      el('p', { class: 'hint', text: 'スマホのホーム画面にアイコンを置くと、アプリのように、ブラウザの枠なしで開けます。ログインの状態も、ふだんのブラウザと同じように保たれます。' }),
+      steps('iPhone（Safari）', ['Safari で、このページを開く（ほかのブラウザでは、できないことがあります）', '画面の下（または上）の「共有」ボタン（□に↑）を押す', '「ホーム画面に追加」を選ぶ', '右上の「追加」を押す']),
+      steps('Android（Chrome）', ['Chrome で、このページを開く', '右上の「︙」（メニュー）を押す', '「ホーム画面に追加」（または「アプリをインストール」）を選ぶ', '「追加」（または「インストール」）を押す']),
+      el('p', { class: 'hint', text: SHARE ? 'このページ（共有リンク）を追加すると、アイコンから、この共有ページがそのまま開きます。' : '家族用・会社用の共有リンクのページでも、同じ手順で追加できます（そのページが開くアイコンになります）。' }));
+    if (SHARE) { var ov = openModal('ホーム画面に追加', body); ov.outsideClose = true; body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))); }
+    else openModal('ホーム画面に追加', body);
+  }
+
+  /* ---------- 変更履歴（管理者）: 誰が・いつ・何を変えたか ---------- */
+  function openAuditPanel() {
+    var body = el('div', { class: 'form audit' });
+    var ov = openModal('変更履歴', body, true);
+    var list = el('div', { class: 'audit-list', 'aria-live': 'polite' });
+    var more = el('button', { class: 'btn', type: 'button', text: 'さらに読み込む', hidden: true });
+    var fType = el('select', { 'aria-label': '種類' }, el('option', { value: '', text: 'すべての種類' }));
+    var fActor = el('select', { 'aria-label': '操作した人' }, el('option', { value: '', text: 'すべての人' }), S.me.users.map(function (u) { return el('option', { value: String(u.id), text: u.name }); }));
+    var fQ = el('input', { type: 'search', placeholder: '件名・名前・内容で検索', maxlength: '50', 'aria-label': '検索', autocomplete: 'off' });
+    var last = 0, timer = null, typesLoaded = false;
+    var actLabel = { add: '追加', update: '変更', delete: '削除', reset: 'リセット' };
+    function fmt(at) { return (+at.slice(5, 7)) + '/' + (+at.slice(8, 10)) + ' ' + at.slice(11, 16); }
+    function item(e) {
+      return el('div', { class: 'audit-item ' + e.action },
+        el('div', { class: 'au-top' }, el('span', { class: 'au-at', text: fmt(e.at) }), el('span', { class: 'au-actor', text: e.actor }),
+          el('span', { class: 'au-type', text: e.type_name }), el('span', { class: 'au-act ' + e.action, text: actLabel[e.action] || e.action })),
+        el('div', { class: 'au-main' }, el('span', { class: 'au-label', text: e.label }), e.target ? el('span', { class: 'au-target', text: '　対象: ' + e.target }) : null),
+        e.detail ? el('div', { class: 'au-detail', text: e.detail }) : null);
+    }
+    function load(reset) {
+      if (reset) { last = 0; list.textContent = ''; }
+      var params = { limit: '50' };
+      if (fType.value) params.type = fType.value;
+      if (fActor.value) params.actor = fActor.value;
+      if (fQ.value.trim()) params.q = fQ.value.trim();
+      if (last) params.before = String(last);
+      api('audit_list', { params: params }).then(function (j) {
+        if (!typesLoaded) { typesLoaded = true; Object.keys(j.types).forEach(function (k) { fType.appendChild(el('option', { value: k, text: j.types[k] })); }); }
+        if (reset && !j.entries.length) list.appendChild(el('p', { class: 'muted', text: '該当する履歴はありません。' }));
+        j.entries.forEach(function (e) { list.appendChild(item(e)); last = e.id; });
+        more.hidden = !j.has_more;
+      }).catch(fail);
+    }
+    more.addEventListener('click', function () { load(false); });
+    [fType, fActor].forEach(function (x) { x.addEventListener('change', function () { load(true); }); });
+    fQ.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { load(true); }, 350); });
+    body.appendChild(el('p', { class: 'hint', text: '予定（休み・業務）の追加・変更・削除、繰り返し業務、社員の管理、会社の休業日、共有リンク、Slack通知の設定、パスワードの変更を、1年間残します。プライベートの予定・ToDo・日報メモは、記録しません（管理者にも見せない約束のため）。' }));
+    body.appendChild(el('div', { class: 'audit-filters' }, fType, fActor, fQ, el('button', { class: 'btn', type: 'button', text: '最新の状態にする', onclick: function () { load(true); } })));
+    body.appendChild(list); body.appendChild(el('div', { class: 'actions', style: 'justify-content:center' }, more));
+    load(true);
+    return ov;
+  }
+
   function renderSettingsPage() {
     root.textContent = '';
     syncTodoHover(); // 右端のToDoの取っ手は、カレンダーのときだけ

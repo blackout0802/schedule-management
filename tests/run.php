@@ -626,6 +626,43 @@ $e2 = null; try { reset_user_password(999999); } catch (RuntimeException $x) { $
 check('リセット: 短いパスワード・存在しない社員は、エラー', [$e1, $e2], ['ng', 'ng']);
 q('DELETE FROM users WHERE id = ?', [$rid]);
 
+// ---- 変更履歴（管理者用）----
+q('DELETE FROM audit_log');
+audit_set_actor($b);
+$au1 = $mk($a, ['kind' => 'work', 'title' => '履歴テストの会議', 'tag' => '打ち合わせ', 'start' => '2031-05-12', 'end' => '2031-05-12']);
+[$auD] = validate_event_input(['kind' => 'work', 'title' => '履歴テストの会議（変更）', 'tag' => '全体会議', 'start' => '2031-05-13', 'end' => '2031-05-13', 'start_time' => '10:00'], $a);
+save_event($auD, $a, $au1);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$au1['id']]));
+$al = audit_list([])['entries']; $al = array_reverse($al);
+check('変更履歴: 予定の追加・変更・削除が、順に残る', array_column($al, 'action'), ['add', 'update', 'delete']);
+check('変更履歴: 操作した人（鈴木）と、予定の持ち主（山田）が分かる', [$al[0]['actor'], $al[0]['target'], $al[0]['type_name']], [$b['name'], $a['name'], '予定']);
+check('変更履歴: 変更の内容（件名・分類・日付・時刻）が出る', [strpos($al[1]['detail'], '件名「履歴テストの会議」→「履歴テストの会議（変更）」') !== false, strpos($al[1]['detail'], '分類 打ち合わせ → 全体会議') !== false, strpos($al[1]['detail'], '日付 5/12 → 5/13') !== false, strpos($al[1]['detail'], '時刻 時刻なし → 10:00') !== false], [true, true, true, true]);
+check('変更履歴: ラベルに、種類・件名・日付が入る', $al[0]['label'], '業務｜履歴テストの会議　5/12');
+$cnt = (int)row('SELECT COUNT(*) AS c FROM audit_log')['c'];
+$pv = $mk($a, ['kind' => 'private', 'title' => '私的な予定', 'start' => '2031-05-20']);
+[$pvD] = validate_event_input(['kind' => 'private', 'title' => '私的な予定（変更）', 'start' => '2031-05-21'], $a); save_event($pvD, $a, $pv);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$pv['id']]));
+check('変更履歴: プライベートの予定は、追加・変更・削除のどれも記録しない', (int)row('SELECT COUNT(*) AS c FROM audit_log')['c'], $cnt);
+$pv2 = $mk($a, ['kind' => 'private', 'title' => '秘密の件名', 'start' => '2031-05-22']);
+[$pv2D] = validate_event_input(['kind' => 'work', 'title' => '公開した件名', 'tag' => '打ち合わせ', 'start' => '2031-05-22'], $a); save_event($pv2D, $a, $pv2);
+$last = audit_list([])['entries'][0];
+check('変更履歴: プライベートから業務に変えたときは、変更後の件名だけ。元の（秘密の）件名は出ない', [strpos($last['label'] . $last['detail'], '秘密の件名') === false, strpos($last['label'], '公開した件名') !== false, strpos($last['detail'], 'プライベート') !== false], [true, true, true]);
+[$pv3D] = validate_event_input(['kind' => 'private', 'title' => '再び秘密', 'start' => '2031-05-22'], $a); save_event($pv3D, $a, row('SELECT * FROM events WHERE id = ?', [$pv2['id']]));
+$last2 = audit_list([])['entries'][0];
+check('変更履歴: 業務からプライベートに変えたときは、元の（公開されていた）件名だけ。新しい件名は出ない', [strpos($last2['label'] . $last2['detail'], '再び秘密') === false, strpos($last2['label'], '公開した件名') !== false], [true, true]);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$pv2['id']]));
+audit_log('user', 'reset', 'パスワードをリセット', '山田 花子', '一時パスワードを発行');
+audit_set_actor(null); audit_log('holiday', 'add', '年末年始休業　12/29〜1/3', '', '6日分を追加');
+check('変更履歴: 種類・操作した人・検索で絞り込める', [count(audit_list(['type' => 'user'])['entries']), count(audit_list(['type' => 'holiday'])['entries']), count(audit_list(['actor' => (int)$b['id'], 'type' => 'user'])['entries']), count(audit_list(['q' => '年末年始'])['entries']), count(audit_list(['q' => '%'])['entries'])], [1, 1, 1, 1, 0]);
+check('変更履歴: システムの操作は「（システム）」', audit_list(['type' => 'holiday'])['entries'][0]['actor'], '（システム）');
+for ($i = 0; $i < 5; $i++) { audit_log('slack', 'update', "ページ{$i}"); }
+$pg1 = audit_list(['limit' => 3]); $pg2 = audit_list(['limit' => 3, 'before' => end($pg1['entries'])['id']]);
+check('変更履歴: 新しい順に、ページを分けて読める', [count($pg1['entries']), $pg1['has_more'], $pg2['entries'][0]['id'] < end($pg1['entries'])['id'], $pg1['entries'][0]['label']], [3, true, true, 'ページ4']);
+q("UPDATE audit_log SET at = ? WHERE label = 'ページ0'", [date('Y-m-d H:i:s', time() - (AUDIT_KEEP_DAYS + 2) * 86400)]);
+for ($i = 0; $i < 400; $i++) { audit_log('slack', 'update', 'x'); if ((int)row("SELECT COUNT(*) AS c FROM audit_log WHERE label = 'ページ0'")['c'] === 0) break; }
+check('変更履歴: 1年たった記録は、自動で消える', (int)row("SELECT COUNT(*) AS c FROM audit_log WHERE label = 'ページ0'")['c'], 0);
+q('DELETE FROM audit_log'); audit_set_actor(null);
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');

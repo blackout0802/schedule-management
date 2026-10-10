@@ -137,3 +137,17 @@ CREATE TABLE IF NOT EXISTS event_log (
   end_time VARCHAR(5) NOT NULL DEFAULT '',
   KEY ix_event_log_owner (owner_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  at DATETIME NOT NULL,
+  actor_id INT UNSIGNED NULL,
+  actor_name VARCHAR(60) NOT NULL DEFAULT '',
+  type VARCHAR(12) NOT NULL,
+  action VARCHAR(12) NOT NULL,
+  label VARCHAR(200) NOT NULL DEFAULT '',
+  target_name VARCHAR(60) NOT NULL DEFAULT '',
+  detail VARCHAR(500) NOT NULL DEFAULT '',
+  KEY ix_audit_at (at),
+  KEY ix_audit_type (type, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

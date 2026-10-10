@@ -115,6 +115,7 @@ function handle_api(): void
     if (!$user) {
         api_fail('ログインが必要です。', 401);
     }
+    audit_set_actor($user); // 変更履歴に残す「操作した人」
     $action = (string)($_GET['action'] ?? '');
     $isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
     $in = [];
@@ -310,19 +311,23 @@ function handle_api(): void
         case 'slack_add': // 送り先を、チャンネル名を付けて登録する（管理者）
             require_admin($user);
             try {
-                slack_dest_add((string)($in['name'] ?? ''), trim((string)($in['webhook'] ?? '')));
+                $nd = slack_dest_add((string)($in['name'] ?? ''), trim((string)($in['webhook'] ?? '')));
             } catch (RuntimeException $e) {
                 api_fail($e->getMessage());
             }
+            audit_log('slack', 'add', '送り先を追加: ' . $nd['name'], '', 'Webhook URL は記録しません');
             api_out(['slack' => slack_status()]);
 
         case 'slack_delete': // 登録した送り先を消す（管理者）
             require_admin($user);
+            $dn = '';
+            foreach (slack_dests() as $dd) { if ($dd['id'] === (string)($in['id'] ?? '')) { $dn = $dd['name']; } }
             try {
                 slack_dest_delete((string)($in['id'] ?? ''));
             } catch (RuntimeException $e) {
                 api_fail($e->getMessage());
             }
+            audit_log('slack', 'delete', '送り先を削除: ' . $dn);
             api_out(['slack' => slack_status()]);
 
         case 'slack_use': // 使う送り先を選ぶ（管理者）
@@ -332,6 +337,7 @@ function handle_api(): void
             } catch (RuntimeException $e) {
                 api_fail($e->getMessage());
             }
+            audit_log('slack', 'update', '通知の送り先を切り替え', '', '→ ' . slack_status()['active_name']);
             api_out(['slack' => slack_status()]);
 
         case 'slack_cfg': // 通知の時間・文面の設定（管理者）
@@ -353,6 +359,7 @@ function handle_api(): void
             } catch (RuntimeException $e) {
                 api_fail($e->getMessage());
             }
+            audit_log('slack', 'update', '通知の時間・文面を変更', '', '朝 ' . ($c['morning']['on'] ? $c['morning']['time'] : 'オフ') . '／夕方 ' . ($c['evening']['on'] ? $c['evening']['time'] : 'オフ') . '／休みなし通知 ' . ($c['empty']['on'] ? 'オン' : 'オフ'));
             api_out(['cfg' => $c, 'preview' => slack_preview($c)]);
 
         case 'slack_test': // テスト通知を送る（管理者）
@@ -372,6 +379,7 @@ function handle_api(): void
             } catch (RuntimeException $x) {
                 api_fail($x->getMessage(), 403);
             }
+            audit_log('share', 'add', ($l['kind'] === 'company' ? '会社用' : '家族用') . 'リンクを作成（作り直し）', $l['kind'] === 'family' ? $user['name'] : '');
             api_out(['kind' => $l['kind'], 'path' => 'share.php?t=' . $l['token']]);
 
         case 'share_revoke':
@@ -380,6 +388,7 @@ function handle_api(): void
             } catch (RuntimeException $x) {
                 api_fail($x->getMessage(), 403);
             }
+            audit_log('share', 'delete', (($in['kind'] ?? '') === 'company' ? '会社用' : '家族用') . 'リンクを停止', ($in['kind'] ?? '') === 'family' ? $user['name'] : '');
             api_out(['ok' => true]);
 
         case 'memo_get':
@@ -486,6 +495,8 @@ function handle_api(): void
                 $sid = (int)db()->lastInsertId();
             }
             $n = materialize_series($sid, $cal);
+            $so = row('SELECT name FROM users WHERE id = ?', [empty($cur) ? $user['id'] : $cur['owner_id']]);
+            audit_log('series', empty($in['id']) ? 'add' : 'update', $s['title'], $so ? $so['name'] : '', empty($cur) ? '' : ($cur['title'] !== $s['title'] ? '名前「' . $cur['title'] . '」→「' . $s['title'] . '」' : 'ルールを変更'));
             api_out(['ok' => true, 'id' => $sid, 'created_or_updated' => $n]);
 
         case 'series_delete':
@@ -497,6 +508,8 @@ function handle_api(): void
                 api_fail('このルールは削除できません。', 403);
             }
             delete_series((int)$cur['id']);
+            $so = row('SELECT name FROM users WHERE id = ?', [$cur['owner_id']]);
+            audit_log('series', 'delete', $cur['title'], $so ? $so['name'] : '');
             api_out(['ok' => true]);
 
         case 'series_seed':
@@ -512,6 +525,7 @@ function handle_api(): void
                 ]);
                 materialize_series((int)db()->lastInsertId(), $cal);
             }
+            audit_log('series', 'add', '例のルール ' . count(EXAMPLE_SERIES) . '件をまとめて登録', $user['name']);
             api_out(['ok' => true]);
 
         case 'password_change':
@@ -527,6 +541,7 @@ function handle_api(): void
                 api_fail('現在のパスワードとは別のパスワードにしてください。');
             }
             q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+            audit_log('security', 'update', '自分のパスワードを変更', $user['name']);
             api_out(['ok' => true]);
 
         case 'users_list':
@@ -558,6 +573,13 @@ function handle_api(): void
                     api_fail('そのメールアドレスは使われています。');
                 }
                 q('UPDATE users SET name=?, email=?, role=?, active=? WHERE id=?', [$name, $email, $role, $active, $target['id']]);
+                $ch = [];
+                if ($target['name'] !== $name) { $ch[] = '名前「' . $target['name'] . '」→「' . $name . '」'; }
+                if ($target['email'] !== $email) { $ch[] = 'メールアドレスを変更'; }
+                if ($target['role'] !== $role) { $ch[] = '権限 ' . ($target['role'] === 'admin' ? '管理者' : '一般') . ' → ' . ($role === 'admin' ? '管理者' : '一般'); }
+                if ((int)$target['active'] !== $active) { $ch[] = $active ? '利用を再開' : '利用を停止'; }
+                if ($pw !== '') { $ch[] = 'パスワードを設定'; }
+                if ($ch) { audit_log('user', 'update', $name, $name, implode('／', $ch)); }
                 if ($pw !== '') {
                     if (mb_strlen($pw) < 8) {
                         api_fail('パスワードは8文字以上にしてください。');
@@ -573,6 +595,7 @@ function handle_api(): void
                     api_fail('そのメールアドレスは使われています。');
                 }
                 create_user($name, $email, $pw, $role, null, true);
+                audit_log('user', 'add', $name, $name, '権限: ' . ($role === 'admin' ? '管理者' : '一般'));
             }
             api_out(['ok' => true]);
 
@@ -587,7 +610,13 @@ function handle_api(): void
             } catch (RuntimeException $e) {
                 api_fail($e->getMessage(), 404);
             }
+            $tu = row('SELECT name FROM users WHERE id = ?', [$tid]);
+            audit_log('user', 'reset', 'パスワードをリセット', $tu ? $tu['name'] : '', '一時パスワードを発行（次のログインで本人が変更）');
             api_out(['password' => $tmp]);
+
+        case 'audit_list': // 変更履歴（管理者）
+            require_admin($user);
+            api_out(audit_list(['type' => (string)($_GET['type'] ?? ''), 'actor' => (int)($_GET['actor'] ?? 0), 'q' => (string)($_GET['q'] ?? ''), 'before' => (int)($_GET['before'] ?? 0), 'limit' => (int)($_GET['limit'] ?? 50)]) + ['types' => AUDIT_TYPES]);
 
         case 'holidays_list':
             api_out(['holidays' => rows('SELECT id, hdate, name FROM company_holidays ORDER BY hdate')]);
@@ -615,13 +644,16 @@ function handle_api(): void
                 }
             }
             materialize_all(); // 営業日が変わるので繰り返し予定を再計算
+            audit_log('holiday', 'add', $name . '　' . ($d === $d2 ? audit_md($d) : audit_md($d) . '〜' . audit_md($d2)), '', $added . '日分を追加');
             api_out(['ok' => true, 'added' => $added]);
 
         case 'holiday_delete':
             require_admin($user);
             $ids = is_array($in['ids'] ?? null) ? $in['ids'] : [$in['id'] ?? 0]; // 続いた休みは、まとめて消せる
             foreach (array_slice($ids, 0, 100) as $hid) {
+                $hrow = row('SELECT hdate, name FROM company_holidays WHERE id = ?', [(int)$hid]);
                 q('DELETE FROM company_holidays WHERE id = ?', [(int)$hid]);
+                if ($hrow) { audit_log('holiday', 'delete', $hrow['name'] . '　' . audit_md($hrow['hdate'])); }
             }
             materialize_all();
             api_out(['ok' => true]);

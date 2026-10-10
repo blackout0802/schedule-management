@@ -18,6 +18,13 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1; // 更新時にブラウザの
 <meta name="robots" content="noindex">
 <title><?= h($app) ?></title>
 <link rel="stylesheet" href="assets/app.css?v=<?= $v ?>">
+<meta name="theme-color" content="#2155d6">
+<link rel="manifest" href="manifest.php">
+<link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="<?= h(mb_substr($app, 0, 12)) ?>">
 <script nonce="<?= csp_nonce() ?>">try{var t=JSON.parse(localStorage.getItem('sched.theme'));if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>

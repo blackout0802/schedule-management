@@ -28,6 +28,13 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1;
 <meta name="referrer" content="no-referrer">
 <title><?= h(share_title($link)) ?></title>
 <link rel="stylesheet" href="assets/app.css?v=<?= $v ?>">
+<meta name="theme-color" content="#2155d6">
+<link rel="manifest" href="manifest.php?t=<?= h($token) ?>">
+<link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="<?= h(mb_substr($link['kind'] === 'family' ? '予定（家族用）' : '業務カレンダー', 0, 12)) ?>">
 <script nonce="<?= csp_nonce() ?>">try{var t=JSON.parse(localStorage.getItem('sched.theme'));if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>

@@ -7,6 +7,7 @@
 //   off     … 全社員に見える
 
 require_once __DIR__ . '/recurrence.php';
+require_once __DIR__ . '/audit.php';
 
 /**
  * 「家族に共有する」の値。指定があればそれに従い、なければ種類ごとの初期値。
@@ -773,6 +774,11 @@ function event_changed(?array $before, ?array $after): void
         }
     }
     log_event_change($before, $after);
+    try {
+        audit_event_change($before, $after); // 管理者用の変更履歴（プライベートの予定は記録しない）
+    } catch (Throwable $t) {
+        error_log('[schedule] 変更履歴の記録に失敗: ' . $t->getMessage());
+    }
 }
 
 

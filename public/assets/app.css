@@ -481,3 +481,25 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .cell.offday:not(.drop):hover { background: color-mix(in srgb, var(--offday-bg) 94%, var(--ink)); }
 .cs-sample .cell { min-height: 54px; border: 1px solid var(--line); border-radius: 6px; --offday-bg: color-mix(in srgb, var(--off) 14%, var(--surface)); }
 .offday-sw { border: 1px solid var(--line); background: var(--offday-bg, color-mix(in srgb, var(--off) 14%, var(--surface))) !important; }
+
+/* ---- ホーム画面に追加 ---- */
+.install .inst-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--surface-2); }
+.install .inst-box h4 { margin: 0 0 6px; font-size: 15px; }
+.install .inst-box ol { margin: 0; padding-left: 22px; display: grid; gap: 4px; }
+.ok-note { background: var(--off-soft); color: var(--off); font-weight: 700; padding: 8px 12px; border-radius: 8px; }
+/* ---- 変更履歴（管理者）---- */
+.audit-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.audit-filters select { width: auto; min-width: 9em; }
+.audit-filters input[type=search] { flex: 1 1 200px; width: auto; }
+.audit-list { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.audit-list > .muted { padding: 16px; margin: 0; text-align: center; }
+.audit-item { padding: 9px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 2px; background: var(--surface); }
+.audit-item:last-child { border-bottom: 0; }
+.au-top { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.au-actor { font-weight: 700; color: var(--ink); }
+.au-type { padding: 0 8px; border-radius: 99px; border: 1px solid var(--line); }
+.au-act { padding: 0 8px; border-radius: 99px; font-weight: 700; background: var(--work-soft); color: var(--work); }
+.au-act.add { background: var(--off-soft); color: var(--off); } .au-act.delete { background: var(--danger-soft); color: var(--danger); } .au-act.reset { background: #fff1d6; color: #5c3b00; }
+.au-label { font-weight: 700; overflow-wrap: anywhere; } .au-target { color: var(--muted); font-size: 13px; }
+.au-detail { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.audit-item.delete .au-label { text-decoration: line-through; text-decoration-thickness: 1px; }

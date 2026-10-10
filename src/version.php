@@ -1,5 +1,5 @@
 <?php
 // アプリのバージョン。更新のたびに上げる（システム更新の画面に表示される）。
-const APP_VERSION = '1.26.0';
+const APP_VERSION = '1.27.0';
 // データベースの構造を変えたら上げる。画面を開いたときに、足りないテーブル・列を自動で作る。
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;

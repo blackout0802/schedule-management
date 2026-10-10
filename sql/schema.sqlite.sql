@@ -127,3 +127,17 @@ CREATE TABLE IF NOT EXISTS event_log (
   end_time TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_event_log_owner ON event_log (owner_id, id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  actor_id INTEGER NULL,
+  actor_name TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL,
+  action TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  target_name TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_audit_at ON audit_log (at);
+CREATE INDEX IF NOT EXISTS ix_audit_type ON audit_log (type, id);
