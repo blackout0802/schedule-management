@@ -532,19 +532,34 @@ function handle_api(): void
         case 'holiday_save':
             require_admin($user);
             $d = (string)($in['hdate'] ?? '');
+            $d2 = (string)($in['hdate_end'] ?? '') !== '' ? (string)$in['hdate_end'] : $d; // 終了日が空なら、その1日だけ
             $name = trim((string)($in['name'] ?? ''));
-            if (!valid_date($d) || $name === '' || mb_strlen($name) > 60) {
+            if (!valid_date($d) || !valid_date($d2) || $name === '' || mb_strlen($name) > 60) {
                 api_fail('日付と名前を正しく入力してください。');
             }
-            if (!row('SELECT id FROM company_holidays WHERE hdate = ?', [$d])) {
-                q('INSERT INTO company_holidays (hdate, name) VALUES (?, ?)', [$d, $name]);
+            if ($d2 < $d) {
+                api_fail('終了日は開始日以降にしてください。');
+            }
+            if (strtotime($d2) - strtotime($d) > 59 * 86400) {
+                api_fail('一度に登録できるのは、60日間までです。');
+            }
+            $added = 0;
+            for ($t = strtotime($d), $end = strtotime($d2); $t <= $end; $t = strtotime('+1 day', $t)) {
+                $day = date('Y-m-d', $t);
+                if (!row('SELECT id FROM company_holidays WHERE hdate = ?', [$day])) { // すでにある日は、そのまま
+                    q('INSERT INTO company_holidays (hdate, name) VALUES (?, ?)', [$day, $name]);
+                    $added++;
+                }
             }
             materialize_all(); // 営業日が変わるので繰り返し予定を再計算
-            api_out(['ok' => true]);
+            api_out(['ok' => true, 'added' => $added]);
 
         case 'holiday_delete':
             require_admin($user);
-            q('DELETE FROM company_holidays WHERE id = ?', [(int)($in['id'] ?? 0)]);
+            $ids = is_array($in['ids'] ?? null) ? $in['ids'] : [$in['id'] ?? 0]; // 続いた休みは、まとめて消せる
+            foreach (array_slice($ids, 0, 100) as $hid) {
+                q('DELETE FROM company_holidays WHERE id = ?', [(int)$hid]);
+            }
             materialize_all();
             api_out(['ok' => true]);
     }

@@ -110,7 +110,9 @@
       el('h3', null, el('span', { text: title }), locked ? null : el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', onclick: close, text: '✕' })),
       body);
     ov.appendChild(box);
-    ov.addEventListener('mousedown', function (e) { if (e.target === ov && !ov.locked) close(); });
+    // 入力画面は、外側をクリックしても閉じない（入力中の内容を、うっかり消さないため）。保存・キャンセル・✕・Esc で閉じる。
+    // 読むだけの画面（予定の詳細）だけ、外側のクリックでも閉じる
+    ov.addEventListener('mousedown', function (e) { if (e.target === ov && !ov.locked && ov.outsideClose) close(); });
     document.body.appendChild(ov);
     modals.push(ov);
     var f = box.querySelector('input:not([type=radio]):not([disabled]), select, textarea');
@@ -1209,6 +1211,7 @@
     var ov = openModal('予定の詳細', el('div', { class: 'form' }, dl,
       SHARE ? null : el('p', { class: 'hint', text: 'この予定は持ち主と管理者だけが編集できます。' }),
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
+    ov.outsideClose = true;
   }
 
   /* ---------- 共有リンク ---------- */
@@ -1437,15 +1440,24 @@
     function refresh() {
       api('holidays_list').then(function (j) {
         body.textContent = '';
-        body.appendChild(el('p', { class: 'hint', text: '国の祝日は自動で判定されます。年末年始などの会社独自の休みをここに追加すると、繰り返し業務の日付計算で「休日」として扱われます。' }));
-        var d = el('input', { type: 'date', required: true }), n = el('input', { required: true, maxlength: '60', placeholder: '例: 年末年始休業' });
+        body.appendChild(el('p', { class: 'hint', text: '国の祝日は自動で判定されます。年末年始などの会社独自の休みをここに追加すると、繰り返し業務の日付計算で「休日」として扱われます。続く休みは、終了日も入れると、まとめて登録できます。' }));
+        var d = el('input', { type: 'date', required: true }), d2 = el('input', { type: 'date' }), n = el('input', { required: true, maxlength: '60', placeholder: '例: 年末年始休業' });
+        d.addEventListener('change', function () { if (d2.value && d2.value < d.value) d2.value = d.value; d2.min = d.value; });
         body.appendChild(el('form', { class: 'row', onsubmit: function (e) {
           e.preventDefault();
-          api('holiday_save', { body: { hdate: d.value, name: n.value } }).then(function () { toast('追加しました'); refresh(); load(); }).catch(fail);
-        } }, el('label', null, '日付', d), el('label', null, '名前', n), el('div', { style: 'align-self:end' }, el('button', { class: 'btn primary', type: 'submit', text: '追加' }))));
-        body.appendChild(j.holidays.length ? el('table', { class: 't' }, el('tbody', null, j.holidays.map(function (h) {
-          return el('tr', null, el('td', { text: mdw(h.hdate) + ' ' + h.hdate.slice(0, 4) }), el('td', { text: h.name }), el('td', null, el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
-            api('holiday_delete', { body: { id: h.id } }).then(function () { refresh(); load(); }).catch(fail);
+          api('holiday_save', { body: { hdate: d.value, hdate_end: d2.value, name: n.value } }).then(function (r) { toast(r.added + '日分を追加しました'); refresh(); load(); }).catch(fail);
+        } }, el('label', null, '開始日', d), el('label', null, '終了日（1日だけなら空欄）', d2), el('label', null, '名前', n), el('div', { style: 'align-self:end' }, el('button', { class: 'btn primary', type: 'submit', text: '追加' }))));
+        // 続いている同じ名前の休みは、「12/29（火）〜1/3（日）」のように1行にまとめて表示する
+        var groups = [];
+        j.holidays.forEach(function (h) {
+          var g = groups[groups.length - 1];
+          if (g && g.name === h.name && daysBetween(g.to, h.hdate) === 1) { g.to = h.hdate; g.ids.push(h.id); } else groups.push({ name: h.name, from: h.hdate, to: h.hdate, ids: [h.id] });
+        });
+        var range = function (g) { return g.from === g.to ? mdw(g.from) + ' ' + g.from.slice(0, 4) : mdw(g.from) + ' 〜 ' + mdw(g.to) + ' ' + g.to.slice(0, 4) + '（' + g.ids.length + '日間）'; };
+        body.appendChild(groups.length ? el('table', { class: 't' }, el('tbody', null, groups.map(function (g) {
+          return el('tr', null, el('td', { text: range(g) }), el('td', { text: g.name }), el('td', null, el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
+            if (g.ids.length > 1 && !window.confirm(g.ids.length + '日間の休業日を、まとめて削除します。よろしいですか？')) return;
+            api('holiday_delete', { body: { ids: g.ids } }).then(function () { refresh(); load(); }).catch(fail);
           } })));
         }))) : el('p', { class: 'muted', text: '登録されている休業日はありません。' }));
         body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
