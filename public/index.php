@@ -18,6 +18,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1; // 更新時にブラウザの
 <meta name="robots" content="noindex">
 <title><?= h($app) ?></title>
 <link rel="stylesheet" href="assets/app.css?v=<?= $v ?>">
+<script nonce="<?= csp_nonce() ?>">try{var t=JSON.parse(localStorage.getItem('sched.theme'));if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>
 <script nonce="<?= csp_nonce() ?>">window.SCHEDULE_POLL_MS = <?= (int)poll_ms() ?>; window.SCHEDULE_BUILD = <?= json_encode(app_build()) ?>;</script>

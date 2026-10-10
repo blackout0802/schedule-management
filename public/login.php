@@ -32,6 +32,7 @@ $app = cfg('app_name');
 <meta name="robots" content="noindex">
 <title>ログイン｜<?= h($app) ?></title>
 <link rel="stylesheet" href="assets/app.css">
+<script nonce="<?= csp_nonce() ?>">try{var t=JSON.parse(localStorage.getItem('sched.theme'));if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body class="login-page">
 <main class="login-card">

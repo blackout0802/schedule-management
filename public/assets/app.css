@@ -7,13 +7,20 @@
   --rec: #9a4a00; /* 毎月の繰り返し業務の文字色（単発の業務は青） */
   --font: "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
 }
+/* 画面の色: 端末の設定に合わせる（自動）。「画面の色」で、ライト／ダークに固定できる（html の data-theme） */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0e1522; --surface: #162033; --surface-2: #1e2b43; --ink: #e8eef8; --muted: #9aa8bd; --line: #2a3850;
     --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
     --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #0e1522; --surface: #162033; --surface-2: #1e2b43; --ink: #e8eef8; --muted: #9aa8bd; --line: #2a3850;
+  --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
+  --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.6; font-weight: var(--fw); }
@@ -430,3 +437,16 @@ body.is-dragging.drag-event .tp-drop { display: block; }
   .bar.cr { margin-right: 0; }
   .todo-hover { display: none; } /* 右端のToDoの取っ手は、マウスで使うもの（スマホでは、カレンダーに重なるので出さない） */
 }
+
+/* ---- 日付を押したときの、その日の予定の一覧 ---- */
+.day-list { display: grid; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.day-item { display: grid; gap: 2px; text-align: left; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; cursor: pointer; font-weight: var(--fw); }
+.day-item.work { background: var(--ub-work, var(--work-soft)); color: var(--uc-work, var(--work)); }
+.day-item.off { background: var(--ub-off, var(--off-soft)); color: var(--uc-off, var(--off)); }
+.day-item.private { background: var(--ub-private, var(--private-soft)); color: var(--uc-private, var(--private)); }
+.day-item .di-title { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.day-item .di-sub { font-size: 12.5px; opacity: .9; }
+.day-item .di-note { font-size: 12.5px; opacity: .85; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.day-item.deleted { text-decoration: line-through; opacity: .65; outline: 1px dashed currentColor; outline-offset: -2px; }
+.theme-opt { display: flex; align-items: center; gap: 8px; padding: 8px 4px; }
+.theme-opt input { width: auto; flex: none; }

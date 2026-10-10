@@ -28,6 +28,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1;
 <meta name="referrer" content="no-referrer">
 <title><?= h(share_title($link)) ?></title>
 <link rel="stylesheet" href="assets/app.css?v=<?= $v ?>">
+<script nonce="<?= csp_nonce() ?>">try{var t=JSON.parse(localStorage.getItem('sched.theme'));if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 </head>
 <body>
 <div id="app" data-csrf=""><p class="muted" style="padding:24px">読み込み中…</p></div>

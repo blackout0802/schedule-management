@@ -75,6 +75,23 @@
     inp.addEventListener('change', function () { timeVal(inp); });
     return inp;
   }
+  /* 画面の色: 自動（端末の設定に合わせる）／ライト／ダーク。端末ごとに覚える */
+  function applyTheme() {
+    var t = store('sched.theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+  }
+  function openThemeDialog() {
+    var cur = store('sched.theme'); cur = cur === 'light' || cur === 'dark' ? cur : 'auto';
+    var opts = [['auto', '自動（端末の設定に合わせる）'], ['light', 'ライト（白い背景）'], ['dark', 'ダーク（黒い背景）']];
+    var body = el('div', { class: 'form' },
+      el('p', { class: 'hint', text: '「自動」では、スマホやパソコンがダークモードのとき、黒い背景になります。この端末だけの設定です。' }),
+      opts.map(function (o) {
+        return el('label', { class: 'check theme-opt' }, el('input', { type: 'radio', name: 'theme', value: o[0], checked: cur === o[0], onchange: function () { store('sched.theme', o[0]); applyTheme(); } }), ' ' + o[1]);
+      }),
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    var ov = openModal('画面の色', body);
+    ov.outsideClose = true;
+  }
   function NARROW() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); } // スマホの幅
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parse(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
@@ -293,7 +310,7 @@
   /* 共有リンクの閲覧ページ: 月の移動と、予定の詳細を見るだけ。編集・ToDo・メモは無い */
   function renderShareShell() {
     root.textContent = '';
-    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }))));
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: '画面の色', title: 'ライト（白い背景）／ダーク（黒い背景）', onclick: openThemeDialog }))));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
     renderToolbar();
   }
@@ -324,6 +341,7 @@
     var settingsMenu = makeMenu('⚙ 設定', function (close) {
       var items = [
         el('div', { class: 'menu-h', text: '予定・表示' }),
+        item('画面の色（ライト／ダーク）', openThemeDialog, close),
         item('予定の色の設定', openColorDialog, close),
         item('繰り返し業務の設定', openSeriesDialog, close),
         item('共有リンク（家族・会社へ）', openShareDialog, close),
@@ -572,7 +590,15 @@
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
       text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL, NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
-      onclick: function (ev) { ev.stopPropagation(); openEventDialog(e); },
+      onclick: function (ev) {
+        ev.stopPropagation();
+        if (NARROW()) { // スマホ: 帯の文字は短く切れるので、押した日の予定の一覧を出す
+          var rect = bar.parentNode.getBoundingClientRect();
+          var col = Math.max(g.s, Math.min(g.e, Math.floor((ev.clientX - rect.left) / (rect.width / 7))));
+          return openDayPopup(ymd(days[col]));
+        }
+        openEventDialog(e);
+      },
       onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
     if (e.editable) {
       bar.addEventListener('dragstart', function (ev) {
@@ -714,7 +740,7 @@
       var s = ymd(d), hol = S.holidays[s];
       var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
-        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: SHARE ? null : function () { openEventDialog(null, s); } },
+        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
         el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
     });
     pack.segs.forEach(function (g) { week.appendChild(barFor(g, days)); });
@@ -1714,6 +1740,29 @@
     var ov = openModal('予定を複製', form);
   }
 
+  /* 日付を押したときの、その日の予定の一覧（スマホ・タッチ操作・共有リンクのとき）。予定を押すと詳細／編集 */
+  function useDayPopup() { return !!SHARE || NARROW() || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
+  function openDayPopup(ds) {
+    var list = S.events.filter(function (e) { return shownOn(e, ds); });
+    list.sort(function (a, b) { return (a.kind === 'off' ? 0 : 1) - (b.kind === 'off' ? 0 : 1) || (a.start_time || '').localeCompare(b.start_time || '') || a.id - b.id; });
+    var hol = S.holidays[ds];
+    var items = list.map(function (e) {
+      var sub = [];
+      if (e.kind === 'work' && !FAMILY && e.owner_name) sub.push(e.owner_name);
+      if (e.tag && e.kind !== 'off') sub.push(e.tag); // 休みは、見出しに分類が入っている
+      if (e.start !== e.end) sub.push(mdw(e.start) + ' 〜 ' + mdw(e.end));
+      return el('button', { type: 'button', class: 'day-item ' + e.kind + (e.deleted ? ' deleted' : ''), style: eventColorStyle(e) || null, onclick: function () { ov.close(); openEventDialog(e); } },
+        el('span', { class: 'di-title', text: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) }),
+        sub.length ? el('span', { class: 'di-sub', text: sub.join('　') }) : null,
+        e.note ? el('span', { class: 'di-note', text: e.note }) : null);
+    });
+    var ov = openModal(mdw(ds) + (hol ? '　' + hol : '') + (ds === ymd(new Date()) ? '（今日）' : ''), el('div', { class: 'form' },
+      items.length ? el('div', { class: 'day-list' }, items) : el('p', { class: 'muted', text: 'この日の予定はありません。' }),
+      el('div', { class: 'actions' },
+        SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ この日に予定を追加', onclick: function () { ov.close(); openEventDialog(null, ds); } }),
+        el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
+    ov.outsideClose = true;
+  }
   function openDeletedView(ev) {
     var when = ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end);
     var rows = [['予定', ev.title], ['日付', when]];
@@ -2233,6 +2282,7 @@
   }
 
   /* ---------- 起動 ---------- */
+  applyTheme();
   if (SHARE) {
     api('meta').then(function (m) {
       S.me = { user: { id: 0, name: '閲覧専用', role: 'viewer' }, app_name: m.app_name, work_tags: [], off_tags: [], users: [] };
