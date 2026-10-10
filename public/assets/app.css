@@ -542,3 +542,70 @@ input, select, textarea { border-radius: 10px; border-width: .5px; }
 .month-sum, .todo, .card { box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.05); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cal-wrap, :root:not([data-theme="light"]) .month-sum, :root:not([data-theme="light"]) .todo, :root:not([data-theme="light"]) .card { box-shadow: none; } }
 :root[data-theme="dark"] .cal-wrap, :root[data-theme="dark"] .month-sum, :root[data-theme="dark"] .todo, :root[data-theme="dark"] .card { box-shadow: none; }
+
+/* ---- v1.30 全体の統一: カレンダー画面を基準に、リスト・設定・ダイアログ・ログイン・共有ページも同じ見た目にそろえる ----
+   ルール: ①面（カード）は「白・極細の線・角丸14・やわらかい影」 ②カードの見出しは16px・太さ600 ③ページの題名だけ大きく（30px）
+           ④部品（ボタン・入力）は角丸10 ⑤リンクは青 ⑥内容の幅は、上のバーもカレンダーも同じ（1280px） */
+.topbar-in { max-width: 1280px; }
+main { gap: 16px; }
+.settings-page { max-width: 1280px; }
+a:not(.btn) { color: var(--work); }
+.set-nav a, .menu-list a, .tab { color: inherit; }
+.todo h2, .card .name, .month-sum h3, .set-sec > h3, .modal h3 { font-weight: 600; letter-spacing: 0; }
+.todo h2 { font-size: 16px; }
+.settings-page > h2 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; margin: 14px 0 16px; }
+@media (max-width: 640px) { .settings-page > h2 { font-size: 24px; } }
+
+/* カード（ToDo・メモ・まとめ・設定の各項目・ログイン・ダイアログ）を、カレンダーの枠と同じ質感に */
+.set-sec, .login-card, .list, .kb-tabs { border: .5px solid var(--line); border-radius: 14px; }
+.set-sec { box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.05); padding: 18px 22px 22px; }
+.set-sec > h3 { font-size: 16px; border-bottom: .5px solid var(--line); padding-bottom: 10px; }
+.login-card { box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.05); padding: 32px 28px; }
+.login-card h1 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+.set-nav a { border-radius: 10px; font-weight: 500; }
+.set-nav a:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.card, .scope, .td-zone, .tp-zone, .cs-row, .cs-sample, .notice { border-width: .5px; border-radius: 12px; }
+.notice { border-left-width: .5px; background: var(--work-soft); }
+
+/* ToDoのカンバン（リスト画面）: カレンダーのマスのように、薄い面 + 極細の線 */
+.kb-col { background: color-mix(in srgb, var(--bg) 60%, var(--surface)); border: .5px solid var(--line); border-radius: 14px; padding: 12px; gap: 8px; }
+.kb-col h3 { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.kb-col .cnt { font-variant-numeric: tabular-nums; }
+.todo-item, .tp-card { border-width: .5px; border-left-width: 3px; border-radius: 10px; box-shadow: 0 .5px 1px rgba(0,0,0,.05); }
+.todo-item.work, .todo-item.private { border-left-width: 3px; }
+.kb-card { border-left-width: 3px; }
+.kb-card .t-title { font-weight: 500; }
+.todo-add input[type=text] { padding: 8px 12px; }
+.memo-editor { border-width: .5px; border-radius: 10px; }
+
+/* ダイアログ・メニュー・通知: すりガラスの背景と、やわらかい影 */
+.overlay { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.modal { border-width: .5px; border-radius: 18px; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+.modal h3 { font-size: 18px; }
+.menu-list { border-width: .5px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.16); }
+.menu-list button { border-radius: 8px; }
+.toast { border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.25); font-weight: 500; }
+.cal-drop, .todo-panel { border-left-width: .5px; }
+.todo-hover { border-width: .5px; }
+
+/* 表（月のまとめ・社員の管理・変更履歴）と、小さな部品 */
+.t th, .t td { border-bottom-width: .5px; }
+.t th { font-weight: 500; letter-spacing: .04em; }
+.pill { font-weight: 500; }
+.hint { color: var(--muted); }
+.fchip { padding: 5px 12px; font-weight: 500; }
+.fchip input { accent-color: var(--work); }
+kbd { border-radius: 6px; }
+.cs-sw button.sw[aria-pressed=true] { border-color: var(--ink); }
+.kb-col { box-shadow: none; }
+.toolbar > h2:first-child { margin-left: 0; }
+.month-sum { padding: 8px 16px; margin-top: 12px; }
+.legend { gap: 8px 16px; } .legend + .hint, .hint + .hint { margin-top: 0; }
+.list-h { margin: 6px 4px 0; font-size: 16px; font-weight: 600; }
+.list { overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.05); }
+.list-day { border-bottom-width: .5px; grid-template-columns: 112px minmax(0, 1fr); padding: 10px 16px; }
+.list-day .dt small { font-size: 11.5px; }
+.list-day .dt { font-weight: 600; }
+.bar.plain { border-radius: 6px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .list, :root:not([data-theme="light"]) .set-sec, :root:not([data-theme="light"]) .login-card { box-shadow: none; } }
+:root[data-theme="dark"] .list, :root[data-theme="dark"] .set-sec, :root[data-theme="dark"] .login-card { box-shadow: none; }

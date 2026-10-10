@@ -584,6 +584,7 @@
 
   function renderFilters() {
     var box = document.getElementById('filters');
+    if (!box) return; // 共有ページには、絞り込みの欄が無い
     box.textContent = '';
     if (S.view !== 'me' || (!SHARE && S.mode === 'list')) return;
     var onChange = function () { store('sched.filters', { tags: S.tags, showOff: S.showOff }); load(); };
