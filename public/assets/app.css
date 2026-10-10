@@ -266,3 +266,5 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ms-tag { font-size: 12px; padding: 0 8px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ms-tag.absent { border-color: var(--danger); color: var(--danger); }
 @media (max-width: 640px) { .ms-grid { grid-template-columns: 1fr; } }
+
+.list-opt { margin: 0 0 8px; font-size: 13px; }

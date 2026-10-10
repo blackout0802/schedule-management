@@ -318,12 +318,14 @@
       renderTodoInto(mgr, true, keepFrom);
     }
     var todayStr = ymd(new Date());
+    // プライベート版のリストは、基本、自分の予定（プライベート・休み）だけにする。業務の予定は、必要なときだけ表示する
+    var hideWork = S.view === 'me' && !SHARE && !S.listWork;
     var list = el('div', { class: 'list' });
     var any = false;
     var last = new Date(S.year, S.month, 0).getDate();
     for (var i = 1; i <= last; i++) {
       var d = new Date(S.year, S.month - 1, i), ds = ymd(d), hol = S.holidays[ds];
-      var evs = S.events.filter(function (e) { return shownOn(e, ds); });
+      var evs = S.events.filter(function (e) { return shownOn(e, ds) && !(hideWork && e.kind === 'work'); });
       if (!evs.length && !hol) continue;
       any = true;
       list.appendChild(el('div', { class: 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (ds === todayStr ? ' today' : '') },
@@ -332,6 +334,11 @@
     }
     if (!any) list.appendChild(el('p', { class: 'empty-note', text: 'この月の予定はまだありません。' }));
     board.appendChild(el('h3', { class: 'list-h', text: S.year + '年' + S.month + '月の予定' }));
+    if (S.view === 'me' && !SHARE) {
+      board.appendChild(el('label', { class: 'check list-opt' },
+        el('input', { type: 'checkbox', id: 'list-work', checked: !!S.listWork, style: 'width:auto', onchange: function () { S.listWork = this.checked; store('sched.listWork', S.listWork); renderBoard(); } }),
+        '業務の予定も表示する（初期設定は、非表示）'));
+    }
     board.appendChild(list);
   }
 
@@ -1553,6 +1560,7 @@
     S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
     S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
+    S.listWork = store('sched.listWork') === true;
     var start = function () { renderShell(); load(); startAutoRefresh(); };
     if (me.user.must_change_password) {
       root.textContent = '';
