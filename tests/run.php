@@ -442,6 +442,40 @@ db()->exec('DELETE FROM event_log');
 q("DELETE FROM events WHERE start_date >= '2027-05-01' AND start_date <= '2027-05-31'");
 save_family_share($a, false, []);
 
+// ---- 繰り返し業務と休みが重なるとき、休みを優先 ----
+$lvO = row('SELECT * FROM users WHERE id = ?', [create_user('休み優先', 'leave@example.com', 'password1')]);
+q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,bizonly,shift,created_at) VALUES (?,?,?,?,?,?,?,?,?)", [$lvO['id'], '期間の業務', '定例業務', 'range', 8, 12, 1, 'none', now_str()]);
+$sidR = (int)db()->lastInsertId();
+q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$lvO['id'], '1日の業務', '定例業務', 'day', 15, 'none', now_str()]);
+$sidD = (int)db()->lastInsertId();
+$cal0 = BizCalendar::fromDb(); materialize_series($sidR, $cal0, 12); materialize_series($sidD, $cal0, 12);
+$occ = function (int $sid, string $ym) { $r = row('SELECT start_date, end_date FROM events WHERE series_id = ? AND ym = ?', [$sid, $ym]); return $r ? [$r['start_date'], $r['end_date']] : null; };
+check('休み優先: 休みが無ければ、ルールどおり（6/8〜6/11・6/15）', [$occ($sidR, '2027-06'), $occ($sidD, '2027-06')], [['2027-06-08', '2027-06-11'], ['2027-06-15', '2027-06-15']]);
+$lv1 = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-06-11', 'end' => '2027-06-11']);
+check('休み優先: 期間の末尾が休みなら、その日を外す（6/8〜6/10）', $occ($sidR, '2027-06'), ['2027-06-08', '2027-06-10']);
+$lv2 = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '調整休', 'start' => '2027-06-08', 'end' => '2027-06-08']);
+check('休み優先: 先頭も休みなら、先頭も外す（6/9〜6/10）', $occ($sidR, '2027-06'), ['2027-06-09', '2027-06-10']);
+$lv3 = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-06-09', 'end' => '2027-06-10']);
+check('休み優先: 期間の全部が休みなら、その月は作らない', $occ($sidR, '2027-06'), null);
+$lvMid = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-06-15', 'end' => '2027-06-15']);
+check('休み優先: 1日の業務が休みの日に当たったら、直前の営業日（6/14）に移す', $occ($sidD, '2027-06'), ['2027-06-14', '2027-06-14']);
+$lvMid2 = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-06-12', 'end' => '2027-06-14']);
+check('休み優先: 直前も休みなら、休みでない前の営業日まで戻る（6/8〜6/15 が休み → 6/7）', $occ($sidD, '2027-06'), ['2027-06-07', '2027-06-07']);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$lv1['id']])); delete_event(row('SELECT * FROM events WHERE id = ?', [$lv2['id']])); delete_event(row('SELECT * FROM events WHERE id = ?', [$lv3['id']]));
+check('休み優先: 休みを消すと、元の日付に戻る（期間）', $occ($sidR, '2027-06'), ['2027-06-08', '2027-06-11']);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$lvMid['id']]));
+delete_event(row('SELECT * FROM events WHERE id = ?', [$lvMid2['id']]));
+check('休み優先: 休みを削除（delete_event）すると、1日の業務も元の日（6/15）に戻る', $occ($sidD, '2027-06'), ['2027-06-15', '2027-06-15']);
+$half = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '午前半休', 'start' => '2027-06-15', 'end' => '2027-06-15']);
+check('休み優先: 半休の日は、その日も働くので、動かさない', $occ($sidD, '2027-06'), ['2027-06-15', '2027-06-15']);
+$other = $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-06-15', 'end' => '2027-06-15']);
+check('休み優先: 他の人の休みは、関係ない', $occ($sidD, '2027-06'), ['2027-06-15', '2027-06-15']);
+$mv = $mk($lvO, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-06-22', 'end' => '2027-06-22']);
+move_event($mv, '2027-06-15');
+check('休み優先: 休みをドラッグで動かしても、反映される（6/15 に移した → 6/14）', $occ($sidD, '2027-06'), ['2027-06-14', '2027-06-14']);
+q("DELETE FROM events WHERE owner_id IN (?, ?) AND kind = 'off' AND start_date >= '2027-06-01' AND start_date <= '2027-06-30'", [$lvO['id'], $b['id']]);
+q('DELETE FROM events WHERE series_id IN (?, ?)', [$sidR, $sidD]); q('DELETE FROM series WHERE id IN (?, ?)', [$sidR, $sidD]);
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');

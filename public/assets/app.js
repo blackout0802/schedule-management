@@ -250,7 +250,7 @@
     Promise.all([api('events', { params: params }), FAMILY ? api('log') : Promise.resolve(null)]).then(function (r) {
       var j = r[0];
       if (r[1]) setUpdateLog(r[1]);
-      S.events = j.events; S.holidays = j.holidays; S.summary = j.summary || null; S.loading = false; S.revEv = j.rev; renderBoard();
+      S.events = j.events; S.holidays = j.holidays; S.summary = j.summary || null; buildLeaveIdx(); S.loading = false; S.revEv = j.rev; renderBoard();
     }).catch(fail);
   }
 
@@ -326,8 +326,19 @@
     return (e._biz = r);
   }
   /* その日に表示するか。期間のある「業務」は、土日祝には出さない（全期間が休日なら、そのまま出す） */
+  /* 本人が丸1日休みの日（半休は除く）。繰り返し業務の期間の途中に休みがあっても、その日には業務の帯を出さない（休みを優先） */
+  function buildLeaveIdx() {
+    var idx = {};
+    S.events.forEach(function (e) {
+      if (e.kind !== 'off' || (e.tag || '').indexOf('半休') >= 0) return;
+      var m = idx[e.owner_id] || (idx[e.owner_id] = {});
+      for (var d = parse(e.start), end = parse(e.end), n = 0; d <= end && n < 120; d = addDays(d, 1), n++) m[ymd(d)] = true;
+    });
+    S.leaveIdx = idx;
+  }
   function shownOn(e, ds) {
     if (e.start > ds || e.end < ds) return false;
+    if (e.kind === 'work' && e.recurring && e.start !== e.end && S.leaveIdx && S.leaveIdx[e.owner_id] && S.leaveIdx[e.owner_id][ds]) return false;
     if (e.kind === 'work' && e.start !== e.end && isOffDay(ds) && hasBizDay(e)) return false;
     return true;
   }
@@ -520,12 +531,79 @@
     document.body.classList.add('is-dragging');
     document.body.classList.toggle('drag-event', payload.t === 'event');
     document.body.classList.toggle('drag-ok', !!payload.ok);
+    if (payload.t === 'todo' && S.mode === 'list' && !SHARE) setupCalEdge();
   }
   function endDrag() {
     S.drag = null;
+    teardownCalEdge();
     setTimeout(maybeRefresh, 0);
     document.body.classList.remove('is-dragging', 'drag-event', 'drag-ok');
     document.querySelectorAll('.drop, .ins-before, .ins-after').forEach(function (x) { x.classList.remove('drop', 'ins-before', 'ins-after'); });
+  }
+
+  /* ---------- リストのToDoを、画面の右端へ持っていくと、カレンダーが開いて、日付に落として予定にできる ---------- */
+  var calEdgeFn = null, calCloseTimer = null;
+  function setupCalEdge() {
+    if (document.getElementById('cal-edge')) return;
+    var edge = el('div', { id: 'cal-edge', class: 'cal-edge', text: 'カレンダーへ ▶' });
+    edge.addEventListener('dragover', function (ev) { ev.preventDefault(); openCalDrop(); });
+    document.body.appendChild(edge);
+    calEdgeFn = function (ev) { if (ev.clientX >= window.innerWidth - 56) openCalDrop(); }; // 画面の右端まで持っていったら開く
+    document.addEventListener('dragover', calEdgeFn);
+  }
+  function teardownCalEdge() {
+    if (calEdgeFn) { document.removeEventListener('dragover', calEdgeFn); calEdgeFn = null; }
+    clearTimeout(calCloseTimer);
+    var a = document.getElementById('cal-edge'), b = document.getElementById('cal-drop');
+    if (a) a.remove();
+    if (b) b.remove();
+  }
+  function openCalDrop() {
+    clearTimeout(calCloseTimer);
+    if (document.getElementById('cal-drop')) return;
+    var panel = el('div', { id: 'cal-drop', class: 'cal-drop', role: 'dialog', 'aria-label': 'カレンダーに追加' });
+    var y = S.year, m = S.month, navTimer = null;
+    function nav(delta) { var d = new Date(y, m - 1 + delta, 1); y = d.getFullYear(); m = d.getMonth() + 1; draw(); }
+    function navBtn(label, delta, name) {
+      var b = el('button', { type: 'button', class: 'btn small', text: label, 'aria-label': name, onclick: function () { nav(delta); } });
+      b.addEventListener('dragenter', function () { clearTimeout(navTimer); navTimer = setTimeout(function () { nav(delta); }, 600); }); // 持ったまま乗せると、月が切り替わる
+      b.addEventListener('dragover', function (ev) { ev.preventDefault(); });
+      b.addEventListener('dragleave', function () { clearTimeout(navTimer); });
+      return b;
+    }
+    function draw() {
+      panel.textContent = '';
+      panel.appendChild(el('p', { class: 'cd-hint', text: '日付にドロップすると、予定になります' }));
+      panel.appendChild(el('div', { class: 'cd-head' }, navBtn('‹', -1, '前の月'), el('b', { text: y + '年' + m + '月' }), navBtn('›', 1, '次の月')));
+      var grid = el('div', { class: 'cd-grid' });
+      DOW.forEach(function (w, i) { grid.appendChild(el('div', { class: 'cd-dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), text: w })); });
+      var first = new Date(y, m - 1, 1), start = addDays(first, -first.getDay()), today = ymd(new Date());
+      var last = new Date(y, m, 0), weeks = Math.ceil((first.getDay() + last.getDate()) / 7);
+      for (var i = 0; i < weeks * 7; i++) {
+        var d = addDays(start, i), ds = ymd(d), n = S.events.filter(function (e) { return e.start <= ds && e.end >= ds; }).length;
+        var cell = el('div', { class: 'cd-cell' + (d.getMonth() + 1 !== m ? ' other' : '') + (d.getDay() === 0 || S.holidays[ds] ? ' sun' : d.getDay() === 6 ? ' sat' : '') + (ds === today ? ' today' : ''), 'data-date': ds },
+          el('span', { class: 'cd-num', text: String(d.getDate()) }), n ? el('span', { class: 'cd-n', text: n + '件' }) : null);
+        cell.addEventListener('dragover', function (ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; this.classList.add('drop'); });
+        cell.addEventListener('dragleave', function () { this.classList.remove('drop'); });
+        cell.addEventListener('drop', (function (date) { return function (ev) {
+          ev.preventDefault();
+          var p = S.drag; endDrag();
+          if (p && p.t === 'todo') dropOnDate(p, date);
+        }; })(ds));
+        grid.appendChild(cell);
+      }
+      panel.appendChild(grid);
+    }
+    draw();
+    // 左へ出ていったら閉じる（ToDoの列に戻したいときのため）
+    panel.addEventListener('dragleave', function (ev) {
+      if (panel.contains(ev.relatedTarget)) return;
+      clearTimeout(calCloseTimer);
+      calCloseTimer = setTimeout(function () { var p = document.getElementById('cal-drop'); if (p) p.remove(); }, 400);
+    });
+    panel.addEventListener('dragenter', function () { clearTimeout(calCloseTimer); });
+    panel.addEventListener('dragover', function (ev) { ev.preventDefault(); clearTimeout(calCloseTimer); });
+    document.body.appendChild(panel);
   }
 
   function dropOnDate(p, date) {
@@ -753,7 +831,7 @@
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
     if (keep && keep.focus) setTimeout(function () { input.focus(); try { input.setSelectionRange(keep.s, keep.e); } catch (e) { /* 何もしない */ } }, 0);
     if (full) {
-      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。スマホでは、カードのボタンで移します。' }));
+      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
       box.appendChild(form);
       box.appendChild(renderKanban());
     } else {
@@ -828,7 +906,10 @@
     if (status === 'todo') acts.push(move('進行中へ ▶', '進行中にする', 'doing'));
     if (status === 'doing') { acts.push(move('◀ 未着手', '未着手に戻す', 'todo')); acts.push(move('完了 ✓', '完了にする', 'done')); }
     if (status === 'done') acts.push(move('◀ 戻す', '未着手に戻す', 'todo'));
-    if (status !== 'done') acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '編集', onclick: function (e) { e.stopPropagation(); openTodoDialog(t); } }));
+    if (status !== 'done') {
+      acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '日付', title: '日付を選んで、カレンダーの予定にする', onclick: function (e) { e.stopPropagation(); openTodoScheduleDialog(t); } }));
+      acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '編集', onclick: function (e) { e.stopPropagation(); openTodoDialog(t); } }));
+    }
     acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function (e) {
       e.stopPropagation();
       if (!window.confirm('このToDoを削除します。よろしいですか？')) return;

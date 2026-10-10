@@ -133,6 +133,76 @@ function series_preview(array $s, int $monthsAhead, BizCalendar $cal): array
     return $out;
 }
 
+/** 本人が丸1日休みの日（日付 => true）。午前・午後の半休は、その日も働くので含めない */
+function owner_leave_days(int $ownerId): array
+{
+    $set = [];
+    $from = date('Y-m-01', strtotime('-1 month'));
+    foreach (rows("SELECT start_date, end_date FROM events WHERE kind = 'off' AND owner_id = ? AND tag NOT LIKE ? AND end_date >= ?", [$ownerId, '%半休%', $from]) as $e) {
+        $n = 0;
+        for ($t = strtotime($e['start_date']); $t <= strtotime($e['end_date']) && $n < 400; $t = strtotime('+1 day', $t), $n++) {
+            $set[date('Y-m-d', $t)] = true;
+        }
+    }
+    return $set;
+}
+
+/**
+ * 繰り返し業務の日付から、本人が休みの日を除く（休みを優先）。
+ * - 期間のある業務: 先頭・末尾の休みの日を削る。残る営業日が無ければ、その月は作らない（途中の休みの日は、画面で隠す）
+ * - 1日だけの業務: 休みの日に当たったら、同じ月の中で、直前の「営業日で休みでない日」に移す。無ければ作らない
+ * @return ?array{0:string,1:string}
+ */
+function apply_leave_priority(string $start, string $end, array $leave, BizCalendar $cal): ?array
+{
+    if (!$leave) {
+        return [$start, $end];
+    }
+    if ($start === $end) {
+        if (!isset($leave[$start])) {
+            return [$start, $end];
+        }
+        $ym = substr($start, 0, 7);
+        $d = $start;
+        for ($i = 0; $i < 31; $i++) {
+            $d = date('Y-m-d', strtotime($d . ' -1 day'));
+            if (substr($d, 0, 7) !== $ym) {
+                return null;
+            }
+            if ($cal->isBusinessDay($d) && !isset($leave[$d])) {
+                return [$d, $d];
+            }
+        }
+        return null;
+    }
+    while ($start <= $end && isset($leave[$start])) {
+        $start = date('Y-m-d', strtotime($start . ' +1 day'));
+    }
+    while ($end >= $start && isset($leave[$end])) {
+        $end = date('Y-m-d', strtotime($end . ' -1 day'));
+    }
+    if ($start > $end) {
+        return null;
+    }
+    for ($d = $start; $d <= $end; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+        if ($cal->isBusinessDay($d) && !isset($leave[$d])) {
+            return [$start, $end];
+        }
+    }
+    return null;
+}
+
+/** その人の繰り返し業務を、休みを優先して組み直す */
+function rematerialize_owner(int $ownerId): int
+{
+    $cal = BizCalendar::fromDb();
+    $n = 0;
+    foreach (rows('SELECT id FROM series WHERE owner_id = ?', [$ownerId]) as $r) {
+        $n += materialize_series((int)$r['id'], $cal);
+    }
+    return $n;
+}
+
 /**
  * 1つのルールを今月から12か月先まで events に展開する（何度実行しても同じ結果になる）。
  * - 個別に編集した予定（detached=1）と、スキップ指定した月には触れない
@@ -152,8 +222,14 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
     }
     $changed = 0;
     $thisMonth = date('Y-m');
+    $leave = owner_leave_days((int)$s['owner_id']);
     foreach (series_preview($s, $monthsAhead, $cal) as $p) {
         $ym = $p['ym'];
+        if ($p['start'] !== null) { // 本人が休みの日は、繰り返し業務の日にしない（休みを優先）
+            $adj = apply_leave_priority($p['start'], $p['end'], $leave, $cal);
+            $p['start'] = $adj ? $adj[0] : null;
+            $p['end'] = $adj ? $adj[1] : null;
+        }
         $ev = $existing[$ym] ?? null;
         if (in_array($ym, $skips, true) || ($ev && (int)$ev['detached'] === 1)) {
             continue;

@@ -183,7 +183,7 @@ function save_event(array $data, array $user, ?array $existing): array
         ]);
         $id = (int)$existing['id'];
         $after = row('SELECT * FROM events WHERE id = ?', [$id]);
-        log_event_change($existing, $after);
+        event_changed($existing, $after);
         return $after;
     } else {
         q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,series_id,ym,detached,created_by,created_at,updated_at)
@@ -194,7 +194,7 @@ function save_event(array $data, array $user, ?array $existing): array
         $id = (int)db()->lastInsertId();
     }
     $after = row('SELECT * FROM events WHERE id = ?', [$id]);
-    log_event_change(null, $after);
+    event_changed(null, $after);
     return $after;
 }
 
@@ -208,7 +208,7 @@ function delete_event(array $e): void
         }
     }
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
-    log_event_change($e, null);
+    event_changed($e, null);
 }
 
 /**
@@ -255,7 +255,7 @@ function move_event(array $e, string $newStart): array
         $newStart, $newEnd, $e['series_id'] !== null ? 1 : 0, now_str(), $e['id'],
     ]);
     $after = row('SELECT * FROM events WHERE id = ?', [$e['id']]);
-    log_event_change($e, $after);
+    event_changed($e, $after);
     return $after;
 }
 
@@ -397,7 +397,7 @@ function event_to_todo(array $e, array $user): array
     }
     $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note'], 'family_shared' => (int)$e['family_shared']], $user, null);
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
-    log_event_change($e, null);
+    event_changed($e, null);
     return $todo;
 }
 
@@ -700,4 +700,19 @@ function family_event_log(int $ownerId, int $limit = 100): array
                 'from' => $r['date_from'], 'to' => $r['date_to'], 'detail' => $r['detail'], 'at' => $r['changed_at']];
         }, $rows),
     ];
+}
+
+
+/** 予定が追加・変更・削除されたあとの後始末（休みが動いたら繰り返し業務を組み直す。家族用の更新履歴に残す） */
+function event_changed(?array $before, ?array $after): void
+{
+    $ref = $after ?? $before;
+    if ($ref !== null && (($before['kind'] ?? '') === 'off' || ($after['kind'] ?? '') === 'off')) {
+        try {
+            rematerialize_owner((int)$ref['owner_id']); // 休みを優先して、その人の繰り返し業務の日付を決め直す
+        } catch (Throwable $t) {
+            error_log('[schedule] 繰り返し業務の組み直しに失敗: ' . $t->getMessage());
+        }
+    }
+    log_event_change($before, $after);
 }
