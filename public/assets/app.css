@@ -311,3 +311,18 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cd-cell.other { opacity: .5; } .cd-cell.today { background: var(--work-soft); }
 .cd-cell.drop { outline: 2px solid var(--work); background: var(--work-soft); }
 .cd-num { font-size: 13px; font-weight: 700; } .cd-n { font-size: 11px; color: var(--muted); }
+
+.ms-table tr.pick { cursor: pointer; } .ms-table tr.pick:hover, .ms-table tr.pick:focus-visible { background: var(--work-soft); }
+.sc-table th { width: 80px; text-align: left; } kbd { display: inline-block; min-width: 24px; padding: 1px 8px; text-align: center; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2); font-family: inherit; font-size: 13px; font-weight: 700; }
+/* ToDoにする（カレンダーの予定を右端へ）／リストの日の行へのドロップ */
+.todo-edge { color: var(--off); border-right-color: var(--off); background: linear-gradient(to left, var(--off-soft), transparent); }
+.td-zone { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; background: var(--surface-2); }
+.td-zone h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; } .td-zone.doing h3 { color: var(--work); }
+.td-zone .cnt { font-size: 12px; color: var(--muted); font-weight: 500; }
+.td-item { font-size: 13px; padding: 3px 8px; border-left: 3px solid var(--work); background: var(--surface); border-radius: 4px; overflow-wrap: anywhere; } .td-item.private { border-left-color: var(--private); }
+.td-more { font-size: 12px; color: var(--muted); }
+.td-drop { margin-top: 4px; border: 2px dashed var(--line); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 700; }
+.td-zone.drop { outline: 2px solid var(--work); background: var(--work-soft); } .td-zone.drop .td-drop { border-color: var(--work); color: var(--work); }
+.list-day.drop { outline: 2px solid var(--work); outline-offset: -2px; background: var(--work-soft); }
+.bar.plain[draggable="true"] { cursor: grab; }
+.month-sum h3 .btn.small { padding: 0 8px; font-size: 12px; line-height: 1.6; }

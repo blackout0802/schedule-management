@@ -125,6 +125,50 @@
     if (e.key === 'Escape' && modals.length && !modals[modals.length - 1].locked) modals[modals.length - 1].close();
   });
 
+  /* ---------- ショートカットキー ----------
+     c カレンダー / l リスト / t 今日 / ← → 前の月・次の月 / n 予定を追加 / b 業務版 / p プライベート版 / ? 一覧
+     入力欄に文字を打っているとき、ダイアログを開いているとき、Ctrl・Alt・Command を押しているときは、動かさない。
+     日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
+  var SHORTCUTS = [
+    ['c', 'カレンダーを表示'], ['l', 'リストを表示'], ['t', '今月に戻る（今日）'], ['← / →', '前の月 / 次の月'],
+    ['n', '予定を追加'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
+  ];
+  function shortcutKey(e) {
+    var m = /^Key([A-Z])$/.exec(e.code || '');
+    if (m) return m[1].toLowerCase();
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') return e.code;
+    if (e.key === '?' || e.key === '？' || (e.code === 'Slash' && e.shiftKey)) return '?';
+    return '';
+  }
+  function openShortcuts() {
+    if (modals.some(function (m) { return m.shortcuts; })) return;
+    var rows = SHORTCUTS.map(function (s) { return el('tr', null, el('th', { scope: 'row' }, el('kbd', { text: s[0] })), el('td', { text: s[1] })); });
+    var body = el('div', { class: 'form' }, el('table', { class: 't sc-table' }, el('tbody', null, rows)),
+      el('p', { class: 'hint', text: '入力欄に文字を打っているときと、ダイアログを開いているときは、使えません。' }),
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    var ov = openModal('ショートカットキー', body);
+    ov.shortcuts = true; ov.outsideClose = true;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || !S.me || modals.length) return;
+    var a = document.activeElement, tag = a && a.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (a && a.isContentEditable)) return;
+    var k = shortcutKey(e);
+    if (!k) return;
+    var done = true;
+    if (k === 'c') setMode('cal');
+    else if (k === 'l' && !FAMILY) setMode('list');
+    else if (k === 't') goToday();
+    else if (k === 'ArrowLeft') navMonth(-1);
+    else if (k === 'ArrowRight') navMonth(1);
+    else if (k === '?') openShortcuts();
+    else if (!SHARE && k === 'n') openEventDialog(null, ymd(new Date()));
+    else if (!SHARE && k === 'b') setView('team');
+    else if (!SHARE && k === 'p') setView('me');
+    else done = false;
+    if (done) e.preventDefault();
+  });
+
   /* ---------- 画面の骨組み ---------- */
   /* 共有リンクの閲覧ページ: 月の移動と、予定の詳細を見るだけ。編集・ToDo・メモは無い */
   function renderShareShell() {
@@ -150,6 +194,7 @@
       items.push(el('button', { type: 'button', text: 'システム更新', onclick: function () { location.href = 'update.php'; } }));
     }
     items.push(el('hr'));
+    items.push(el('button', { type: 'button', text: 'ショートカットキー（?）', onclick: function () { closeMenu(); openShortcuts(); } }));
     items.push(el('button', { type: 'button', text: 'パスワードの変更', onclick: function () { closeMenu(); openPasswordDialog(); } }));
     items.push(el('button', { type: 'button', text: 'ログアウト', onclick: doLogout }));
     function closeMenu() { if (menuList) { menuList.remove(); menuList = null; menuBtn.setAttribute('aria-expanded', 'false'); } }
@@ -165,7 +210,7 @@
     var tabs = el('div', { class: 'tabs', role: 'tablist' },
       ['team', 'me'].map(function (v) {
         return el('button', { class: 'tab', type: 'button', role: 'tab', 'data-view': v, 'aria-selected': S.view === v ? 'true' : 'false',
-          text: v === 'team' ? '業務版' : 'プライベート版', onclick: function () { S.view = v; store('sched.view', v); renderShell(); load(); } });
+          text: v === 'team' ? '業務版' : 'プライベート版', title: (v === 'team' ? '業務版（b）' : 'プライベート版（p）'), onclick: function () { setView(v); } });
       }));
 
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
@@ -188,24 +233,29 @@
   }
   function whoName() { var id = whoId(); var u = S.me.users.filter(function (x) { return x.id === id; })[0]; return u ? u.name : ''; }
 
+  /* 月の移動・今日・版（業務／プライベート）・「表示する人」の切り替え。ボタンとショートカットキーの両方から使う */
+  function navMonth(delta) { var d = new Date(S.year, S.month - 1 + delta, 1); S.year = d.getFullYear(); S.month = d.getMonth() + 1; renderToolbar(); load(); }
+  function goToday() { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); }
+  function setView(v) { if (S.view === v) return; S.view = v; store('sched.view', v); renderShell(); load(); }
+  function selectWho(val) { S.who = val; store('sched.who', S.who); renderToolbar(); load(); }
+
   function renderToolbar() {
     var tb = document.getElementById('toolbar');
     tb.textContent = '';
-    var nav = function (delta) { var d = new Date(S.year, S.month - 1 + delta, 1); S.year = d.getFullYear(); S.month = d.getMonth() + 1; renderToolbar(); load(); };
     tb.appendChild(el('div', { class: 'toolbar' },
-      el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', text: '‹', onclick: function () { nav(-1); } }),
+      el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', title: '前の月（←）', text: '‹', onclick: function () { navMonth(-1); } }),
       el('h2', { text: S.year + '年' + S.month + '月' }),
-      el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', text: '›', onclick: function () { nav(1); } }),
-      el('button', { class: 'btn', type: 'button', text: '今日', onclick: function () { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); } }),
+      el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { navMonth(1); } }),
+      el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
       el('span', { class: 'spacer', style: 'flex:1' }),
       SHARE || S.view !== 'team' ? null : el('label', { class: 'who' }, '表示する人',
-        el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { S.who = this.value; store('sched.who', S.who); renderToolbar(); load(); } },
+        el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { selectWho(this.value); } },
           el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
       SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
-          return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
+          return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
         })),
       SHARE ? null : el('button', { class: 'btn', type: 'button', text: '↻ 繰り返し業務', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }),
       SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
@@ -389,9 +439,14 @@
 
   /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
   function plainBar(e, ds) {
-    return el('div', { role: 'button', tabindex: '0', class: 'bar plain ' + e.kind + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, class: 'bar plain ' + e.kind + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
+    if (!SHARE && e.editable) { // リストの予定を、ToDoの列へ・別の日の行へドラッグできる
+      bar.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'event', id: e.id, off: Math.max(0, daysBetween(e.start, ds)), ok: canReturnToTodo(e) }); });
+      bar.addEventListener('dragend', endDrag);
+    }
+    return bar;
   }
   function renderListView(board, keepFrom) {
     if (!SHARE) {
@@ -410,9 +465,15 @@
       var evs = S.events.filter(function (e) { return shownOn(e, ds) && !(hideWork && e.kind === 'work'); });
       if (!evs.length && !hol) continue;
       any = true;
-      list.appendChild(el('div', { class: 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (ds === todayStr ? ' today' : '') },
+      var dayRow = el('div', { class: 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (ds === todayStr ? ' today' : '') },
         el('div', { class: 'dt' }, (d.getMonth() + 1) + '/' + d.getDate(), el('small', { text: DOW[d.getDay()] + '曜日' + (hol ? '・' + hol : '') })),
-        el('div', { class: 'list-items' }, evs.map(function (e) { return plainBar(e, ds); }))));
+        el('div', { class: 'list-items' }, evs.map(function (e) { return plainBar(e, ds); })));
+      if (!SHARE) { // ToDoや予定を、この日の行にドロップすると、その日の予定になる（予定は、その日へ移る）
+        dayRow.addEventListener('dragover', function (ev) { if (!S.drag || !(S.drag.t === 'todo' || S.drag.t === 'event')) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; dayRow.classList.add('drop'); });
+        dayRow.addEventListener('dragleave', function () { dayRow.classList.remove('drop'); });
+        dayRow.addEventListener('drop', (function (date) { return function (ev) { if (!S.drag) return; ev.preventDefault(); var p = S.drag; endDrag(); dropOnDate(p, date); }; })(ds));
+      }
+      list.appendChild(dayRow);
     }
     if (!any) list.appendChild(el('p', { class: 'empty-note', text: 'この月の予定はまだありません。' }));
     board.appendChild(el('h3', { class: 'list-h', text: S.year + '年' + S.month + '月の予定' }));
@@ -453,7 +514,8 @@
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
       el('span', { text: '↻ 毎月の繰り返し' }),
       el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
-      SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます' }),
+      SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます・画面の右端へ持っていくとToDoにできます' }),
+      el('span', { text: 'ショートカット: ? で一覧' }),
       POLL_MS ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null));
     var sum = monthSummary();
     if (sum) board.appendChild(sum);
@@ -470,7 +532,10 @@
     var rows = m.people.map(function (p) {
       var other = p.by_tag.filter(function (x) { return x.tag !== '有給' && x.tag !== '欠勤' && x.days > 0; }).map(function (x) { return x.tag + ' ' + fmtDays(x.days); }).join('・');
       var abs = tagDays(p, '欠勤');
-      return el('tr', { class: p.id === S.me.user.id && m.people.length > 1 ? 'me' : '' },
+      var pick = S.view === 'team' && !SHARE ? function () { selectWho(String(p.id)); } : null; // 業務版では、行を押すと「表示する人」でその人を選んだときと同じ
+      return el('tr', { class: (p.id === S.me.user.id && m.people.length > 1 ? 'me' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null,
+        title: pick ? (p.id === S.me.user.id ? '押すと、自分の予定だけを表示' : '押すと、' + p.name + 'さんの予定だけを表示') : null,
+        onclick: pick, onkeydown: pick ? function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } } : null },
         el('th', { scope: 'row', text: p.name }),
         el('td', { class: 'n work', text: fmtDays(p.work_days) }),
         el('td', { class: 'n off', text: fmtDays(p.off_days) }),
@@ -479,7 +544,8 @@
         el('td', { class: 'etc', text: other || '—' }));
     });
     return el('section', { class: 'month-sum', 'aria-label': S.month + '月の出勤日と休みの日数' },
-      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' })),
+      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' + (S.view === 'team' && m.people.length > 1 ? '　行を押すと、その人の予定だけを表示' : '') }),
+        S.view === 'team' && wid ? el('button', { class: 'btn small', type: 'button', text: '全社に戻す', onclick: function () { selectWho('all'); } }) : null),
       el('div', { class: 'scroll-x' }, el('table', { class: 'ms-table' },
         el('thead', null, el('tr', null, ['名前', '出勤日', '休み', '有給', '欠勤', 'その他の休み'].map(function (h) { return el('th', { scope: 'col', text: h }); }))),
         el('tbody', null, rows))));
@@ -532,6 +598,7 @@
     document.body.classList.toggle('drag-event', payload.t === 'event');
     document.body.classList.toggle('drag-ok', !!payload.ok);
     if (payload.t === 'todo' && S.mode === 'list' && !SHARE) setupCalEdge();
+    if (payload.t === 'event' && payload.ok && S.mode === 'cal' && !SHARE) setupTodoEdge(); // カレンダーの予定を、右端へ持っていくと、ToDoにできる
   }
   function endDrag() {
     S.drag = null;
@@ -554,9 +621,54 @@
   function teardownCalEdge() {
     if (calEdgeFn) { document.removeEventListener('dragover', calEdgeFn); calEdgeFn = null; }
     clearTimeout(calCloseTimer);
-    var a = document.getElementById('cal-edge'), b = document.getElementById('cal-drop');
-    if (a) a.remove();
-    if (b) b.remove();
+    ['cal-edge', 'cal-drop', 'todo-edge', 'todo-drop'].forEach(function (id) { var x = document.getElementById(id); if (x) x.remove(); });
+  }
+
+  /* ---------- カレンダーの予定を、画面の右端へ持っていくと、ToDoの列（未着手・進行中）に落とせる ---------- */
+  function setupTodoEdge() {
+    if (document.getElementById('todo-edge')) return;
+    var edge = el('div', { id: 'todo-edge', class: 'cal-edge todo-edge', text: 'ToDoへ ▶' });
+    edge.addEventListener('dragover', function (ev) { ev.preventDefault(); openTodoDrop(); });
+    document.body.appendChild(edge);
+    calEdgeFn = function (ev) { if (ev.clientX >= window.innerWidth - 56) openTodoDrop(); };
+    document.addEventListener('dragover', calEdgeFn);
+  }
+  function openTodoDrop() {
+    clearTimeout(calCloseTimer);
+    if (document.getElementById('todo-drop')) return;
+    var panel = el('div', { id: 'todo-drop', class: 'cal-drop', role: 'dialog', 'aria-label': 'ToDoにする' });
+    panel.appendChild(el('p', { class: 'cd-hint', text: 'ToDoにする列へドロップしてください' }));
+    [['todo', '未着手'], ['doing', '進行中']].forEach(function (c) {
+      var items = S.todos.filter(function (t) { return t.status === c[0]; });
+      var zone = el('div', { class: 'td-zone ' + c[0], 'data-status': c[0] }, el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length) })),
+        items.slice(0, 6).map(function (t) { return el('div', { class: 'td-item ' + t.kind, text: t.title }); }),
+        items.length > 6 ? el('div', { class: 'td-more', text: '…ほか ' + (items.length - 6) + '件' }) : null,
+        el('div', { class: 'td-drop', text: 'ここにドロップ' }));
+      zone.addEventListener('dragover', function (ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; zone.classList.add('drop'); });
+      zone.addEventListener('dragleave', function () { zone.classList.remove('drop'); });
+      zone.addEventListener('drop', function (ev) {
+        ev.preventDefault();
+        var p = S.drag; endDrag();
+        if (p && p.t === 'event' && p.ok) eventToKanban(p.id, c[0], null, false);
+      });
+      panel.appendChild(zone);
+    });
+    panel.addEventListener('dragleave', function (ev) {
+      if (panel.contains(ev.relatedTarget)) return;
+      clearTimeout(calCloseTimer);
+      calCloseTimer = setTimeout(function () { var x = document.getElementById('todo-drop'); if (x) x.remove(); }, 400);
+    });
+    panel.addEventListener('dragenter', function () { clearTimeout(calCloseTimer); });
+    panel.addEventListener('dragover', function (ev) { ev.preventDefault(); clearTimeout(calCloseTimer); });
+    document.body.appendChild(panel);
+  }
+  /* 予定をToDoにして、指定の列（targetId があればその前後）に入れる */
+  function eventToKanban(eventId, status, targetId, after) {
+    return api('event_to_todo', { body: { id: eventId } }).then(function (j) {
+      toast('ToDoにしました（' + (status === 'doing' ? '進行中' : '未着手') + '）');
+      load();
+      return loadTodos().then(function () { moveTodo(j.todo.id, status, targetId === undefined ? null : targetId, after); });
+    }).catch(fail);
   }
   function openCalDrop() {
     clearTimeout(calCloseTimer);
@@ -831,7 +943,7 @@
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
     if (keep && keep.focus) setTimeout(function () { input.focus(); try { input.setSelectionRange(keep.s, keep.e); } catch (e) { /* 何もしない */ } }, 0);
     if (full) {
-      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
+      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます（下の「今月の予定」の日の行に落としても、その日の予定になります）。下の予定をこの列へドラッグすると、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
       box.appendChild(form);
       box.appendChild(renderKanban());
     } else {
@@ -925,7 +1037,7 @@
     card.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
     card.addEventListener('dragend', endDrag);
     card.addEventListener('dragover', function (ev) {
-      if (!S.drag || S.drag.t !== 'todo' || S.drag.id === t.id) return;
+      if (!S.drag || !((S.drag.t === 'todo' && S.drag.id !== t.id) || (S.drag.t === 'event' && S.drag.ok && status !== 'done'))) return;
       ev.preventDefault(); ev.stopPropagation(); ev.dataTransfer.dropEffect = 'move';
       document.querySelectorAll('.ins-before, .ins-after, .kb-col.drop').forEach(function (x) { x.classList.remove('ins-before', 'ins-after', 'drop'); });
       if (status === 'done') { card.closest('.kb-col').classList.add('drop'); return; } // 完了の列は、並びを持たない
@@ -934,10 +1046,11 @@
     });
     card.addEventListener('dragleave', function () { card.classList.remove('ins-before', 'ins-after'); });
     card.addEventListener('drop', function (ev) {
-      if (!S.drag || S.drag.t !== 'todo') return;
+      if (!S.drag || !(S.drag.t === 'todo' || (S.drag.t === 'event' && S.drag.ok && status !== 'done'))) return;
       ev.preventDefault(); ev.stopPropagation();
       var r = card.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2, p = S.drag;
       endDrag();
+      if (p.t === 'event') { eventToKanban(p.id, status, t.id, after); return; } // リストの予定を、カードの前後へ
       moveTodo(p.id, status, status === 'done' ? null : t.id, after);
     });
     return card;
@@ -971,14 +1084,15 @@
         } }));
       }
       col.addEventListener('dragover', function (ev) {
-        if (!S.drag || S.drag.t !== 'todo') return;
+        if (!S.drag || !(S.drag.t === 'todo' || (S.drag.t === 'event' && S.drag.ok && status !== 'done'))) return;
         ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; col.classList.add('drop');
       });
       col.addEventListener('dragleave', function (ev) { if (!col.contains(ev.relatedTarget)) col.classList.remove('drop'); });
       col.addEventListener('drop', function (ev) {
-        if (!S.drag || S.drag.t !== 'todo') return;
+        if (!S.drag || !(S.drag.t === 'todo' || (S.drag.t === 'event' && S.drag.ok && status !== 'done'))) return;
         ev.preventDefault(); ev.stopPropagation();
         var p = S.drag; endDrag();
+        if (p.t === 'event') { eventToKanban(p.id, status, null, false); return; }
         moveTodo(p.id, status, null, false);
       });
       wrap.appendChild(col);
