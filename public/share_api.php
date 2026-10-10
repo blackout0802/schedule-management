@@ -33,6 +33,9 @@ try {
     if ($action === 'meta') {
         share_out(['kind' => $link['kind'], 'title' => share_title($link), 'app_name' => cfg('app_name')]);
     }
+    if ($action === 'log') { // 家族用だけ。会社用リンクには、更新履歴は無い
+        share_out($link['kind'] === 'family' ? family_event_log((int)$link['owner_id']) : ['now' => date('Y-m-d H:i:s'), 'last_id' => 0, 'recent_since' => date('Y-m-d H:i:s'), 'entries' => []]);
+    }
     if ($action === 'events') {
         $from = (string)($_GET['from'] ?? '');
         $to = (string)($_GET['to'] ?? '');

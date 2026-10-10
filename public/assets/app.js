@@ -3,6 +3,7 @@
   'use strict';
 
   var SHARE = window.SCHEDULE_SHARE || null; // 共有リンクの閲覧ページ（ログイン不要・閲覧専用）
+  var FAMILY = !!(SHARE && SHARE.kind === 'family'); // 家族用: 更新履歴・「前回見たとき」からの更新の目印がある
   var root = document.getElementById('app');
   var csrf = root.getAttribute('data-csrf');
   var DOW = ['日', '月', '火', '水', '木', '金', '土'];
@@ -245,9 +246,63 @@
     if (S.view === 'team' && !SHARE && whoId()) params.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
     if (!SHARE) params.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
     S.loading = true;
-    api('events', { params: params }).then(function (j) {
+    // 家族用の共有ページでは、更新履歴も一緒に読む（前回見たときからの更新を目立たせるため）
+    Promise.all([api('events', { params: params }), FAMILY ? api('log') : Promise.resolve(null)]).then(function (r) {
+      var j = r[0];
+      if (r[1]) setUpdateLog(r[1]);
       S.events = j.events; S.holidays = j.holidays; S.summary = j.summary || null; S.loading = false; S.revEv = j.rev; renderBoard();
     }).catch(fail);
+  }
+
+  /* ---------- 家族用: 更新履歴と、前回から更新された予定の目印 ---------- */
+  function seenKey() { return 'sched.seen.' + SHARE.token.slice(0, 16); }
+  function setUpdateLog(lg) {
+    S.log = lg;
+    var seen = store(seenKey()); // { id: どの更新まで見たか, at: そのときの時刻 }
+    if (!seen || typeof seen.id !== 'number') {
+      // 初めて開いたときは、目印を付けず、いまを「確認済み」にする。記憶できないブラウザでは、直近3日の更新に目印を付ける
+      seen = { id: lg.last_id, at: lg.now };
+      if (store(seenKey(), seen) === null) {
+        var old = lg.entries.filter(function (e) { return e.at <= lg.recent_since; });
+        seen = { id: old.length ? old[0].id : 0, at: lg.recent_since };
+      }
+    }
+    S.seen = seen;
+    S.updIds = {};
+    S.newLog = lg.entries.filter(function (e) { return e.id > seen.id; });
+    S.newLog.forEach(function (e) { if (e.action !== 'delete') S.updIds[e.event_id] = true; });
+  }
+  function markSeen() { S.seen = { id: S.log.last_id, at: S.log.now }; store(seenKey(), S.seen); S.newLog = []; S.updIds = {}; renderBoard(); }
+  function fmtAt(at) { return (+at.slice(5, 7)) + '/' + (+at.slice(8, 10)) + ' ' + at.slice(11, 16); }
+  function openUpdateLog() {
+    var newIds = {};
+    (S.newLog || []).forEach(function (e) { newIds[e.id] = true; });
+    var label = { add: '追加', update: '変更', delete: '削除' };
+    var items = S.log.entries.map(function (e) {
+      var when = e.from === e.to ? mdw(e.from) : mdw(e.from) + ' 〜 ' + mdw(e.to);
+      return el('li', { class: 'log-item ' + e.action + (newIds[e.id] ? ' new' : '') },
+        el('div', { class: 'log-top' }, el('span', { class: 'log-at', text: fmtAt(e.at) }), el('span', { class: 'log-act ' + e.action, text: label[e.action] || e.action }),
+          newIds[e.id] ? el('span', { class: 'log-new', text: '新着' }) : null),
+        el('div', { class: 'log-title' + (e.action === 'delete' ? ' gone' : ''), text: e.title + '　' + when }),
+        e.detail ? el('div', { class: 'log-detail', text: e.detail }) : null);
+    });
+    var body = el('div', { class: 'form' },
+      el('p', { class: 'hint', text: '家族に共有されている予定の、追加・変更・削除の記録です（最新の100件まで・約4か月分）。' }),
+      items.length ? el('ul', { class: 'log-list' }, items) : el('p', { class: 'muted', text: 'まだ更新の記録はありません。' }),
+      el('div', { class: 'actions' },
+        (S.newLog || []).length ? el('button', { class: 'btn primary', type: 'button', text: '確認した（目印を消す）', onclick: function () { ov.close(); markSeen(); } }) : null,
+        el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    var ov = openModal('更新履歴', body, true);
+    ov.outsideClose = true;
+  }
+  function updatesBanner() {
+    if (!FAMILY || !S.log) return null;
+    var n = (S.newLog || []).length;
+    return el('div', { class: 'upd-banner' + (n ? ' has' : ''), role: 'status' },
+      el('span', { class: 'upd-msg', text: n ? '前回確認した ' + fmtAt(S.seen.at) + ' から、' + n + '件の更新があります。更新された予定には ● と色の枠が付いています。' : '前回から新しい更新はありません。' }),
+      el('span', { class: 'upd-btns' },
+        el('button', { class: 'btn small' + (n ? ' primary' : ''), type: 'button', text: '更新履歴を見る', onclick: openUpdateLog }),
+        n ? el('button', { class: 'btn small', type: 'button', text: '確認した', onclick: markSeen }) : null));
   }
 
   function eventLabel(e, first) {
@@ -259,7 +314,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    return (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
+    return (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
   /* 土日祝か（会社の休業日を含む。祝日は読み込んだ範囲の分だけ分かる） */
@@ -302,7 +357,7 @@
 
   function barFor(g, days) {
     var e = g.ev;
-    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.important ? ' imp' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2),
       text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
@@ -323,7 +378,7 @@
 
   /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
   function plainBar(e, ds) {
-    return el('div', { role: 'button', tabindex: '0', class: 'bar plain ' + e.kind + (e.important ? ' imp' : ''),
+    return el('div', { role: 'button', tabindex: '0', class: 'bar plain ' + e.kind + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
   }
@@ -363,6 +418,8 @@
     if (!board) return;
     var mgrKeep = captureTodoInput(document.getElementById('todo-mgr')); // リスト表示のToDo入力欄は、描き直すと作り直されるので、入力中の内容を引き継ぐ
     board.textContent = '';
+    var ub = updatesBanner();
+    if (ub) board.appendChild(ub);
     var lay = document.querySelector('.layout');
     if (lay) lay.classList.toggle('list-mode', S.mode === 'list');
     if (S.mode === 'list') { renderListView(board, mgrKeep); return; }

@@ -182,6 +182,9 @@ function save_event(array $data, array $user, ?array $existing): array
             $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
         ]);
         $id = (int)$existing['id'];
+        $after = row('SELECT * FROM events WHERE id = ?', [$id]);
+        log_event_change($existing, $after);
+        return $after;
     } else {
         q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,series_id,ym,detached,created_by,created_at,updated_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
@@ -190,7 +193,9 @@ function save_event(array $data, array $user, ?array $existing): array
         ]);
         $id = (int)db()->lastInsertId();
     }
-    return row('SELECT * FROM events WHERE id = ?', [$id]);
+    $after = row('SELECT * FROM events WHERE id = ?', [$id]);
+    log_event_change(null, $after);
+    return $after;
 }
 
 function delete_event(array $e): void
@@ -203,6 +208,7 @@ function delete_event(array $e): void
         }
     }
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
+    log_event_change($e, null);
 }
 
 /**
@@ -248,7 +254,9 @@ function move_event(array $e, string $newStart): array
     q('UPDATE events SET start_date = ?, end_date = ?, detached = ?, updated_at = ? WHERE id = ?', [
         $newStart, $newEnd, $e['series_id'] !== null ? 1 : 0, now_str(), $e['id'],
     ]);
-    return row('SELECT * FROM events WHERE id = ?', [$e['id']]);
+    $after = row('SELECT * FROM events WHERE id = ?', [$e['id']]);
+    log_event_change($e, $after);
+    return $after;
 }
 
 /** ToDoの状態: todo（未着手）/ doing（進行中）/ done（完了） */
@@ -389,6 +397,7 @@ function event_to_todo(array $e, array $user): array
     }
     $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note'], 'family_shared' => (int)$e['family_shared']], $user, null);
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
+    log_event_change($e, null);
     return $todo;
 }
 
@@ -573,4 +582,122 @@ function summary_users(array $user, string $view, int $who): array
     }
     usort($all, function ($a, $b) use ($user) { return ($b['id'] === (int)$user['id']) <=> ($a['id'] === (int)$user['id']); }); // 自分が先頭
     return $all;
+}
+
+
+/* ------------------------------------------------------------------
+ * 家族用リンクの「更新履歴」。家族に見える予定の追加・変更・削除だけを、いつ・何をしたかつきで残す。
+ * 家族に見えない予定（業務・プライベートの非共有など）は、記録そのものを残さない。
+ * ------------------------------------------------------------------ */
+
+const EVENT_LOG_KEEP_DAYS = 120;
+
+/** この予定は、持ち主の家族用リンクに見えるか（share_events と同じ条件） */
+function event_family_visible(array $e): bool
+{
+    if ((int)$e['family_shared'] === 1) {
+        return true;
+    }
+    $fs = get_family_share(['id' => (int)$e['owner_id']]);
+    if ($e['kind'] === 'off' && $fs['off']) {
+        return true;
+    }
+    return $e['kind'] === 'work' && in_array($e['tag'], $fs['tags'], true);
+}
+
+function log_md(string $d): string
+{
+    return (int)substr($d, 5, 2) . '/' . (int)substr($d, 8, 2);
+}
+
+function log_span(array $e): string
+{
+    return $e['start_date'] === $e['end_date'] ? log_md($e['start_date']) : log_md($e['start_date']) . '〜' . log_md($e['end_date']);
+}
+
+function log_time(array $e): string
+{
+    if ($e['start_time'] === '' && $e['end_time'] === '') {
+        return '時刻なし';
+    }
+    return $e['start_time'] . ($e['end_time'] !== '' ? '〜' . $e['end_time'] : '');
+}
+
+/** 変更前後の違いを、家族に見せてよい範囲の文章にする。休みは、日付・時刻・メモだけ（種類や件名は見せない） */
+function event_change_detail(array $b, array $a): string
+{
+    $parts = [];
+    $off = $a['kind'] === 'off';
+    if (!$off && $b['kind'] !== 'off' && $b['title'] !== $a['title']) {
+        $parts[] = '件名「' . $b['title'] . '」→「' . $a['title'] . '」';
+    }
+    if ($b['start_date'] !== $a['start_date'] || $b['end_date'] !== $a['end_date']) {
+        $parts[] = '日付 ' . log_span($b) . ' → ' . log_span($a);
+    }
+    if ($b['start_time'] !== $a['start_time'] || $b['end_time'] !== $a['end_time']) {
+        $parts[] = '時刻 ' . log_time($b) . ' → ' . log_time($a);
+    }
+    if (!$off && $b['kind'] === 'work' && $a['kind'] === 'work' && $b['tag'] !== $a['tag']) {
+        $parts[] = '分類 ' . $b['tag'] . ' → ' . $a['tag'];
+    }
+    if ($b['note'] !== $a['note']) {
+        $parts[] = 'メモを更新';
+    }
+    if ((int)($b['important'] ?? 0) !== (int)($a['important'] ?? 0)) {
+        $parts[] = (int)$a['important'] === 1 ? '重要にしました' : '重要を外しました';
+    }
+    return mb_substr(implode('／', $parts), 0, 480);
+}
+
+/** 予定の変更を、家族用の更新履歴に残す（家族に見えるものだけ）。記録に失敗しても、予定の保存は止めない */
+function log_event_change(?array $before, ?array $after): void
+{
+    try {
+        $vb = $before !== null && event_family_visible($before);
+        $va = $after !== null && event_family_visible($after);
+        if (!$vb && !$va) {
+            return;
+        }
+        if ($vb && $va) {
+            $action = 'update';
+            $detail = event_change_detail($before, $after);
+            if ($detail === '') {
+                return; // 家族に見える内容は変わっていない
+            }
+            $ref = $after;
+        } elseif ($va) {
+            $action = 'add';
+            $detail = '';
+            $ref = $after;
+        } else { // 削除された、または家族に見えなくなった
+            $action = 'delete';
+            $detail = '';
+            $ref = $before;
+        }
+        $title = $ref['kind'] === 'off' ? '休み' : $ref['title'];
+        q('INSERT INTO event_log (event_id, owner_id, action, title, date_from, date_to, detail, changed_at) VALUES (?,?,?,?,?,?,?,?)', [
+            $ref['id'], $ref['owner_id'], $action, mb_substr($title, 0, 100), $ref['start_date'], $ref['end_date'], $detail, now_str(),
+        ]);
+        q('DELETE FROM event_log WHERE changed_at < ?', [date('Y-m-d H:i:s', time() - EVENT_LOG_KEEP_DAYS * 86400)]);
+    } catch (Throwable $t) {
+        error_log('[schedule] 更新履歴の記録に失敗: ' . $t->getMessage());
+    }
+}
+
+/**
+ * 家族用リンクに見せる更新履歴（新しい順）。
+ * @return array{now:string,recent_since:string,entries:array<int,array<string,mixed>>}
+ */
+function family_event_log(int $ownerId, int $limit = 100): array
+{
+    $rows = rows('SELECT * FROM event_log WHERE owner_id = ? ORDER BY id DESC LIMIT ' . (int)$limit, [$ownerId]);
+    return [
+        'now' => now_str(),
+        'last_id' => $rows ? (int)$rows[0]['id'] : 0, // 「どこまで見たか」を、時刻ではなく番号で覚えるため
+        'recent_since' => date('Y-m-d H:i:s', time() - 3 * 86400), // 前回見た時刻を覚えられないブラウザ用の目安
+        'entries' => array_map(function ($r) {
+            return ['id' => (int)$r['id'], 'event_id' => (int)$r['event_id'], 'action' => $r['action'], 'title' => $r['title'],
+                'from' => $r['date_from'], 'to' => $r['date_to'], 'detail' => $r['detail'], 'at' => $r['changed_at']];
+        }, $rows),
+    ];
 }

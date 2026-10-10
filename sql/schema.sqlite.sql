@@ -110,3 +110,16 @@ CREATE TABLE IF NOT EXISTS login_fails (
 );
 CREATE INDEX IF NOT EXISTS ix_login_fails_email ON login_fails (email, failed_at);
 CREATE INDEX IF NOT EXISTS ix_login_fails_ip ON login_fails (ip, failed_at);
+
+CREATE TABLE IF NOT EXISTS event_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  owner_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  title TEXT NOT NULL,
+  date_from TEXT NOT NULL,
+  date_to TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  changed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_event_log_owner ON event_log (owner_id, id);

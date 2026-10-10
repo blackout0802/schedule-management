@@ -120,3 +120,16 @@ CREATE TABLE IF NOT EXISTS login_fails (
   KEY ix_login_fails_email (email, failed_at),
   KEY ix_login_fails_ip (ip, failed_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS event_log (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  event_id INT UNSIGNED NOT NULL,
+  owner_id INT UNSIGNED NOT NULL,
+  action VARCHAR(10) NOT NULL,
+  title VARCHAR(100) NOT NULL,
+  date_from DATE NOT NULL,
+  date_to DATE NOT NULL,
+  detail VARCHAR(500) NOT NULL DEFAULT '',
+  changed_at DATETIME NOT NULL,
+  KEY ix_event_log_owner (owner_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

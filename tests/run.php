@@ -401,6 +401,47 @@ check('重要: 複製しても、重要のまま', (int)$dupC[0]['important'], 1
 check('重要: 他の社員の画面にも、重要として届く', (function () use ($b) { foreach (list_events($b, '2027-04-01', '2027-04-30', 'team') as $e) { if ($e['title'] === '重要テスト(改)' && $e['start'] === '2027-04-05') return $e['important']; } return null; })(), true);
 q("DELETE FROM events WHERE start_date >= '2027-04-01' AND start_date <= '2027-04-30'");
 
+// ---- 家族用の更新履歴 ----
+db()->exec('DELETE FROM event_log');
+save_family_share($a, false, []);
+$lg = function () use ($a) { return array_reverse(family_event_log((int)$a['id'])['entries']); }; // 古い順
+$lgLast = function () use ($lg) { $l = $lg(); return $l[count($l) - 1]; };
+$lp = $mk($a, ['kind' => 'private', 'title' => '歯医者', 'start' => '2027-05-10', 'end' => '2027-05-10', 'start_time' => '10:00']);
+check('更新履歴: 家族に見える予定を追加すると「追加」が残る', array_map(function ($e) { return [$e['action'], $e['title'], $e['from']]; }, $lg()), [['add', '歯医者', '2027-05-10']]);
+[$u1] = validate_event_input(['kind' => 'private', 'title' => '歯医者', 'start' => '2027-05-12', 'end' => '2027-05-12', 'start_time' => '14:00'], $a);
+$lp = save_event($u1, $a, $lp);
+check('更新履歴: 日付と時刻の変更が、前後つきで残る', $lg()[1]['detail'], '日付 5/10 → 5/12／時刻 10:00 → 14:00');
+[$u2] = validate_event_input(['kind' => 'private', 'title' => '歯医者（定期）', 'start' => '2027-05-12', 'end' => '2027-05-12', 'start_time' => '14:00', 'note' => '保険証', 'important' => 1], $a);
+$lp = save_event($u2, $a, $lp);
+check('更新履歴: 件名・メモ・重要の変更', $lg()[2]['detail'], '件名「歯医者」→「歯医者（定期）」／メモを更新／重要にしました');
+$n0 = count($lg()); save_event($u2, $a, $lp);
+check('更新履歴: 内容が変わらない保存は残さない', count($lg()), $n0);
+move_event($lp, '2027-05-20');
+check('更新履歴: ドラッグでの移動も残る', $lg()[3]['detail'], '日付 5/12 → 5/20');
+$wk = $mk($a, ['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => '2027-05-11', 'end' => '2027-05-11']);
+check('更新履歴: 家族に見えない予定（業務の非共有）は、記録そのものを残さない', array_column($lg(), 'title'), ['歯医者', '歯医者', '歯医者（定期）', '歯医者（定期）']);
+[$u3] = validate_event_input(['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => '2027-05-11', 'end' => '2027-05-11', 'family_shared' => 1], $a);
+$wk = save_event($u3, $a, $wk);
+check('更新履歴: 共有にチェックした業務は、その時点で「追加」になる', [$lgLast()['action'], $lgLast()['title']], ['add', '共有しない業務']);
+[$u4] = validate_event_input(['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => '2027-05-11', 'end' => '2027-05-11', 'family_shared' => 0], $a);
+$wk = save_event($u4, $a, $wk);
+check('更新履歴: 共有を外すと「削除」（家族の画面から消えるため）', $lgLast()['action'], 'delete');
+$off = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-05-14', 'end' => '2027-05-14']);
+check('更新履歴: 家族に見せない設定の休みは記録しない', count(array_filter($lg(), function ($e) { return $e['title'] === '休み'; })), 0);
+save_family_share($a, true, []);
+[$u5] = validate_event_input(['kind' => 'off', 'title' => '', 'tag' => '欠勤', 'start' => '2027-05-15', 'end' => '2027-05-15'], $a);
+$off = save_event($u5, $a, $off);
+$offLog = $lgLast();
+check('更新履歴: 休みは「休み」とだけ。種類（有給→欠勤）は書かない・日付の変更だけ残る', [$offLog['title'], $offLog['detail']], ['休み', '日付 5/14 → 5/15']);
+delete_event($lp);
+check('更新履歴: 削除すると「削除」が残る', [$lgLast()['action'], $lgLast()['title']], ['delete', '歯医者（定期）']);
+$mk($b, ['kind' => 'private', 'title' => '鈴木の私用', 'start' => '2027-05-10', 'end' => '2027-05-10']);
+check('更新履歴: 他の人の予定は、自分の履歴に出ない', in_array('鈴木の私用', array_column($lg(), 'title'), true), false);
+check('更新履歴: 他の人の履歴には、その人の分だけ', array_column(family_event_log((int)$b['id'])['entries'], 'title'), ['鈴木の私用']);
+db()->exec('DELETE FROM event_log');
+q("DELETE FROM events WHERE start_date >= '2027-05-01' AND start_date <= '2027-05-31'");
+save_family_share($a, false, []);
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');

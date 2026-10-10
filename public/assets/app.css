@@ -278,3 +278,22 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .bar.off.imp { background: var(--off); color: var(--surface); box-shadow: none; }
 .bar.private.imp { background: var(--private); color: var(--surface); box-shadow: none; }
 .imp-opt { font-weight: 600; }
+
+/* 家族用リンク: 前回から更新された予定の目印と、更新履歴 */
+.bar.upd { box-shadow: 0 0 0 2px #e08a00; font-weight: 700; }
+.upd-banner { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 8px 12px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
+.upd-banner.has { background: #fff1d6; color: #5c3b00; border: 1px solid #e0a63a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .upd-banner.has { background: #3a2c10; color: #ffd98a; border-color: #8a6420; } }
+:root[data-theme="dark"] .upd-banner.has { background: #3a2c10; color: #ffd98a; border-color: #8a6420; }
+.upd-btns { display: flex; gap: 6px; }
+.log-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.log-item { padding: 8px 4px; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+.log-item.new { background: #fff7e6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .log-item.new { background: #33280f; } }
+:root[data-theme="dark"] .log-item.new { background: #33280f; }
+.log-top { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.log-act { padding: 0 8px; border-radius: 99px; font-weight: 700; background: var(--work-soft); color: var(--work); }
+.log-act.add { background: var(--off-soft); color: var(--off); } .log-act.delete { background: var(--danger-soft); color: var(--danger); }
+.log-new { padding: 0 8px; border-radius: 99px; background: #e08a00; color: #fff; font-weight: 700; }
+.log-title { font-weight: 600; } .log-title.gone { text-decoration: line-through; color: var(--muted); }
+.log-detail { font-size: 13px; color: var(--muted); }
