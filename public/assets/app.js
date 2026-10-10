@@ -433,12 +433,19 @@
     Promise.all([api('events', { params: params }), FAMILY ? api('log') : Promise.resolve(null)]).then(function (r) {
       var j = r[0];
       if (r[1]) setUpdateLog(r[1]);
-      S.events = j.events; S.holidays = j.holidays; S.summary = j.summary || null; buildLeaveIdx(); S.loading = false; S.revEv = j.rev; renderBoard();
+      S.events = FAMILY ? j.events.filter(function (e) { return !(e.deleted && ackIds().indexOf(e.log_id) >= 0); }) : j.events; S.holidays = j.holidays; S.summary = j.summary || null; buildLeaveIdx(); S.loading = false; S.revEv = j.rev; renderBoard();
     }).catch(fail);
   }
 
   /* ---------- 家族用: 更新履歴と、前回から更新された予定の目印 ---------- */
   function seenKey() { return 'sched.seen.' + SHARE.token.slice(0, 16); }
+  /* 削除された予定の「確認した」。このブラウザに覚えておく（家族のそれぞれが、自分で確認して消す） */
+  function ackKey() { return 'sched.ack.' + SHARE.token.slice(0, 16); }
+  function ackIds() { var a = store(ackKey()); return Array.isArray(a) ? a : []; }
+  function ackAdd(ids) { store(ackKey(), ackIds().concat(ids).slice(-300)); }
+  function delEvents() { return (S.events || []).filter(function (e) { return e.deleted; }); }
+  function delCount() { return delEvents().length; }
+  function ackAll() { ackAdd(delEvents().map(function (e) { return e.log_id; })); S.events = S.events.filter(function (e) { return !e.deleted; }); renderBoard(); }
   function setUpdateLog(lg) {
     S.log = lg;
     var seen = store(seenKey()); // { id: どの更新まで見たか, at: そのときの時刻 }
@@ -478,6 +485,13 @@
     var ov = openModal('更新履歴', body, true);
     ov.outsideClose = true;
   }
+  function deletedBanner() {
+    var n = delCount();
+    if (!FAMILY || !n) return null;
+    return el('div', { class: 'upd-banner has del', role: 'status' },
+      el('span', { class: 'upd-msg' }, el('span', { class: 'del-sample', text: '取消線' }), n + '件の予定が削除されました。確認すると、カレンダーから消えます。'),
+      el('span', { class: 'upd-btns' }, el('button', { class: 'btn small primary', type: 'button', text: 'すべて確認した', onclick: ackAll })));
+  }
   function updatesBanner() {
     if (!FAMILY || !S.log) return null;
     var n = (S.newLog || []).length;
@@ -513,7 +527,7 @@
   function buildLeaveIdx() {
     var idx = {};
     S.events.forEach(function (e) {
-      if (e.kind !== 'off' || (e.tag || '').indexOf('半休') >= 0) return;
+      if (e.kind !== 'off' || e.deleted || (e.tag || '').indexOf('半休') >= 0) return;
       var m = idx[e.owner_id] || (idx[e.owner_id] = {});
       for (var d = parse(e.start), end = parse(e.end), n = 0; d <= end && n < 120; d = addDays(d, 1), n++) m[ymd(d)] = true;
     });
@@ -551,9 +565,9 @@
 
   function barFor(g, days) {
     var e = g.ev;
-    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
-      text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
       onclick: function (ev) { ev.stopPropagation(); openEventDialog(e); },
       onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
@@ -572,8 +586,8 @@
 
   /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
   function plainBar(e, ds) {
-    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
-      text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : ''),
+      text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
     if (!SHARE && e.editable) { // リストの予定を、ToDoの列へ・別の日の行へドラッグできる
       bar.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'event', id: e.id, off: Math.max(0, daysBetween(e.start, ds)), ok: canReturnToTodo(e) }); });
@@ -623,6 +637,8 @@
     if (!board) return;
     var mgrKeep = captureTodoInput(document.getElementById('todo-mgr')); // リスト表示のToDo入力欄は、描き直すと作り直されるので、入力中の内容を引き継ぐ
     board.textContent = '';
+    var db = deletedBanner();
+    if (db) board.appendChild(db);
     var ub = updatesBanner();
     if (ub) board.appendChild(ub);
     var lay = document.querySelector('.layout');
@@ -646,11 +662,12 @@
       el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み'),
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--uc-private, var(--private))' }), 'プライベート') : null,
-      el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' }), '／単発の業務（標準では文字の色で区別・色は右上の「設定」→「予定の色の設定」で変更）'),
-      el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
+      FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' }), '／単発の業務（標準では文字の色で区別・色は右上の「設定」→「予定の色の設定」で変更）'),
+      FAMILY ? null : el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
       SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます・画面の右端へ持っていくとToDoにできます' }),
-      el('span', { text: 'ショートカット: ? で一覧' }),
-      POLL_MS ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null));
+      FAMILY ? null : el('span', { text: 'ショートカット: ? で一覧' }),
+      POLL_MS && !FAMILY ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null,
+      FAMILY && delCount() ? el('span', null, el('span', { class: 'del-sample', text: '取消線' }), '＝削除された予定（押して「確認した」を選ぶと消えます）') : null));
     var sum = monthSummary();
     if (sum) board.appendChild(sum);
   }
@@ -1015,7 +1032,7 @@
       syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
-        k === 'off' ? '休みは全員に表示され、Slackにも通知されます。' : '業務の予定は全員に表示されます。';
+        k === 'off' ? '休みは全員に表示されます。' : '業務の予定は全員に表示されます。';
       if (k === 'off' && !title.value) title.setAttribute('placeholder', '休み（空のままで可）');
       else if (title.value || !(ev && ev.kind === 'off')) title.removeAttribute('placeholder');
     }
@@ -1044,7 +1061,7 @@
       if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
       if (!ownerLabel.hidden) body.owner_id = owner.value;
       var kindChanged = !!ev && ev.kind !== body.kind;
-      if (kindChanged && ev.kind === 'private' && !window.confirm('プライベートの予定を「' + KIND_NAME[body.kind] + '」に変えます。会社の全員に表示されます（メモの内容も）。' + (body.kind === 'off' && S.me.slack ? 'Slackにも、休みの登録が通知されます。' : '') + 'よろしいですか？')) return;
+      if (kindChanged && ev.kind === 'private' && !window.confirm('プライベートの予定を「' + KIND_NAME[body.kind] + '」に変えます。会社の全員に表示されます（メモの内容も）。' + 'よろしいですか？')) return;
       api('event_save', { body: body }).then(function () {
         ov.close(); toast(kindChanged ? '種類を「' + KIND_NAME[body.kind] + '」に変えて、保存しました' : isNew ? '予定を登録しました' : '予定を更新しました');
         if ((isNew || kindChanged) && body.kind === 'private' && S.view === 'team') toast('プライベートの予定は「プライベート版」に表示されます');
@@ -1688,14 +1705,27 @@
         var next = addRow(last ? ymd(addDays(parse(last), 1)) : '');
         next.focus();
       } })),
-      ev.kind === 'off' ? el('p', { class: 'hint', text: '休みを複製すると、Slackにも1通にまとめて通知されます。' }) : null,
       ev.kind === 'private' ? el('p', { class: 'hint', text: 'プライベートの予定のまま複製されます（本人以外には表示されません）。' }) : null,
       err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '複製する' })));
     var ov = openModal('予定を複製', form);
   }
 
+  function openDeletedView(ev) {
+    var when = ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end);
+    var rows = [['予定', ev.title], ['日付', when]];
+    if (ev.start_time) rows.push(['時刻', ev.start_time + (ev.end_time ? ' 〜 ' + ev.end_time : '')]);
+    rows.push(['削除された日時', fmtAt(ev.deleted_at)]);
+    var ov = openModal('削除された予定', el('div', { class: 'form' },
+      el('p', { class: 'hint', text: 'この予定は削除されました。確認すると、カレンダーから消えます（ほかの家族の画面では、それぞれが確認するまで残ります）。' }),
+      el('dl', { class: 'detail del' }, rows.map(function (r) { return [el('dt', { text: r[0] }), el('dd', { text: r[1] })]; })),
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn primary', type: 'button', text: '確認した（消す）', onclick: function () { ackAdd([ev.log_id]); S.events = S.events.filter(function (x) { return x !== ev; }); ov.close(); renderBoard(); } }),
+        el('button', { class: 'btn', type: 'button', text: 'あとで', onclick: function () { ov.close(); } }))));
+    ov.outsideClose = true;
+  }
   function openEventView(ev) {
+    if (ev.deleted) return openDeletedView(ev);
     var rows = [['種類', ev.kind === 'off' ? '休み' : ev.kind === 'private' ? 'プライベート' : '業務'], ['件名', eventLabel(ev, true)], ['日付', ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)]];
     if (ev.start_time) rows.push(['時刻', ev.start_time + (ev.end_time ? ' 〜 ' + ev.end_time : '')]);
     if (ev.tag) rows.push(['分類', ev.tag]);
@@ -1900,7 +1930,7 @@
       btn.disabled = true; result.className = 'slack-result wait'; result.textContent = '送信しています…';
       api('slack_test', { body: { kind: kind } }).then(function (j) {
         var r = j.result;
-        if (r.ok) { result.className = 'slack-result ok'; result.textContent = '✓ 送信できました（' + (kind === 'sample' ? '休みの通知の見本' : 'テスト通知') + '）。Slack の送り先チャンネルに、届いているか確認してください。'; }
+        if (r.ok) { result.className = 'slack-result ok'; result.textContent = '✓ 送信できました。Slack の送り先チャンネルに、届いているか確認してください。'; }
         else { result.className = 'slack-result ng'; result.textContent = '✕ 送信できませんでした。' + slackFailHint(r); }
       }).catch(function (x) { result.className = 'slack-result ng'; result.textContent = '✕ ' + x.message; }).then(function () { btn.disabled = false; });
     }
@@ -1911,7 +1941,6 @@
       var err = el('p', { class: 'error', role: 'alert', hidden: true });
       var fail2 = function (x) { err.textContent = x.message; err.hidden = false; };
       var t1 = el('button', { class: 'btn primary', type: 'button', text: 'テスト通知を送る', disabled: !st.configured, onclick: function () { send('simple', this); } });
-      var t2 = el('button', { class: 'btn', type: 'button', text: '休みの通知の見本を送る', disabled: !st.configured, title: '実際に休みを登録したときと同じ形の通知を、1通送ります（あなたの Slack メンバーID があれば、メンション付き）', onclick: function () { send('sample', this); } });
       var dests = st.dests || [];
       var pick = el('select', { id: 'slack-pick', 'aria-label': '通知の送り先', disabled: !dests.length, onchange: function () {
         api('slack_use', { body: { id: pick.value } }).then(function (j) { toast('送り先を「' + j.slack.active_name + '」に切り替えました'); draw(j.slack); }).catch(function (x) { fail(x); draw(st); });
@@ -1921,7 +1950,7 @@
       body.appendChild(el('div', { class: 'slack-status ' + (st.configured ? 'on' : 'off') },
         el('span', { class: 'pill' + (st.configured ? ' admin' : ''), text: st.configured ? '通知先: ' + st.active_name : '未設定' })));
       body.appendChild(el('label', null, '通知の送り先（選ぶと、すぐに切り替わります）', pick));
-      body.appendChild(el('p', { class: 'hint', text: '選んだ送り先に、休みを登録したとき（複数日・複製は1通にまとめて）と、毎朝・前日の「お休み」の自動通知（cron の設定が必要）が、届きます。' }));
+      body.appendChild(el('p', { class: 'hint', text: '選んだ送り先に、朝と夕方の「お休み」の通知（cron の設定が必要）が届きます。送る時刻や文章は、「通知の時間・文面を変える」で決めます。' }));
       var mine = dests.filter(function (d) { return d.id !== 'config'; });
       if (mine.length) {
         body.appendChild(el('div', { class: 'slack-dests' }, mine.map(function (d) {
@@ -1941,13 +1970,12 @@
         el('label', null, 'Slack の Webhook URL', url),
         el('p', { class: 'hint', text: '取得方法: Slack の「アプリを追加」→「Incoming Webhooks」→「Slack に追加」→ 送り先のチャンネルを選ぶと、URL が表示されます。チャンネルごとに1つずつ作り、ここに名前を付けて保存します（最大10件）。URL は画面に全部は出さず、サーバーに保存されます。' }),
         err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: '追加して保存' }))));
-      body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' + (st.configured ? '（送り先: ' + st.active_name + '）' : '') }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1, t2), result));
+      body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' + (st.configured ? '（送り先: ' + st.active_name + '）' : '') }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1), result));
       if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。「送り先を追加」に、チャンネル名と Webhook URL を入れて保存してください。' }));
       body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
         : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
         : '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
       body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn', type: 'button', text: '通知の時間・文面を変える', onclick: function () { ov.close(); openSlackCfgDialog(); } })));
-      body.appendChild(el('p', { class: 'hint', text: '通知で本人にメンションを付けるには、「社員の管理」で、各社員の Slack メンバーID（U から始まる英数字）を登録してください。' }));
       body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     }
     api('slack_status').then(function (j) { draw(j.slack); }).catch(function (x) { fail(x); ov.close(); });
@@ -1973,31 +2001,29 @@
     function chips(list) { return el('div', { class: 'slack-chips' }, el('span', { class: 'hint', text: '差し込み（押すと、入力中の欄に入ります）: ' }), list.map(function (ph) { return el('button', { class: 'chip', type: 'button', text: ph, onclick: function () { insert(ph); } }); })); }
     function read() {
       return {
-        mention: F.mention.checked, line: F.line.value,
-        reg: { on: F.regOn.checked, tpl: F.reg.value },
+        line: F.line.value, empty: { on: F.emptyOn.checked, text: F.emptyText.value },
         morning: { on: F.morOn.checked, time: timeVal(F.morTime), tpl: F.morning.value },
         evening: { on: F.eveOn.checked, time: timeVal(F.eveTime), tpl: F.evening.value }
       };
     }
     // 見本では、Slack のリンク <URL|文字> を、リンクの文字だけで見せる（Slack ではその文字がリンクになる）
-    function showPv(pv) { err.hidden = true; ['reg', 'morning', 'evening'].forEach(function (k) { PV[k].textContent = pv[k].replace(/<([^|>]+)\|([^>]+)>/g, '$2'); PV[k].classList.remove('bad'); }); }
+    function showPv(pv) { err.hidden = true; ['morning', 'evening', 'none'].forEach(function (k) { PV[k].textContent = pv[k].replace(/<([^|>]+)\|([^>]+)>/g, '$2'); PV[k].classList.remove('bad'); }); }
     function schedulePreview() {
       clearTimeout(timer);
       timer = setTimeout(function () {
         api('slack_cfg_preview', { body: { cfg: read() } }).then(function (j) {
-          if (j.error) { ['reg', 'morning', 'evening'].forEach(function (k) { PV[k].classList.add('bad'); }); err.textContent = j.error; err.hidden = false; } else showPv(j.preview);
+          if (j.error) { ['morning', 'evening', 'none'].forEach(function (k) { PV[k].classList.add('bad'); }); err.textContent = j.error; err.hidden = false; } else showPv(j.preview);
         }).catch(function () { /* 入力途中の通信エラーは、無視する */ });
       }, 350);
     }
     function fill(c) {
-      F.mention.checked = c.mention; F.line.value = c.line;
-      F.regOn.checked = c.reg.on; F.reg.value = c.reg.tpl;
+      F.line.value = c.line; F.emptyOn.checked = c.empty.on; F.emptyText.value = c.empty.text;
       F.morOn.checked = c.morning.on; F.morTime.value = c.morning.time; F.morning.value = c.morning.tpl;
       F.eveOn.checked = c.evening.on; F.eveTime.value = c.evening.time; F.evening.value = c.evening.tpl;
     }
-    function save(after) {
+    function save(after, closeAfter) {
       err.hidden = true;
-      api('slack_cfg_save', { body: { cfg: read() } }).then(function (j) { fill(j.cfg); showPv(j.preview); toast('保存しました'); if (after) after(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+      api('slack_cfg_save', { body: { cfg: read() } }).then(function (j) { toast('保存しました'); if (closeAfter) { ov.close(); return; } fill(j.cfg); showPv(j.preview); if (after) after(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     }
     function sample(kind, btn) {
       var go = function () {
@@ -2013,30 +2039,33 @@
       PV[key] = el('pre', { class: 'slack-preview', 'aria-label': 'プレビュー' });
       return el('section', { class: 'slack-sec' }, el('h3', null, el('label', { class: 'work' }, onBox, ' ' + title)), extra,
         track(ta), el('div', { class: 'hint', text: 'Slack での見え方（見本）' }), PV[key],
-        el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn small', type: 'button', text: '保存して、この文面の見本を Slack に送る', onclick: function () { sample(key === 'reg' ? 'sample' : key, this); } })));
+        el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn small', type: 'button', text: '保存して、この文面の見本を Slack に送る', onclick: function () { sample(key, this); } })));
     }
     api('slack_cfg').then(function (j) {
       var c = j.cfg, ph = j.placeholders;
-      F.mention = el('input', { type: 'checkbox' }); F.line = track(el('input', { type: 'text', maxlength: '100', autocomplete: 'off' }));
-      F.regOn = el('input', { type: 'checkbox' }); F.morOn = el('input', { type: 'checkbox' }); F.eveOn = el('input', { type: 'checkbox' });
+      F.line = track(el('input', { type: 'text', maxlength: '100', autocomplete: 'off' }));
+      F.emptyOn = el('input', { type: 'checkbox' }); F.emptyText = track(el('input', { type: 'text', maxlength: '50', autocomplete: 'off' }));
+      PV.none = el('pre', { class: 'slack-preview', 'aria-label': 'プレビュー' });
+      F.morOn = el('input', { type: 'checkbox' }); F.eveOn = el('input', { type: 'checkbox' });
       F.morTime = timeInput('morTime', c.morning.time); F.eveTime = timeInput('eveTime', c.evening.time);
-      F.reg = el('textarea', { rows: '4', maxlength: '250' }); F.morning = el('textarea', { rows: '4', maxlength: '250' }); F.evening = el('textarea', { rows: '4', maxlength: '250' });
+      F.morning = el('textarea', { rows: '4', maxlength: '250' }); F.evening = el('textarea', { rows: '4', maxlength: '250' });
       F.morTime.addEventListener('input', schedulePreview); F.eveTime.addEventListener('input', schedulePreview);
-      [F.mention, F.regOn, F.morOn, F.eveOn].forEach(function (x) { x.addEventListener('change', schedulePreview); });
+      [F.emptyOn, F.morOn, F.eveOn].forEach(function (x) { x.addEventListener('change', schedulePreview); });
       body.appendChild(el('p', { class: 'hint', text: 'Slack に送る通知の「いつ」と「どんな文章か」を変えられます。保存すると、すぐに次の通知から変わります。' }));
-      body.appendChild(section('休みを登録したとき（すぐに送る）', F.regOn, chips(ph.reg), F.reg, 'reg'));
       body.appendChild(section('朝の通知（その日の休み）', F.morOn,
-        [el('div', { class: 'slack-time' }, el('label', null, '送る時刻', F.morTime), el('span', { class: 'hint', text: '土日祝・会社の休業日、休みの人がいない日は送りません' })), chips(ph.day)], F.morning, 'morning'));
+        [el('div', { class: 'slack-time' }, el('label', null, '送る時刻', F.morTime), el('span', { class: 'hint', text: '土日祝・会社の休業日は送りません（休みの人がいない営業日は「休みなし」と送ります）' })), chips(ph.day)], F.morning, 'morning'));
       body.appendChild(section('夕方の通知（次の営業日の休み）', F.eveOn,
-        [el('div', { class: 'slack-time' }, el('label', null, '送る時刻', F.eveTime), el('span', { class: 'hint', text: '翌日が営業日で、休みの人がいるときだけ送ります' })), chips(ph.day)], F.evening, 'evening'));
-      body.appendChild(el('section', { class: 'slack-sec' }, el('h3', { text: '1人分の表示' }),
-        el('label', null, '休みの一覧に出る、1人分の書き方（{名前} は必須）', F.line), chips(ph.line),
-        el('label', { class: 'work' }, F.mention, ' 名前を、Slack のメンション（@名前）にする（社員の管理で Slack メンバーID を登録している人だけ）')));
+        [el('div', { class: 'slack-time' }, el('label', null, '送る時刻', F.eveTime), el('span', { class: 'hint', text: '翌日が営業日のときに送ります（休みの人がいなければ「休みなし」と送ります）' })), chips(ph.day)], F.evening, 'evening'));
+      body.appendChild(el('section', { class: 'slack-sec' }, el('h3', { text: '1人分の表示と、休みの人がいない日' }),
+        el('label', null, '休みの一覧に出る、1人分の書き方（{名前} は必須。初期値は名前だけ）', F.line), chips(ph.line),
+        el('h3', { text: '休みの人がいない日' }),
+        el('label', { class: 'work' }, F.emptyOn, ' 営業日で、休みの人がいない日にも、通知する'),
+        el('label', null, '{休み一覧} の代わりに出す文言', F.emptyText), el('div', { class: 'hint', text: '朝の通知の見え方（見本）' }), PV.none));
       body.appendChild(el('p', { class: 'hint', text: '※ 通知の時刻は、サーバーの cron が「php bin/cron.php notify」を5〜10分おきに動かしているときに、有効になります。設定した時刻から3時間以内に、1回だけ送ります。cron の登録方法は、docs/DEPLOY.md の「9. 毎日の自動処理」にあります。以前の「morning」「evening」の cron を使っている場合は、その時刻に従来どおり送られます（時刻は cron の設定のまま）。' }));
       body.appendChild(err); body.appendChild(result);
       body.appendChild(el('div', { class: 'actions' },
         el('button', { class: 'btn', type: 'button', text: '初期値に戻す（まだ保存しません）', onclick: function () { fill(j.defaults); schedulePreview(); } }),
-        el('button', { class: 'btn primary', type: 'button', text: '保存', onclick: function () { save(); } }),
+        el('button', { class: 'btn primary', type: 'button', text: '保存', onclick: function () { save(null, true); } }),
         el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
       fill(c); showPv(j.preview);
     }).catch(function (x) { fail(x); ov.close(); });
@@ -2050,11 +2079,10 @@
       api('users_list').then(function (j) {
         body.textContent = '';
         body.appendChild(el('div', { class: 'scroll-x' }, el('table', { class: 't stack' },
-          el('thead', null, el('tr', null, ['名前', 'メールアドレス', '権限', 'Slack ID', ''].map(function (h) { return el('th', { text: h }); }))),
+          el('thead', null, el('tr', null, ['名前', 'メールアドレス', '権限', ''].map(function (h) { return el('th', { text: h }); }))),
           el('tbody', null, j.users.map(function (u) {
             return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') + (u.must_change_password ? '（初回パスワード未変更）' : '') }), el('td', { text: u.email }),
               el('td', null, el('span', { class: 'pill' + (u.role === 'admin' ? ' admin' : ''), text: u.role === 'admin' ? '管理者' : '一般' })),
-              el('td', { text: u.slack_id || '—' }),
               el('td', null, el('button', { class: 'btn small', type: 'button', text: '編集', onclick: function () { openUserForm(u, refresh); } })));
           })))));
         body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', text: '＋ 社員を追加', onclick: function () { openUserForm(null, refresh); } }),
@@ -2069,18 +2097,17 @@
       name: el('input', { name: 'name', required: true, maxlength: '60', value: u ? u.name : '' }),
       email: el('input', { name: 'email', type: 'email', required: true, value: u ? u.email : '' }),
       role: el('select', { name: 'role' }, [['member', '一般'], ['admin', '管理者']].map(function (o) { return el('option', { value: o[0], text: o[1], selected: u && u.role === o[0] }); })),
-      slack: el('input', { name: 'slack_id', placeholder: '例: U01ABCDEF23（任意）', value: u ? u.slack_id : '' }),
       pw: el('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: '8', required: !u }),
       active: el('input', { type: 'checkbox', checked: u ? !!u.active : true, style: 'width:auto' })
     };
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      api('user_save', { body: { id: u ? u.id : null, name: f.name.value, email: f.email.value, role: f.role.value, slack_id: f.slack.value, password: f.pw.value, active: f.active.checked ? 1 : 0 } })
+      api('user_save', { body: { id: u ? u.id : null, name: f.name.value, email: f.email.value, role: f.role.value, password: f.pw.value, active: f.active.checked ? 1 : 0 } })
         .then(function () { ov.close(); toast('保存しました'); done(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
       el('div', { class: 'row' }, el('label', null, '名前', f.name), el('label', null, 'メールアドレス（ログインID）', f.email)),
-      el('div', { class: 'row' }, el('label', null, '権限', f.role), el('label', null, 'SlackのメンバーID', f.slack)),
+      el('label', null, '権限', f.role),
       el('label', null, u ? '新しいパスワード（変更する場合のみ・8文字以上）' : 'パスワード（8文字以上）', f.pw),
       u ? el('label', { style: 'flex-direction:row;align-items:center;display:flex;gap:6px' }, f.active, '利用を許可する（退職時などは外す）') : null,
       el('p', { class: 'hint', text: u ? 'パスワードを入力して保存すると、その人は次のログイン時に、新しいパスワードへの変更を求められます。' : 'ここで決めたパスワードは初期パスワードです。本人に伝えてください。最初のログイン時に、本人が別のパスワードへ変更します。' }),

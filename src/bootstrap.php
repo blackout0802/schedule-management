@@ -280,6 +280,14 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
     }
+    // 家族用の更新履歴に、削除された予定を「取消線」で見せるための、予定の種類と時刻
+    foreach (['kind' => 'VARCHAR(10)', 'start_time' => 'VARCHAR(5)', 'end_time' => 'VARCHAR(5)'] as $col => $type) {
+        try {
+            db()->query("SELECT $col FROM event_log LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            db()->exec("ALTER TABLE event_log ADD COLUMN $col $type NOT NULL DEFAULT ''");
+        }
+    }
     // app_meta の値の欄が 100 文字だった版（Slack の送り先を複数登録するには足りない）。MySQL/MariaDB だけ広げる（SQLite の TEXT は制限なし）
     if (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
         try {

@@ -115,7 +115,7 @@ function share_events(array $link, string $from, string $to): array
     }
     $withNote = $link['kind'] === 'family';
     $colors = owner_colors_map();
-    return array_map(function ($e) use ($withNote, $colors) {
+    $res = array_map(function ($e) use ($withNote, $colors) {
         // 家族には、休みの種類（有給・欠勤など）や件名は見せず、単に「休み」とだけ見せる
         $plainOff = $withNote && $e['kind'] === 'off';
         return [
@@ -125,6 +125,10 @@ function share_events(array $link, string $from, string $to): array
             'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'important' => (int)$e['important'] === 1, 'editable' => false, 'colors' => (object)($colors[(int)$e['owner_id']] ?? []),
         ];
     }, $list);
+    if ($withNote) { // 家族用: 削除された予定は、取消線つきで残す（家族が「確認した」と消すまで）
+        $res = array_merge($res, family_tombstones((int)$link['owner_id'], $from, $to, array_column($res, 'id'), $colors));
+    }
+    return $res;
 }
 
 function share_holidays(string $from, string $to): array

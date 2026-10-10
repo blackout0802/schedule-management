@@ -121,6 +121,9 @@ CREATE TABLE IF NOT EXISTS event_log (
   date_from TEXT NOT NULL,
   date_to TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '',
-  changed_at TEXT NOT NULL
+  changed_at TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT '',
+  start_time TEXT NOT NULL DEFAULT '',
+  end_time TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_event_log_owner ON event_log (owner_id, id);

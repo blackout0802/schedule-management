@@ -525,7 +525,7 @@ slack_dest_delete($d3['id']); slack_dest_delete('old');
 check('Slack: 引き継いだ1件も消せる', [slack_dests(), slack_webhook_url()], [[], $wasUrl]);
 check('Slack: 送り先が無いとき、テスト送信は失敗として詳細を返す', (function () { $r = slack_post_detailed('x'); return [$r['ok'], $r['error'] !== '']; })(), slack_enabled() ? [false, true] : [false, true]);
 check('Slack: テスト文面（接続確認）にアプリ名・送信者が入る', (function () use ($a) { $m = slack_test_message('simple', $a); return strpos($m, 'テスト') !== false && strpos($m, $a['name']) !== false; })(), true);
-check('Slack: テスト文面（見本）は、実際の「休みの登録」と同じ形（メンション付き）', (function () use ($a) { $m = slack_test_message('sample', array_merge($a, ['slack_id' => 'U01ABCDEF23'])); return strpos($m, '【休みの登録】') !== false && strpos($m, '<@U01ABCDEF23>') !== false && strpos($m, 'テスト') !== false; })(), true);
+check('Slack: テスト文面（見本）は、実際の通知と同じ形。名前だけで、メンションは付かない', (function () use ($a) { $m = slack_test_message('morning', array_merge($a, ['slack_id' => 'U01ABCDEF23'])); return [strpos($m, '【本日のお休み】') !== false, strpos($m, '• ' . $a['name']) !== false, strpos($m, '<@') === false, strpos($m, 'テスト') !== false]; })(), [true, true, true, true]);
 
 $tok = static function (): string { $l = row("SELECT token FROM share_links WHERE kind = 'company' AND owner_id = 0"); return $l ? $l['token'] : ''; };
 q("DELETE FROM share_links WHERE kind = 'company'");
@@ -537,14 +537,17 @@ $lk = share_link_create('company', array_merge($a, ['role' => 'admin']));
 check('Slack: 会社用リンクを作り直すと、通知のリンクも新しいものになる', [slack_open_url() === 'https://example.test/public/share.php?t=' . $lk['token'], $old !== $lk['token']], [true, true]);
 share_link_revoke('company', array_merge($a, ['role' => 'admin']));
 check('Slack: 会社用リンクを止めると、入口に戻る', slack_link_kind(), 'login');
-check('Slack: 見本の通知にも、同じリンクが付く', strpos(slack_test_message('sample', $a), 'view=team|スケジュールを開く>') !== false, true);
+check('Slack: 見本の通知にも、同じリンクが付く', strpos(slack_test_message('evening', $a), 'view=team|スケジュールを開く>') !== false, true);
 
 // ---- Slack: 通知の時間・文面 ----
 $dflt = slack_cfg_defaults();
-$aM = array_merge($a, ['slack_id' => 'U01ABCDEF23']);
 $e1 = ['start_date' => '2031-03-12', 'end_date' => '2031-03-12', 'tag' => '有給'];
-check('Slack文面: 初期値は、従来どおりの形（休みの登録）', slack_register_text([off_line($e1, slack_person($aM))], '（鈴木 さんが登録）', $dflt), "【休みの登録】\n• <@U01ABCDEF23>　有給　3/12（水）\n（鈴木 さんが登録）\n" . slack_link_text());
-check('Slack文面: 初期値は、従来どおりの形（朝）。登録した人が空の行は消える', [slack_register_text(['• X'], '', $dflt), slack_day_text('morning', '2031-03-12', ['• X'], $dflt)], ["【休みの登録】\n• X\n" . slack_link_text(), "【本日のお休み】3/12（水）\n• X\n" . slack_link_text()]);
+check('Slack文面: 初期値は、名前だけ（分類・期間・@メンションは出ない）', off_line($e1, '山田 花子'), '• 山田 花子');
+check('Slack文面: 初期値の朝・夕方の文面。{リンク}が空の行は消える', [slack_day_text('morning', '2031-03-12', ['• X'], $dflt), slack_day_text('evening', '2031-03-12', ['• X'], $dflt)], ["【本日のお休み】3/12（水）
+• X
+" . slack_link_text(), "【明日のお休み】3/12（水）
+• X
+" . slack_link_text()]);
 $c = $dflt; $c['line'] = '{名前}さん（{分類}）'; $c['morning']['tpl'] = "おはようございます！{日付}は{人数}名がお休みです。\n\n{休み一覧}";
 check('Slack文面: 好きな文面・1人分の表示・差し込みが使える（空行は残る）', slack_day_text('morning', '2031-03-12', [off_line($e1, '山田', $c), off_line($e1, '鈴木', $c)], $c), "おはようございます！3/12（水）は2名がお休みです。\n\n山田さん（有給）\n鈴木さん（有給）");
 $bad = [];
@@ -553,9 +556,9 @@ foreach ([['morning', ['tpl' => '休みなし']], ['morning', ['tpl' => "{休み
     try { slack_cfg_clean($in); $bad[] = 'ok'; } catch (RuntimeException $x) { $bad[] = 'ng'; }
 }
 check('Slack文面: {休み一覧}が無い・使えない差し込み・空・長すぎ・おかしい時刻・名前が無い1人分は、保存できない', $bad, ['ng', 'ng', 'ng', 'ng', 'ng', 'ng']);
-$in = $dflt; $in['morning']['time'] = '9:05'; $in['evening']['on'] = false; $in['mention'] = false;
+$in = $dflt; $in['morning']['time'] = '9:05'; $in['evening']['on'] = false;
 $saved = slack_cfg_save($in);
-check('Slack文面: 保存した設定が使われる（時刻は 09:05 にそろう）', [$saved['morning']['time'], slack_cfg()['evening']['on'], slack_person($aM)], ['09:05', false, $aM['name']]);
+check('Slack文面: 保存した設定が使われる（時刻は 09:05 にそろう）', [$saved['morning']['time'], slack_cfg()['evening']['on']], ['09:05', false]);
 q("DELETE FROM events WHERE kind = 'off' AND start_date = '2031-03-12'");
 $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-03-12', 'end' => '2031-03-12']);
 $t = function ($hm) { return strtotime("2031-03-12 $hm:00"); };
@@ -570,9 +573,29 @@ check('Slack時間: 夕方の通知は、翌営業日の休みを送る', array_
 $sat = strtotime('2031-03-15 09:10:00'); // 土曜日
 $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-03-15', 'end' => '2031-03-15']); $nr();
 check('Slack時間: 土日・休業日は送らない', count(notify_due($sat)), 0);
-$pv = slack_preview(slack_cfg_clean(array_merge($dflt, ['mention' => false])));
-check('Slack文面: プレビューは、保存前の入力のまま作れる', [strpos($pv['reg'], '山田 花子') !== false, strpos($pv['morning'], '鈴木 一郎') !== false, strpos($pv['evening'], '明日のお休み') !== false], [true, true, true]);
+// 休みの人がいない営業日にも、「休みなし」と通知する
+q("DELETE FROM events WHERE kind = 'off' AND start_date BETWEEN '2031-03-12' AND '2031-03-15'");
+$in = slack_cfg_defaults(); $in['morning']['time'] = '08:30'; $in['evening']['time'] = '17:00'; slack_cfg_save($in); $nr();
+$sentF = null; $sentN = notify_offs_for_day('2031-03-12', '本日', $sentF);
+check('休みなし: 営業日で休みの人がいなければ、「休みなし」と通知する（0件・送った扱い）', [$sentN, $sentF], [0, true]);
+$sentN2 = notify_offs_for_day('2031-03-12', '本日', $sentF2);
+check('休みなし: 同じ日に2回は送らない', [$sentN2, $sentF2], [0, false]);
+check('休みなし: 文面は「休みなし」が休み一覧の代わりに入る（人数は0）', [slack_day_text('morning', '2031-03-12', [], slack_cfg_defaults()), slack_day_text('evening', '2031-03-12', [], slack_cfg_defaults())], ["【本日のお休み】3/12（水）\n休みなし\n" . slack_link_text(), "【明日のお休み】3/12（水）\n休みなし\n" . slack_link_text()]);
+$nr(); $m1 = notify_due($t('08:40'));
+check('休みなし: 朝の通知の時刻を過ぎたら、休みなしと通知する', array_map(function ($x) { return strpos($x, '休みなし') !== false; }, $m1), [true]);
+check('休みなし: 土日・休業日は、休みなしでも送らない', [count(notify_due($sat)), count(notify_due(strtotime('2031-03-16 09:00:00')))], [0, 0]);
+$in['empty'] = ['on' => false, 'text' => '休みなし']; slack_cfg_save($in); $nr();
+check('休みなし: 画面でオフにすれば、休みの人がいない日は送らない', [count(notify_due($t('08:40'))), notify_offs_for_day('2031-03-12', '本日')], [0, 0]);
+$in['empty'] = ['on' => true, 'text' => '本日は全員出勤です']; slack_cfg_save($in);
+check('休みなし: 表示する文言を変えられる', strpos(slack_day_text('morning', '2031-03-12', []), '本日は全員出勤です') !== false, true);
+$badE = []; foreach (['', str_repeat('あ', 51)] as $txt) { $x = slack_cfg_defaults(); $x['empty']['text'] = $txt; try { slack_cfg_clean($x); $badE[] = 'ok'; } catch (RuntimeException $e) { $badE[] = 'ng'; } }
+check('休みなし: 文言が空・長すぎは、保存できない', $badE, ['ng', 'ng']);
 slack_meta_set('slack_cfg', '');
+$pv = slack_preview(slack_cfg_clean($dflt));
+check('Slack文面: プレビューは、保存前の入力のまま作れる', [strpos($pv['morning'], '山田 花子') !== false, strpos($pv['morning'], '鈴木 一郎') !== false, strpos($pv['evening'], '明日のお休み') !== false], [true, true, true]);
+slack_meta_set('slack_cfg', '');
+slack_meta_set('slack_cfg', json_encode(['line' => '• {名前}　{分類}　{期間}', 'mention' => true, 'reg' => ['on' => true, 'tpl' => 'x{休み一覧}']], JSON_UNESCAPED_UNICODE));
+check('Slack文面: 以前の初期値（名前・分類・期間）のまま保存されていた設定は、名前だけに変わり、昔の項目（登録通知・メンション）は無視される', [slack_cfg()['line'], isset(slack_cfg()['reg']), isset(slack_cfg()['mention'])], ['• {名前}', false, false]);
 check('Slack文面: 設定を消すと、初期値に戻る', slack_cfg(), slack_cfg_defaults());
 slack_meta_set('slack_cfg', '{壊れたJSON');
 check('Slack文面: 設定が壊れていても、初期値で動く', slack_cfg(), slack_cfg_defaults());
@@ -629,6 +652,25 @@ check('家族用: 共有中は見える', in_array('あとで外す', array_colu
 [$dd2] = validate_event_input(['kind' => 'private', 'title' => 'あとで外す', 'start' => $sd, 'family_shared' => 0], $a);
 save_event($dd2, $a, $tmpShared);
 check('家族用: チェックを外すと、すぐ見えなくなる', in_array('あとで外す', array_column(share_events($fam, $sd, $sd), 'title'), true), false);
+// 削除された予定は、家族用に取消線で残る（家族が確認して消すまで）
+$gone = $mk($a, ['kind' => 'private', 'title' => '消す予定', 'start' => $sd, 'start_time' => '10:00', 'end_time' => '11:00']);
+$goneId = (int)$gone['id'];
+delete_event(row('SELECT * FROM events WHERE id = ?', [$goneId]));
+$tomb = array_values(array_filter(share_events($fam, $sd, $sd), function ($e) { return !empty($e['deleted']); }));
+check('削除した予定: 家族用に、取消線つき（deleted）で残る。件名・日付・時刻が分かる', [count($tomb), $tomb[0]['title'], $tomb[0]['start'], $tomb[0]['start_time'], $tomb[0]['id'] < 0, $tomb[0]['editable'], $tomb[0]['note']], [1, '消す予定', $sd, '10:00', true, false, '']);
+check('削除した予定: 期間の外には出ない', array_filter(share_events($fam, date('Y-m-d', strtotime($sd . ' +10 day')), date('Y-m-d', strtotime($sd . ' +12 day'))), function ($e) { return !empty($e['deleted']); }), []);
+check('削除した予定: 本人以外の家族用・会社用には出ない', [count(array_filter(share_events(share_link_find(share_link_create('family', $b)['token']), $sd, $sd), function ($e) { return !empty($e['deleted']); })), count(array_filter(share_events(share_link_find(share_link_create('company', $admin)['token']), $sd, $sd), function ($e) { return !empty($e['deleted']); }))], [0, 0]);
+q('UPDATE users SET family_share_off = 1 WHERE id = ?', [$a['id']]);
+$lvGone2 = $mk($a, ['kind' => 'off', 'title' => '通院', 'tag' => '有給', 'start' => $sd, 'end' => $sd]);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$lvGone2['id']]));
+$tl = array_values(array_filter(share_events($fam, $sd, $sd), function ($e) { return !empty($e['deleted']) && $e['kind'] === 'off'; }));
+check('削除した休み: 取消線で残るが、件名・種類は出ない（「休み」とだけ）', [count($tl), $tl[0]['title'], $tl[0]['tag']], [1, '休み', '']);
+q('UPDATE users SET family_share_off = 0 WHERE id = ?', [$a['id']]);
+$un = $mk($a, ['kind' => 'work', 'title' => '非共有の業務', 'tag' => '打ち合わせ', 'start' => $sd, 'end' => $sd]);
+delete_event(row('SELECT * FROM events WHERE id = ?', [$un['id']]));
+check('削除した予定: 家族に見えていなかった予定は、残らない（件名が漏れない）', in_array('非共有の業務', array_column(share_events($fam, $sd, $sd), 'title'), true), false);
+q('UPDATE event_log SET changed_at = ? WHERE event_id = ? AND action = ?', [date('Y-m-d H:i:s', time() - (TOMBSTONE_KEEP_DAYS + 1) * 86400), $goneId, 'delete']);
+check('削除した予定: ' . TOMBSTONE_KEEP_DAYS . '日たつと、確認しなくても消える', in_array('消す予定', array_column(share_events($fam, $sd, $sd), 'title'), true), false);
 // 会社用の見える範囲
 $cl = share_link_create('company', $admin);
 $comp = share_link_find($cl['token']);

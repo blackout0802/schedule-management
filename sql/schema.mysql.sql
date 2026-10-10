@@ -132,5 +132,8 @@ CREATE TABLE IF NOT EXISTS event_log (
   date_to DATE NOT NULL,
   detail VARCHAR(500) NOT NULL DEFAULT '',
   changed_at DATETIME NOT NULL,
+  kind VARCHAR(10) NOT NULL DEFAULT '',
+  start_time VARCHAR(5) NOT NULL DEFAULT '',
+  end_time VARCHAR(5) NOT NULL DEFAULT '',
   KEY ix_event_log_owner (owner_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

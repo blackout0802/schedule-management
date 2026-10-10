@@ -410,3 +410,9 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .slack-preview.bad { opacity: .45; }
 .slack-cfg label.work { display: inline-flex; align-items: center; gap: 8px; }
 .slack-cfg input[type=checkbox] { width: auto; flex: none; }
+
+/* ---- 家族用: 削除された予定（取消線）---- */
+.bar.deleted { text-decoration: line-through; text-decoration-thickness: 2px; opacity: .6; outline: 1px dashed currentColor; outline-offset: -2px; }
+.del-sample { text-decoration: line-through; text-decoration-thickness: 2px; font-weight: 700; margin-right: 6px; }
+.upd-banner.del .upd-msg { display: inline-flex; align-items: center; }
+.detail.del dd:first-of-type { text-decoration: line-through; }

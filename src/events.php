@@ -694,13 +694,52 @@ function log_event_change(?array $before, ?array $after): void
             $ref = $before;
         }
         $title = $ref['kind'] === 'off' ? '休み' : $ref['title'];
-        q('INSERT INTO event_log (event_id, owner_id, action, title, date_from, date_to, detail, changed_at) VALUES (?,?,?,?,?,?,?,?)', [
+        q('INSERT INTO event_log (event_id, owner_id, action, title, date_from, date_to, detail, changed_at, kind, start_time, end_time) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [
             $ref['id'], $ref['owner_id'], $action, mb_substr($title, 0, 100), $ref['start_date'], $ref['end_date'], $detail, now_str(),
+            $ref['kind'], (string)$ref['start_time'], (string)$ref['end_time'],
         ]);
         q('DELETE FROM event_log WHERE changed_at < ?', [date('Y-m-d H:i:s', time() - EVENT_LOG_KEEP_DAYS * 86400)]);
     } catch (Throwable $t) {
         error_log('[schedule] 更新履歴の記録に失敗: ' . $t->getMessage());
     }
+}
+
+/**
+ * 家族用リンクで、削除された予定を、取消線つきで残しておく日数。家族が「確認した」で消すか、この日数が過ぎると消える。
+ */
+const TOMBSTONE_KEEP_DAYS = 30;
+
+/**
+ * 削除された予定を、カレンダーに取消線で出すための一覧。
+ * 予定そのものが消えているものだけ（「家族に共有」を外しただけの予定は、すぐ見えなくなる。件名を残さないため）。持ち主が消した予定の「見せ方」は、share_events と同じ（休みは「休み」とだけ）。
+ * @param int[] $visibleIds いま家族に見えている予定の id（念のため、重ならないようにする）
+ */
+function family_tombstones(int $ownerId, string $from, string $to, array $visibleIds, array $colors): array
+{
+    try {
+        $rows = rows("SELECT l.* FROM event_log l WHERE l.owner_id = ? AND l.action = 'delete' AND l.kind <> '' AND l.changed_at >= ? AND l.date_from <= ? AND l.date_to >= ?
+                  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.id = l.event_id)
+                  AND NOT EXISTS (SELECT 1 FROM event_log n WHERE n.owner_id = l.owner_id AND n.event_id = l.event_id AND n.id > l.id)
+                  ORDER BY l.date_from, l.id", [$ownerId, date('Y-m-d H:i:s', time() - TOMBSTONE_KEEP_DAYS * 86400), $to, $from]);
+    } catch (PDOException $e) {
+        error_log('[schedule] 削除された予定の取得に失敗（更新直後で、データベースの更新が済んでいない可能性）: ' . $e->getMessage());
+        return [];
+    }
+    $own = row('SELECT name FROM users WHERE id = ?', [$ownerId]);
+    $out = [];
+    foreach ($rows as $r) {
+        if (in_array((int)$r['event_id'], $visibleIds, true)) {
+            continue;
+        }
+        $out[] = [
+            'id' => -(int)$r['id'], 'log_id' => (int)$r['id'], 'deleted' => true, 'deleted_at' => $r['changed_at'],
+            'title' => $r['title'], 'kind' => $r['kind'], 'tag' => '', 'start' => $r['date_from'], 'end' => $r['date_to'],
+            'start_time' => $r['start_time'], 'end_time' => $r['end_time'], 'note' => '', 'owner_id' => $ownerId, 'owner_name' => $own ? $own['name'] : '',
+            'recurring' => false, 'series_id' => null, 'family_shared' => true, 'important' => false, 'editable' => false,
+            'colors' => (object)($colors[$ownerId] ?? []),
+        ];
+    }
+    return $out;
 }
 
 /**

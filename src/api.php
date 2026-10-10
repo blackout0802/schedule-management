@@ -155,7 +155,6 @@ function handle_api(): void
                 'prefs' => get_prefs($user),
                 'work_tags' => cfg('work_tags'),
                 'off_tags' => cfg('off_tags'),
-                'slack' => slack_enabled(),
                 'users' => array_map(function ($u) {
                     return ['id' => (int)$u['id'], 'name' => $u['name']];
                 }, rows('SELECT id, name FROM users WHERE active = 1 ORDER BY name')),
@@ -207,11 +206,6 @@ function handle_api(): void
                 api_fail($err);
             }
             $saved = save_event($data, $user, $existing);
-            // 休みの登録（新規、または、ほかの種類から「休み」に変えたとき）は、Slackに通知する
-            if ($saved['kind'] === 'off' && (!$existing || $existing['kind'] !== 'off')) {
-                $owner = row('SELECT id,name,slack_id FROM users WHERE id = ?', [$saved['owner_id']]);
-                notify_off_registered($saved, $owner, $user);
-            }
             $saved['owner_name'] = (row('SELECT name FROM users WHERE id = ?', [$saved['owner_id']]))['name'];
             api_out(['event' => event_for_client($saved, $user)]);
 
@@ -233,10 +227,6 @@ function handle_api(): void
                 }
             }
             [$created, $skipped] = duplicate_event($src, $dates, $user);
-            if ($created && $src['kind'] === 'off') {
-                $owner = row('SELECT id,name,slack_id FROM users WHERE id = ?', [$src['owner_id']]);
-                notify_offs_registered($created, $owner, $user);
-            }
             api_out(['created' => count($created), 'skipped' => $skipped]);
 
         case 'event_move':
@@ -370,7 +360,7 @@ function handle_api(): void
             if (!slack_enabled()) {
                 api_fail('送り先（Webhook URL）がまだ設定されていません。', 400);
             }
-            $kind = in_array($in['kind'] ?? 'simple', ['sample', 'morning', 'evening'], true) ? $in['kind'] : 'simple';
+            $kind = in_array($in['kind'] ?? 'simple', ['morning', 'evening'], true) ? $in['kind'] : 'simple';
             api_out(['result' => slack_post_detailed(slack_test_message($kind, $user)), 'kind' => $kind]);
 
         case 'prefs_save': // 予定の色（本人の画面だけ）
@@ -542,22 +532,18 @@ function handle_api(): void
         case 'users_list':
             require_admin($user);
             api_out(['users' => array_map(function ($u) {
-                return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'slack_id' => $u['slack_id'] ?? '', 'active' => (int)$u['active'], 'must_change_password' => (int)$u['must_change_password']];
-            }, rows('SELECT id,name,email,role,slack_id,active,must_change_password FROM users ORDER BY id'))]);
+                return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'active' => (int)$u['active'], 'must_change_password' => (int)$u['must_change_password']];
+            }, rows('SELECT id,name,email,role,active,must_change_password FROM users ORDER BY id'))]);
 
         case 'user_save':
             require_admin($user);
             $name = trim((string)($in['name'] ?? ''));
             $email = strtolower(trim((string)($in['email'] ?? '')));
             $role = ($in['role'] ?? 'member') === 'admin' ? 'admin' : 'member';
-            $slack = trim((string)($in['slack_id'] ?? ''));
             $active = isset($in['active']) ? ((int)$in['active'] ? 1 : 0) : 1;
             $pw = (string)($in['password'] ?? '');
             if ($name === '' || mb_strlen($name) > 60 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 api_fail('名前とメールアドレスを正しく入力してください。');
-            }
-            if ($slack !== '' && !preg_match('/^[UW][A-Z0-9]{6,}$/', $slack)) {
-                api_fail('SlackのメンバーIDは U から始まる英数字です（例: U01ABCDEF23）。');
             }
             if (!empty($in['id'])) {
                 $target = row('SELECT * FROM users WHERE id = ?', [(int)$in['id']]);
@@ -571,7 +557,7 @@ function handle_api(): void
                 if ($dup) {
                     api_fail('そのメールアドレスは使われています。');
                 }
-                q('UPDATE users SET name=?, email=?, role=?, slack_id=?, active=? WHERE id=?', [$name, $email, $role, $slack ?: null, $active, $target['id']]);
+                q('UPDATE users SET name=?, email=?, role=?, active=? WHERE id=?', [$name, $email, $role, $active, $target['id']]);
                 if ($pw !== '') {
                     if (mb_strlen($pw) < 8) {
                         api_fail('パスワードは8文字以上にしてください。');
@@ -586,7 +572,7 @@ function handle_api(): void
                 if (row('SELECT id FROM users WHERE email = ?', [$email])) {
                     api_fail('そのメールアドレスは使われています。');
                 }
-                create_user($name, $email, $pw, $role, $slack ?: null, true);
+                create_user($name, $email, $pw, $role, null, true);
             }
             api_out(['ok' => true]);
 
