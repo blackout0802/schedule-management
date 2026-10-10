@@ -783,12 +783,16 @@
   }
   function openTodoPanel() {
     clearTimeout(todoPanelTimer);
-    if (S.drag || S.mode !== 'cal' || SHARE) return;
+    if ((S.drag && S.drag.t !== 'event') || S.mode !== 'cal' || SHARE) return;
     var p = document.getElementById('todo-panel');
     if (p) { p.classList.add('open'); return; }
     p = el('div', { id: 'todo-panel', class: 'todo-panel', role: 'dialog', 'aria-label': 'ToDo' });
     p.addEventListener('mouseenter', function () { clearTimeout(todoPanelTimer); });
     p.addEventListener('mouseleave', scheduleCloseTodoPanel);
+    // 予定をドラッグして持ってきたときの、閉じ方（左へ出ていったら閉じる）
+    p.addEventListener('dragenter', function () { clearTimeout(todoPanelTimer); });
+    p.addEventListener('dragover', function (ev) { if (S.drag && S.drag.t === 'event') { ev.preventDefault(); clearTimeout(todoPanelTimer); } });
+    p.addEventListener('dragleave', function (ev) { if (S.drag && S.drag.t === 'event' && !p.contains(ev.relatedTarget)) scheduleCloseTodoPanel(); });
     document.body.appendChild(p);
     renderTodoPanel(p);
     requestAnimationFrame(function () { p.classList.add('open'); });
@@ -805,15 +809,16 @@
       if (!input.value.trim()) return;
       api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { tpDraft = ''; input.value = ''; loadTodos(); }).catch(fail);
     } }, input, kindSel, el('button', { class: 'btn primary small', type: 'submit', text: '追加' }));
-    p.appendChild(el('div', { class: 'tp-head' }, el('b', { text: 'ToDo' }), el('span', { class: 'tp-hint', text: 'カレンダーの日付へドラッグすると予定になります' }),
+    p.appendChild(el('div', { class: 'tp-head' }, el('b', { text: 'ToDo' }), 
       el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', text: '✕', onclick: function () { closeTodoPanel(true); } })));
+    p.appendChild(el('p', { class: 'tp-sub', text: 'ToDoをカレンダーの日付へ、カレンダーの予定をこの欄へドラッグできます' }));
     p.appendChild(form);
-    var groups = [['doing', '進行中'], ['todo', '未着手']], any = false;
-    groups.forEach(function (g) {
+    // 進行中・未着手の2つの欄は、ToDoが無くても必ず出す（カレンダーの予定を、ここへドロップしてToDoにできる）
+    var evOk = function () { return S.drag && S.drag.t === 'event' && S.drag.ok; };
+    [['doing', '進行中'], ['todo', '未着手']].forEach(function (g) {
       var items = S.todos.filter(function (t) { return t.status === g[0]; });
-      if (!items.length) return;
-      any = true;
-      p.appendChild(el('h3', { class: 'tp-g st-' + g[0] }, g[1], el('span', { class: 'cnt', text: String(items.length) })));
+      var zone = el('section', { class: 'tp-zone st-' + g[0], 'data-status': g[0], 'aria-label': g[1] },
+        el('h3', { class: 'tp-g st-' + g[0] }, g[1], el('span', { class: 'cnt', text: String(items.length) })));
       items.forEach(function (t) {
         var card = el('div', { class: 'tp-card ' + t.kind, draggable: 'true', 'data-id': String(t.id) },
           el('div', { class: 'tp-title', text: t.title }),
@@ -824,10 +829,28 @@
           setTimeout(function () { p.classList.add('away'); }, 30); // ドラッグを始めたら、パネルを脇へどけて、カレンダーの日付に落とせるようにする
         });
         card.addEventListener('dragend', function () { endDrag(); });
-        p.appendChild(card);
+        // 予定をカードの前後へ落とす
+        card.addEventListener('dragover', function (ev) { if (!evOk()) return; ev.preventDefault(); ev.stopPropagation(); ev.dataTransfer.dropEffect = 'move'; zone.classList.add('drop'); });
+        card.addEventListener('drop', function (ev) {
+          if (!evOk()) return;
+          ev.preventDefault(); ev.stopPropagation();
+          var r = card.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2, d = S.drag;
+          endDrag(); eventToKanban(d.id, g[0], t.id, after);
+        });
+        zone.appendChild(card);
       });
+      if (!items.length) zone.appendChild(el('p', { class: 'tp-empty', text: g[0] === 'doing' ? '進行中のToDoはありません' : '未着手のToDoはありません' }));
+      zone.appendChild(el('div', { class: 'tp-drop', text: 'ここに予定をドロップすると、ToDo（' + g[1] + '）になります' }));
+      // 予定を、この欄にドロップ
+      zone.addEventListener('dragover', function (ev) { if (!evOk()) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; zone.classList.add('drop'); });
+      zone.addEventListener('dragleave', function (ev) { if (!zone.contains(ev.relatedTarget)) zone.classList.remove('drop'); });
+      zone.addEventListener('drop', function (ev) {
+        if (!evOk()) return;
+        ev.preventDefault();
+        var d = S.drag; endDrag(); eventToKanban(d.id, g[0], null, false);
+      });
+      p.appendChild(zone);
     });
-    if (!any) p.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。上の欄から追加できます。' }));
     if (hadFocus) setTimeout(function () { input.focus(); }, 0);
   }
 
@@ -835,39 +858,10 @@
   function setupTodoEdge() {
     if (document.getElementById('todo-edge')) return;
     var edge = el('div', { id: 'todo-edge', class: 'cal-edge todo-edge', text: 'ToDoへ ▶' });
-    edge.addEventListener('dragover', function (ev) { ev.preventDefault(); openTodoDrop(); });
+    edge.addEventListener('dragover', function (ev) { ev.preventDefault(); openTodoPanel(); });
     document.body.appendChild(edge);
-    calEdgeFn = function (ev) { if (ev.clientX >= window.innerWidth - 56) openTodoDrop(); };
+    calEdgeFn = function (ev) { if (ev.clientX >= window.innerWidth - 56) openTodoPanel(); }; // 予定を右端まで持っていくと、ToDoのパネル（ホバーで出るものと同じ）が開く
     document.addEventListener('dragover', calEdgeFn);
-  }
-  function openTodoDrop() {
-    clearTimeout(calCloseTimer);
-    if (document.getElementById('todo-drop')) return;
-    var panel = el('div', { id: 'todo-drop', class: 'cal-drop', role: 'dialog', 'aria-label': 'ToDoにする' });
-    panel.appendChild(el('p', { class: 'cd-hint', text: 'ToDoにする列へドロップしてください' }));
-    [['todo', '未着手'], ['doing', '進行中']].forEach(function (c) {
-      var items = S.todos.filter(function (t) { return t.status === c[0]; });
-      var zone = el('div', { class: 'td-zone ' + c[0], 'data-status': c[0] }, el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length) })),
-        items.slice(0, 6).map(function (t) { return el('div', { class: 'td-item ' + t.kind, text: t.title }); }),
-        items.length > 6 ? el('div', { class: 'td-more', text: '…ほか ' + (items.length - 6) + '件' }) : null,
-        el('div', { class: 'td-drop', text: 'ここにドロップ' }));
-      zone.addEventListener('dragover', function (ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; zone.classList.add('drop'); });
-      zone.addEventListener('dragleave', function () { zone.classList.remove('drop'); });
-      zone.addEventListener('drop', function (ev) {
-        ev.preventDefault();
-        var p = S.drag; endDrag();
-        if (p && p.t === 'event' && p.ok) eventToKanban(p.id, c[0], null, false);
-      });
-      panel.appendChild(zone);
-    });
-    panel.addEventListener('dragleave', function (ev) {
-      if (panel.contains(ev.relatedTarget)) return;
-      clearTimeout(calCloseTimer);
-      calCloseTimer = setTimeout(function () { var x = document.getElementById('todo-drop'); if (x) x.remove(); }, 400);
-    });
-    panel.addEventListener('dragenter', function () { clearTimeout(calCloseTimer); });
-    panel.addEventListener('dragover', function (ev) { ev.preventDefault(); clearTimeout(calCloseTimer); });
-    document.body.appendChild(panel);
   }
   /* 予定をToDoにして、指定の列（targetId があればその前後）に入れる */
   function eventToKanban(eventId, status, targetId, after) {
@@ -1115,7 +1109,7 @@
   /* 細い欄（カレンダーの横）と、リストタブの管理画面の両方を描く */
   function renderTodo() {
     var tp = document.getElementById('todo-panel');
-    if (tp && !tp.classList.contains('away')) renderTodoPanel(tp);
+    if (tp && !tp.classList.contains('away') && !S.drag) renderTodoPanel(tp);
     var side = document.getElementById('todo');
     if (side) renderTodoInto(side, false);
     var mgr = document.getElementById('todo-mgr');
