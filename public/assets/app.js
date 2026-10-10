@@ -179,6 +179,14 @@
     renderMemo();
   }
 
+  /* 業務版で見る人。'all' = 全社（全員）、数字 = その社員だけ（自分を含む）。いまの社員一覧に無いidは、全社に戻す */
+  function whoId() {
+    var w = S.who;
+    if (!w || w === 'all') return 0;
+    return S.me.users.some(function (u) { return String(u.id) === String(w); }) ? +w : 0;
+  }
+  function whoName() { var id = whoId(); var u = S.me.users.filter(function (x) { return x.id === id; })[0]; return u ? u.name : ''; }
+
   function renderToolbar() {
     var tb = document.getElementById('toolbar');
     tb.textContent = '';
@@ -189,6 +197,11 @@
       el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', text: '›', onclick: function () { nav(1); } }),
       el('button', { class: 'btn', type: 'button', text: '今日', onclick: function () { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); } }),
       el('span', { class: 'spacer', style: 'flex:1' }),
+      SHARE || S.view !== 'team' ? null : el('label', { class: 'who' }, '表示する人',
+        el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { S.who = this.value; store('sched.who', S.who); renderToolbar(); load(); } },
+          el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
+          el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
+          S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
       SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
           return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
@@ -198,7 +211,7 @@
     ));
     tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
-        : S.view === 'team' ? '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）' : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
+        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
   }
 
 
@@ -229,6 +242,7 @@
     var r = gridRange();
     var params = { from: ymd(r.start), to: ymd(r.end), view: S.view };
     if (S.view === 'me' && !SHARE) { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
+    if (S.view === 'team' && !SHARE && whoId()) params.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
     if (!SHARE) params.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
     S.loading = true;
     api('events', { params: params }).then(function (j) {
@@ -238,12 +252,14 @@
 
   function eventLabel(e, first) {
     var t;
-    if (e.kind === 'off') {
+    if (e.kind === 'off' && SHARE && SHARE.kind === 'family') {
+      t = '休み'; // 家族用の共有には、名前も休みの種類も出さない
+    } else if (e.kind === 'off') {
       t = e.owner_name + ' ' + (e.tag || '休み');
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    return (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
+    return (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
   /* 土日祝か（会社の休業日を含む。祝日は読み込んだ範囲の分だけ分かる） */
@@ -286,7 +302,7 @@
 
   function barFor(g, days) {
     var e = g.ev;
-    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.important ? ' imp' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2),
       text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
@@ -307,7 +323,7 @@
 
   /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
   function plainBar(e, ds) {
-    return el('div', { role: 'button', tabindex: '0', class: 'bar plain ' + e.kind,
+    return el('div', { role: 'button', tabindex: '0', class: 'bar plain ' + e.kind + (e.important ? ' imp' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
   }
@@ -485,6 +501,7 @@
     var et = timeInput('end_time', ev ? ev.end_time : '');
     var note = el('textarea', { name: 'note', maxlength: '500' });
     note.value = ev ? ev.note : '';
+    var impCb = el('input', { type: 'checkbox', name: 'important', checked: !!(ev && ev.important), style: 'width:auto' });
     var hint = el('p', { class: 'hint' });
     var famTouched = false;
     var famCb = el('input', { type: 'checkbox', name: 'family_shared', checked: ev ? ev.family_shared !== false : true, style: 'width:auto', onchange: function () { famTouched = true; } });
@@ -559,7 +576,7 @@
       err.hidden = true;
       var body = {
         id: ev ? ev.id : null, kind: curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
-        start_time: timeVal(st), end_time: timeVal(et), note: note.value
+        start_time: timeVal(st), end_time: timeVal(et), note: note.value, important: impCb.checked
       };
       // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
       if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
@@ -585,6 +602,7 @@
       el('div', { class: 'row' }, tagLabel, ownerLabel),
       el('div', { class: 'row' }, el('label', null, '開始日', start), el('label', null, '終了日', end)),
       el('div', { class: 'row' }, el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
+      el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする（カレンダーで目立たせる）'),
       el('label', null, 'メモ（任意）', note),
       famLabel,
       famNote,
@@ -1213,6 +1231,7 @@
     if (ev.start_time) rows.push(['時刻', ev.start_time + (ev.end_time ? ' 〜 ' + ev.end_time : '')]);
     if (ev.tag) rows.push(['分類', ev.tag]);
     rows.push(['持ち主', ev.owner_name]);
+    if (ev.important) rows.push(['重要', '★ 重要な予定']);
     if (ev.note) rows.push(['メモ', ev.note]);
     var dl = el('dl', { class: 'detail' }, rows.map(function (r) { return [el('dt', { text: r[0] }), el('dd', { text: r[1] })]; }));
     var ov = openModal('予定の詳細', el('div', { class: 'form' }, dl,
@@ -1561,6 +1580,7 @@
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
     S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
     S.listWork = store('sched.listWork') === true;
+    S.who = store('sched.who') || 'all';
     var start = function () { renderShell(); load(); startAutoRefresh(); };
     if (me.user.must_change_password) {
       root.textContent = '';

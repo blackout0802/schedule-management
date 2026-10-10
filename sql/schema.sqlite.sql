@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS events (
   ym TEXT NULL,
   detached INTEGER NOT NULL DEFAULT 0,
   family_shared INTEGER NOT NULL DEFAULT 1,
+  important INTEGER NOT NULL DEFAULT 0,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

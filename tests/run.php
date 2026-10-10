@@ -362,6 +362,35 @@ check('月のまとめ: 会社の休業日は営業日から引かれる', (func
 check('休みの分類に「欠勤」がある', in_array('欠勤', allowed_tags('off'), true), true);
 q("DELETE FROM events WHERE owner_id IN (?, ?)", [$sumU['id'], $sumO['id']]);
 
+// ---- 業務版: 表示する人（全社 / 個人） ----
+$wA = $mk($a, ['kind' => 'work', 'title' => '表示A', 'tag' => '定例業務', 'start' => '2027-03-02', 'end' => '2027-03-02']);
+$wB = $mk($b, ['kind' => 'work', 'title' => '表示B', 'tag' => '定例業務', 'start' => '2027-03-02', 'end' => '2027-03-02']);
+$wBo = $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-03-03', 'end' => '2027-03-03']);
+$wBp = $mk($b, ['kind' => 'private', 'title' => '表示B私用', 'start' => '2027-03-02', 'end' => '2027-03-02']);
+$titles = function (array $l) { $t = array_column($l, 'title'); sort($t); return $t; };
+check('表示する人: 全社なら、全員の業務・休み（プライベートは無し）', $titles(list_events($a, '2027-03-01', '2027-03-31', 'team')), ['休み', '表示A', '表示B']);
+check('表示する人: 特定の社員だけ（その人の業務と休み。プライベートは出ない）', $titles(list_events($a, '2027-03-01', '2027-03-31', 'team', ['who' => (int)$b['id']])), ['休み', '表示B']);
+check('表示する人: 自分を選べば、自分の分だけ', $titles(list_events($a, '2027-03-01', '2027-03-31', 'team', ['who' => (int)$a['id']])), ['表示A']);
+check('表示する人: 存在しない社員なら、空', list_events($a, '2027-03-01', '2027-03-31', 'team', ['who' => 99999]), []);
+check('表示する人: 管理者でも、他人のプライベートは出ない', in_array('表示B私用', array_column(list_events($admin, '2027-03-01', '2027-03-31', 'team', ['who' => (int)$b['id']]), 'title'), true), false);
+q("DELETE FROM events WHERE start_date >= '2027-03-01' AND start_date <= '2027-03-31'");
+
+// ---- 重要な予定 ----
+$impNew = $mk($a, ['kind' => 'work', 'title' => '重要テスト', 'tag' => '定例業務', 'start' => '2027-04-05', 'end' => '2027-04-05', 'important' => 1]);
+check('重要: 登録時に重要にできる', [(int)$impNew['important'], event_for_client($impNew, $a)['important']], [1, true]);
+check('重要: 指定しなければ、重要ではない', (int)$mk($a, ['kind' => 'work', 'title' => '普通', 'tag' => '定例業務', 'start' => '2027-04-06', 'end' => '2027-04-06'])['important'], 0);
+[$dUp] = validate_event_input(['kind' => 'work', 'title' => '重要テスト(改)', 'tag' => '定例業務', 'start' => '2027-04-05', 'end' => '2027-04-05'], $a); // important を送らない更新
+$impUp = save_event($dUp, $a, $impNew);
+check('重要: 更新で指定がなければ、そのまま保たれる', (int)$impUp['important'], 1);
+[$dOff] = validate_event_input(['kind' => 'work', 'title' => '重要テスト(改)', 'tag' => '定例業務', 'start' => '2027-04-05', 'end' => '2027-04-05', 'important' => false], $a);
+check('重要: 外せる', (int)save_event($dOff, $a, $impUp)['important'], 0);
+[$dOn] = validate_event_input(['kind' => 'work', 'title' => '重要テスト(改)', 'tag' => '定例業務', 'start' => '2027-04-05', 'end' => '2027-04-05', 'important' => true], $admin);
+check('重要: 管理者も、他の人の予定を重要にできる', (int)save_event($dOn, $admin, row('SELECT * FROM events WHERE id = ?', [$impNew['id']]))['important'], 1);
+[$dupC] = duplicate_event(row('SELECT * FROM events WHERE id = ?', [$impNew['id']]), ['2027-04-12'], $a);
+check('重要: 複製しても、重要のまま', (int)$dupC[0]['important'], 1);
+check('重要: 他の社員の画面にも、重要として届く', (function () use ($b) { foreach (list_events($b, '2027-04-01', '2027-04-30', 'team') as $e) { if ($e['title'] === '重要テスト(改)' && $e['start'] === '2027-04-05') return $e['important']; } return null; })(), true);
+q("DELETE FROM events WHERE start_date >= '2027-04-01' AND start_date <= '2027-04-30'");
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');
@@ -439,6 +468,12 @@ $famL = share_link_find(share_link_create('family', $a)['token']);
 $fam1 = function () use ($famL, $fd) { return array_column(share_events($famL, $fd, $fd), 'title'); };
 check('既存予定の共有: 初期状態では、業務・休みは家族に見えない', in_array('共有しない業務', $fam1(), true) || in_array('休み', $fam1(), true), false);
 check('既存予定の共有: チェックした業務だけが家族に見える', $fam1(), ['個別に共有する業務']);
+$fo2 = $mk($a, ['kind' => 'off', 'title' => '家族旅行', 'tag' => '欠勤', 'start' => $fd, 'family_shared' => 1]);
+$famOff = array_values(array_filter(share_events($famL, $fd, $fd), function ($e) { return $e['kind'] === 'off'; }));
+check('家族用: 休みは、種類（有給・欠勤）も件名も出さず、単に「休み」', [$famOff[0]['title'], $famOff[0]['tag']], ['休み', '']);
+$compOff = array_values(array_filter(share_events(share_link_find(share_link_create('company', $admin)['token']), $fd, $fd), function ($e) { return $e['kind'] === 'off' && $e['owner_id'] === (int)$GLOBALS['a']['id']; }));
+check('会社用: 休みは、今までどおり分類つき（有給・欠勤）', array_column($compOff, 'tag') === ['有給', '欠勤'] || array_column($compOff, 'tag') === ['欠勤', '有給'], true);
+q('DELETE FROM events WHERE id = ?', [$fo2['id']]);
 [$ed] = validate_event_input(['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => $fd, 'family_shared' => 1], $a);
 save_event($ed, $a, $fw1);
 check('既存予定の共有: 既存の業務を編集してチェックすると、すぐ家族に見える', in_array('共有しない業務', $fam1(), true), true);

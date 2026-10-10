@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS events (
   ym CHAR(7) NULL,
   detached TINYINT NOT NULL DEFAULT 0,
   family_shared TINYINT NOT NULL DEFAULT 1,
+  important TINYINT NOT NULL DEFAULT 0,
   created_by INT UNSIGNED NOT NULL,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,

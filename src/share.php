@@ -115,11 +115,13 @@ function share_events(array $link, string $from, string $to): array
     }
     $withNote = $link['kind'] === 'family';
     return array_map(function ($e) use ($withNote) {
+        // 家族には、休みの種類（有給・欠勤など）や件名は見せず、単に「休み」とだけ見せる
+        $plainOff = $withNote && $e['kind'] === 'off';
         return [
-            'id' => (int)$e['id'], 'title' => $e['title'], 'kind' => $e['kind'], 'tag' => $e['tag'],
+            'id' => (int)$e['id'], 'title' => $plainOff ? '休み' : $e['title'], 'kind' => $e['kind'], 'tag' => $plainOff ? '' : $e['tag'],
             'start' => $e['start_date'], 'end' => $e['end_date'], 'start_time' => $e['start_time'], 'end_time' => $e['end_time'],
             'note' => $withNote ? $e['note'] : '', 'owner_id' => (int)$e['owner_id'], 'owner_name' => $e['owner_name'],
-            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'editable' => false,
+            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'important' => (int)$e['important'] === 1, 'editable' => false,
         ];
     }, $list);
 }

@@ -171,7 +171,7 @@ function handle_api(): void
             $tags = isset($_GET['tags']) && $_GET['tags'] !== '' ? explode(',', (string)$_GET['tags']) : [];
             $holidays = holiday_map($from, $to);
             $out = [
-                'events' => list_events($user, $from, $to, $view, ['tags' => $tags, 'showOff' => ($_GET['off'] ?? '1') === '1']),
+                'events' => list_events($user, $from, $to, $view, ['tags' => $tags, 'showOff' => ($_GET['off'] ?? '1') === '1', 'who' => ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0]),
                 'holidays' => $holidays,
                 'rev' => $rev,
             ];

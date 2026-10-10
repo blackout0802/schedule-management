@@ -34,7 +34,7 @@ function allowed_tags(string $kind): array
 /**
  * 画面に返す予定の一覧。
  * @param string $view 'team'（業務版）または 'me'（プライベート版）
- * @param array  $opts ['tags' => 表示する業務タグ, 'showOff' => 同僚の休みを出すか]
+ * @param array  $opts ['tags' => 表示する業務タグ, 'showOff' => 同僚の休みを出すか, 'who' => 業務版で、特定の社員のid（なければ全社）]
  */
 function list_events(array $user, string $from, string $to, string $view, array $opts = []): array
 {
@@ -42,6 +42,10 @@ function list_events(array $user, string $from, string $to, string $view, array 
     if ($view === 'team') {
         // 業務版: プライベート予定は条件にすら含めない
         $where = "kind IN ('work','off')";
+        if (!empty($opts['who'])) { // 特定の社員だけ（全社を見ているときは指定なし）
+            $where .= ' AND e.owner_id = ?';
+            $params[] = (int)$opts['who'];
+        }
     } else {
         $tags = array_values(array_intersect($opts['tags'] ?? cfg('work_tags'), cfg('work_tags')));
         $parts = ["(kind = 'private' AND owner_id = ?)"];
@@ -87,6 +91,7 @@ function event_for_client(array $e, array $user): array
         'note' => $e['note'],
         'owner_id' => (int)$e['owner_id'],
         'family_shared' => (int)$e['family_shared'] === 1,
+        'important' => (int)($e['important'] ?? 0) === 1,
         'owner_name' => $e['owner_name'] ?? '',
         'recurring' => $e['series_id'] !== null,
         'series_id' => $e['series_id'] !== null ? (int)$e['series_id'] : null,
@@ -159,6 +164,8 @@ function validate_event_input(array $in, array $user): array
         'start_time' => $st, 'end_time' => $et, 'note' => $note, 'owner_id' => $owner,
         // プライベートの予定だけが対象。指定がなければ「家族に共有する」
         'family_shared' => family_flag($kind, $in),
+        // 「重要」（カレンダーで目立たせる）。指定がなければ、いまの状態のまま
+        'important' => array_key_exists('important', $in) ? (empty($in['important']) ? 0 : 1) : null,
     ], null];
 }
 
@@ -170,16 +177,16 @@ function save_event(array $data, array $user, ?array $existing): array
         if ((int)$existing['owner_id'] !== (int)$user['id']) {
             $data['family_shared'] = (int)$existing['family_shared']; // 家族への共有は持ち主だけが決める（管理者の編集では変えない）
         }
-        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, detached=?, updated_at=? WHERE id=?', [
+        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, detached=?, updated_at=? WHERE id=?', [
             $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'], $data['note'],
-            $data['family_shared'] ?? 1, $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
+            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
         ]);
         $id = (int)$existing['id'];
     } else {
-        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,series_id,ym,detached,created_by,created_at,updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
+        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,series_id,ym,detached,created_by,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
             $data['owner_id'], $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'],
-            $data['note'], $data['family_shared'] ?? 1, $user['id'], now_str(), now_str(),
+            $data['note'], $data['family_shared'] ?? 1, $data['important'] ?? 0, $user['id'], now_str(), now_str(),
         ]);
         $id = (int)db()->lastInsertId();
     }
@@ -222,7 +229,7 @@ function duplicate_event(array $src, array $dates, array $user): array
         $created[] = save_event([
             'kind' => $src['kind'], 'title' => $src['title'], 'tag' => $src['tag'], 'start' => $d, 'end' => $end,
             'start_time' => $src['start_time'], 'end_time' => $src['end_time'], 'note' => $src['note'], 'owner_id' => (int)$src['owner_id'],
-            'family_shared' => (int)$src['family_shared'],
+            'family_shared' => (int)$src['family_shared'], 'important' => (int)$src['important'],
         ], $user, null);
     }
     return [$created, $skipped];

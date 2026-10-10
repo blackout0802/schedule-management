@@ -268,3 +268,14 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (max-width: 640px) { .ms-grid { grid-template-columns: 1fr; } }
 
 .list-opt { margin: 0 0 8px; font-size: 13px; }
+
+/* 業務版: 表示する人の切り替え */
+.who { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.who select { width: auto; padding: 5px 8px; font-size: 14px; }
+
+/* 重要な予定: 色を塗りつぶして、太字＋★で目立たせる */
+.bar.imp { font-weight: 700; box-shadow: 0 0 0 1px currentColor inset; }
+.bar.work.imp { background: var(--work); color: var(--surface); box-shadow: none; }
+.bar.off.imp { background: var(--off); color: var(--surface); box-shadow: none; }
+.bar.private.imp { background: var(--private); color: var(--surface); box-shadow: none; }
+.imp-opt { font-weight: 600; }
