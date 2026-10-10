@@ -142,10 +142,37 @@
   ];
   var COLOR_NAMES = ['赤', '朱', '橙', '黄', '黄緑', '若草', '緑', '青緑', '水', '空', '青', '藍', '青紫', '紫', '赤紫', '桃', '灰'];
   var TONE_NAMES = ['淡い', '標準', '鮮やか'];
-  /* 選んだ色は、帯の背景の色になる（明るい色を選べる）。文字は、背景に合わせて、濃い色か白を自動で選ぶ。 */
-  var INK_DARK = '#142033';
+  /* 選んだ色は、帯の背景の色になる（明るい色を選べる）。文字の色は、背景の色と連動して決まる:
+     背景と同じ色相で、十分に読める濃さ（明るい背景なら濃い色、暗い背景なら淡い色）。 */
   function hexRgb(hex) { var n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
-  function inkFor(hex) { return contrastRatio(hexRgb(hex), hexRgb(INK_DARK)) >= contrastRatio(hexRgb(hex), [255, 255, 255]) ? INK_DARK : '#ffffff'; }
+  function rgbHex(rgb) { return '#' + rgb.map(function (v) { return ('0' + Math.round(v).toString(16)).slice(-2); }).join(''); }
+  function rgbToHsl(rgb) {
+    var r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, h = 0, sat = 0;
+    if (mx !== mn) {
+      var d = mx - mn;
+      sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+      h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+    }
+    return [h, sat, l];
+  }
+  function hslToRgb(h, sat, l) {
+    var c = (1 - Math.abs(2 * l - 1)) * sat, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; } else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  }
+  function inkFor(hex) {
+    var bg = hexRgb(hex), hsl = rgbToHsl(bg), sat = Math.min(0.75, hsl[1]);
+    var light = contrastRatio(bg, [255, 255, 255]) > contrastRatio(bg, [20, 32, 51]); // 暗い背景には、淡い文字
+    var best = null, bestC = 0;
+    for (var k = 0; k <= 40; k++) {
+      var l = light ? 0.8 + k * 0.005 : 0.36 - k * 0.008;
+      var rgb = hslToRgb(hsl[0], sat, Math.max(0, Math.min(1, l))), c = contrastRatio(bg, rgb);
+      if (c > bestC) { best = rgb; bestC = c; }
+      if (c >= 7) return rgbHex(rgb); // 読みやすさの目安（7以上）を満たす、いちばん背景に近い（色味の残る）濃さ
+    }
+    return rgbHex(best);
+  }
   /* 色の設定から、CSSの変数（--ub-* 背景、--uc-* 文字、--ur-* 重要な予定の縁取り）を作る。未設定の項目は作らない（標準の色になる） */
   function colorVars(colors) {
     var v = {};
