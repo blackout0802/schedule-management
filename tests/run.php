@@ -5,7 +5,7 @@ $tmp = sys_get_temp_dir() . '/sched_test_' . getmypid();
 // 既定は SQLite。MySQL/MariaDB で試す場合: SCHEDULE_TEST_DSN='mysql:host=localhost;dbname=xxx;charset=utf8mb4' SCHEDULE_TEST_USER=.. SCHEDULE_TEST_PASS=.. php tests/run.php
 $dsn = getenv('SCHEDULE_TEST_DSN') ?: "sqlite:$tmp/t.sqlite";
 $dbCfg = var_export(['dsn' => $dsn, 'user' => getenv('SCHEDULE_TEST_USER') ?: null, 'pass' => getenv('SCHEDULE_TEST_PASS') ?: null], true);
-file_put_contents($tmp . '/config.php', "<?php return ['db' => $dbCfg, 'slack_webhook' => ''];");
+file_put_contents($tmp . '/config.php', "<?php return ['db' => $dbCfg, 'slack_webhook' => '', 'base_url' => 'https://example.test/public/index.php'];");
 putenv('SCHEDULE_CONFIG=' . $tmp . '/config.php');
 
 require_once __DIR__ . '/../src/bootstrap.php';
@@ -504,6 +504,18 @@ check('Slack: 画面の登録を消すと、config.php の設定に戻る', [sla
 check('Slack: 送り先が無いとき、テスト送信は失敗として詳細を返す', (function () { $r = slack_post_detailed('x'); return [$r['ok'], $r['error'] !== '']; })(), slack_enabled() ? [false, true] : [false, true]);
 check('Slack: テスト文面（接続確認）にアプリ名・送信者が入る', (function () use ($a) { $m = slack_test_message('simple', $a); return strpos($m, 'テスト') !== false && strpos($m, $a['name']) !== false; })(), true);
 check('Slack: テスト文面（見本）は、実際の「休みの登録」と同じ形（メンション付き）', (function () use ($a) { $m = slack_test_message('sample', array_merge($a, ['slack_id' => 'U01ABCDEF23'])); return strpos($m, '【休みの登録】') !== false && strpos($m, '<@U01ABCDEF23>') !== false && strpos($m, 'テスト') !== false; })(), true);
+
+$tok = static function (): string { $l = row("SELECT token FROM share_links WHERE kind = 'company' AND owner_id = 0"); return $l ? $l['token'] : ''; };
+q("DELETE FROM share_links WHERE kind = 'company'");
+check('Slack: 会社用リンクが無いときは、ログイン後に業務版が開く入口', [slack_open_url(), slack_link_kind()], ['https://example.test/public/index.php?view=team', 'login']);
+$lk = share_link_create('company', array_merge($a, ['role' => 'admin']));
+check('Slack: 会社用リンクがあれば、通知のリンクはそれ（ログイン不要の業務版）', [slack_open_url(), slack_link_kind(), strpos(slack_link_suffix(), '<https://example.test/public/share.php?t=' . $lk['token'] . '|スケジュールを開く>') !== false], ['https://example.test/public/share.php?t=' . $lk['token'], 'company', true]);
+$old = $lk['token'];
+$lk = share_link_create('company', array_merge($a, ['role' => 'admin']));
+check('Slack: 会社用リンクを作り直すと、通知のリンクも新しいものになる', [slack_open_url() === 'https://example.test/public/share.php?t=' . $lk['token'], $old !== $lk['token']], [true, true]);
+share_link_revoke('company', array_merge($a, ['role' => 'admin']));
+check('Slack: 会社用リンクを止めると、入口に戻る', slack_link_kind(), 'login');
+check('Slack: 見本の通知にも、同じリンクが付く', strpos(slack_test_message('sample', $a), 'view=team|スケジュールを開く>') !== false, true);
 
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');

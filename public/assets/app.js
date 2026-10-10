@@ -1923,7 +1923,9 @@
         err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: url.value ? '保存' : '保存（空なら登録を消す）' }))));
       body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1, t2), result));
       if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。上の欄に Webhook URL を入れて保存してください。' }));
-      if (!st.base_url) body.appendChild(el('p', { class: 'hint', text: '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
+      body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
+        : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
+        : '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
       body.appendChild(el('p', { class: 'hint', text: '通知で本人にメンションを付けるには、「社員の管理」で、各社員の Slack メンバーID（U から始まる英数字）を登録してください。' }));
       body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     }
@@ -2113,6 +2115,10 @@
     S.tags = f && Array.isArray(f.tags) ? f.tags.filter(function (t) { return me.work_tags.indexOf(t) >= 0; }) : me.work_tags.filter(function (t) { return t !== '個人作業'; });
     S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
+    if (/[?&]view=team(&|$)/.test(location.search)) { // 通知のリンクから開いたときは、必ず業務版
+      S.view = 'team'; store('sched.view', 'team');
+      try { history.replaceState(null, '', location.pathname); } catch (e) { /* 履歴を触れなくても、表示には影響しない */ }
+    }
     S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
     S.listWork = store('sched.listWork') === true;
     S.who = store('sched.who') || 'all';

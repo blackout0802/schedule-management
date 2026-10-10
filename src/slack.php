@@ -52,7 +52,7 @@ function slack_status(): array
         $p = parse_url($url);
         $mask = ($p['scheme'] ?? 'https') . '://' . ($p['host'] ?? '') . '/…' . substr($url, -4);
     }
-    return ['configured' => $url !== '', 'source' => $ui !== '' ? 'ui' : ($cfg !== '' ? 'config' : 'none'), 'masked' => $mask, 'base_url' => (string)cfg('base_url', '') !== ''];
+    return ['configured' => $url !== '', 'source' => $ui !== '' ? 'ui' : ($cfg !== '' ? 'config' : 'none'), 'masked' => $mask, 'base_url' => (string)cfg('base_url', '') !== '', 'link' => slack_link_kind()];
 }
 
 /**
@@ -138,10 +138,51 @@ function slack_person(array $u): string
     return !empty($u['slack_id']) ? '<@' . $u['slack_id'] . '>' : $u['name'];
 }
 
+/** 通知のリンク先の、元になるフォルダのURL（base_url の末尾の index.php などは外し、最後を / にそろえる） */
+function slack_base_dir(): string
+{
+    $base = trim((string)cfg('base_url', ''));
+    if ($base === '') {
+        return '';
+    }
+    $base = preg_replace('#/[^/]*\.php$#', '/', $base);
+    return rtrim($base, '/') . '/';
+}
+
+/**
+ * 通知の「スケジュールを開く」の飛び先。
+ *   会社用の共有リンクがあれば、それ（ログインなしで、業務版のカレンダーを見られる）
+ *   なければ、ログイン後に業務版が開く入口（index.php?view=team）
+ *   base_url が空なら、リンクなし
+ */
+function slack_open_url(): string
+{
+    $dir = slack_base_dir();
+    if ($dir === '') {
+        return '';
+    }
+    try {
+        $l = row('SELECT token FROM share_links WHERE kind = ? AND owner_id = 0', ['company']);
+    } catch (Throwable $e) {
+        $l = null;
+    }
+    if ($l && preg_match('/^[a-f0-9]{48}$/', (string)$l['token'])) {
+        return $dir . 'share.php?t=' . $l['token'];
+    }
+    return $dir . 'index.php?view=team';
+}
+
+/** 'company'（会社用リンク）／'login'（ログインして業務版）／'none'（リンクなし） */
+function slack_link_kind(): string
+{
+    $u = slack_open_url();
+    return $u === '' ? 'none' : (strpos($u, 'share.php?t=') !== false ? 'company' : 'login');
+}
+
 function slack_link_suffix(): string
 {
-    $base = (string)cfg('base_url', '');
-    return $base !== '' ? "\n<{$base}|スケジュールを開く>" : '';
+    $u = slack_open_url();
+    return $u !== '' ? "\n<{$u}|スケジュールを開く>" : '';
 }
 
 function off_line(array $e, string $who): string
