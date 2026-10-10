@@ -28,7 +28,7 @@ try {
     }
     $action = (string)($_GET['action'] ?? '');
     if ($action === 'rev') {
-        share_out(['rev' => data_rev()]);
+        share_out(['rev' => data_rev(), 'build' => app_build()]);
     }
     if ($action === 'meta') {
         share_out(['kind' => $link['kind'], 'title' => share_title($link), 'app_name' => cfg('app_name')]);

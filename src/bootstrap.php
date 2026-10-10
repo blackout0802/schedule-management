@@ -37,6 +37,12 @@ function app_config(): array
     return $cfg;
 }
 
+/** いま動いているアプリの版（更新のたびに変わる）。開いたままの画面が、更新に気づいて自動で開き直すために使う */
+function app_build(): string
+{
+    return APP_VERSION . '.' . (@filemtime(__DIR__ . '/version.php') ?: 0);
+}
+
 /** 画面の自動更新の間隔（ミリ秒）。0 なら自動更新しない */
 function poll_ms(): int
 {

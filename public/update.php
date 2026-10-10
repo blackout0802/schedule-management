@@ -19,6 +19,7 @@ $csrf = csrf_token();
 $msg = '';
 $err = '';
 $result = null;
+$restored = false;
 $appDir = SCHEDULE_APP_DIR;
 $publicDir = __DIR__;
 
@@ -39,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (($_POST['action'] ?? '') === 'restore') {
                 $n = updater_restore((string)($_POST['backup'] ?? ''), $publicDir, $appDir);
                 $msg = 'バックアップ（' . h($_POST['backup']) . '）の状態に戻しました（' . $n . ' 個のファイル）。';
+                $restored = true;
             }
         } catch (UpdaterException $e) {
             $err = $e->getMessage();
@@ -68,12 +70,16 @@ $hasZip = class_exists('ZipArchive');
 
   <?php if ($err): ?><p class="error" role="alert"><?= h($err) ?></p><?php endif; ?>
   <?php if ($msg): ?><p class="notice" role="status"><?= $msg ?></p><?php endif; ?>
+  <?php if ($restored): ?>
+    <p><a class="btn primary" href="index.php" id="reopen">今すぐ画面を開き直す</a>　<span class="hint" id="reopen-note">5秒後に、自動で開き直します。</span></p>
+  <?php endif; ?>
   <?php if ($result && $result['changed']): ?>
     <div class="card">
       <b>更新したファイル</b>
       <ul><?php foreach ($result['changed'] as $c): ?><li><code><?= h($c) ?></code></li><?php endforeach; ?></ul>
       <p class="hint">変更なし: <?= (int)$result['unchanged'] ?> 個／対象外として飛ばしたもの: <?= (int)$result['skipped'] ?> 個</p>
-      <p><a class="btn primary" href="index.php">画面を開き直す</a>　<span class="hint">表示が古いままのときは、Ctrl + F5 で強制再読み込みしてください。</span></p>
+      <p><a class="btn primary" href="index.php" id="reopen">今すぐ画面を開き直す</a>　<span class="hint" id="reopen-note">5秒後に、自動で開き直します。</span></p>
+      <noscript><meta http-equiv="refresh" content="5;url=index.php"></noscript>
     </div>
   <?php endif; ?>
 
@@ -114,6 +120,15 @@ $hasZip = class_exists('ZipArchive');
   </section>
 </main>
 <script nonce="<?= csp_nonce() ?>">
+var reopen = document.getElementById('reopen');
+if (reopen) { // 更新できたら、数秒後に自動で、新しい画面を開き直す（開いたままの他の画面も、自動で追いつく）
+  var left = 5, note = document.getElementById('reopen-note');
+  var tick = setInterval(function () {
+    left--;
+    if (left <= 0) { clearInterval(tick); location.href = 'index.php'; return; }
+    note.textContent = left + '秒後に、自動で開き直します。';
+  }, 1000);
+}
 var rf = document.getElementById('restore-form');
 if (rf) rf.addEventListener('submit', function (e) { if (!window.confirm('選んだ時点の状態に戻します。よろしいですか？')) e.preventDefault(); });
 </script>

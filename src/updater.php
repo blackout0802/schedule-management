@@ -198,6 +198,8 @@ function updater_apply(string $zipPath, string $publicDir, string $appDir): arra
             @unlink($old);
         }
         try {
+            // 版の印（src/version.php）は最後に書く。開いたままの画面は、これが変わると自動で開き直すので、他のファイルがそろってからにする
+            uksort($todo, function ($a, $b) { return ($a === 'src/version.php') <=> ($b === 'src/version.php'); });
             foreach ($todo as $f) {
                 updater_write($f['target'], $f['code']);
             }

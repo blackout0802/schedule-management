@@ -360,6 +360,16 @@ check('月のまとめ: 別の月には影響しない', month_summary($sumU, '2
 check('月のまとめ: 他人の分は、他人の画面だけ', month_summary($sumO, '2026-11')['off_days'], 2.0);
 check('月のまとめ: 会社の休業日は営業日から引かれる', (function () use ($sumU) { q("INSERT INTO company_holidays (hdate, name) VALUES ('2026-11-27', '創立記念日')"); $r = month_summary($sumU, '2026-11')['biz_days']; q("DELETE FROM company_holidays WHERE hdate = '2026-11-27'"); return $r; })(), 18);
 check('休みの分類に「欠勤」がある', in_array('欠勤', allowed_tags('off'), true), true);
+$multi = month_summary_multi([['id' => $sumU['id'], 'name' => '集計'], ['id' => $sumO['id'], 'name' => '集計他']], '2026-11');
+check('月のまとめ（複数人）: 社員ごとに、出勤日・休みの日数が出る', array_map(function ($p) { return [$p['name'], $p['work_days'], $p['off_days']]; }, $multi['people']), [['集計', 13.0, 6.0], ['集計他', 17.0, 2.0]]);
+check('月のまとめ（複数人）: 営業日は全員共通', $multi['biz_days'], 19);
+check('月のまとめ（複数人）: 本人の内訳は、他の人と混ざらない', array_column($multi['people'][1]['by_tag'], 'days', 'tag'), ['有給' => 2.0, '欠勤' => 0.0]);
+$sumNames = function (array $l) { return array_column($l, 'name'); };
+$allSum = summary_users($sumO, 'team', 0);
+check('月のまとめに出す人: 業務版で全社なら、全社員（自分が先頭）', [$allSum[0]['id'], count($allSum) === (int)row('SELECT COUNT(*) AS c FROM users WHERE active = 1')['c']], [(int)$sumO['id'], true]);
+check('月のまとめに出す人: 社員を選んだら、その人だけ', array_column(summary_users($sumO, 'team', (int)$sumU['id']), 'id'), [(int)$sumU['id']]);
+check('月のまとめに出す人: プライベート版は、自分だけ', array_column(summary_users($sumO, 'me', 0), 'id'), [(int)$sumO['id']]);
+check('月のまとめに出す人: 停止中の社員は出ない', (function () use ($sumU, $sumO) { q('UPDATE users SET active = 0 WHERE id = ?', [$sumU['id']]); $r = array_column(summary_users($sumO, 'team', 0), 'id'); q('UPDATE users SET active = 1 WHERE id = ?', [$sumU['id']]); return in_array((int)$sumU['id'], $r, true); })(), false);
 q("DELETE FROM events WHERE owner_id IN (?, ?)", [$sumU['id'], $sumO['id']]);
 
 // ---- 業務版: 表示する人（全社 / 個人） ----

@@ -252,20 +252,19 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
   table.t.stack td:nth-child(5) { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
 }
 
-/* カレンダーの下の、月のまとめ */
-.month-sum { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
-.month-sum h3 { margin: 0; font-size: 14px; }
-.ms-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.ms-box { display: grid; gap: 2px; align-content: start; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); min-width: 0; }
-.ms-box.work { background: var(--work-soft); } .ms-box.off { background: var(--off-soft); }
-.ms-l { font-size: 12px; color: var(--muted); }
-.ms-n { font-size: 22px; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.ms-box.work .ms-n { color: var(--work); } .ms-box.off .ms-n { color: var(--off); }
-.ms-note { font-size: 11px; color: var(--muted); }
-.ms-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-.ms-tag { font-size: 12px; padding: 0 8px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.ms-tag.absent { border-color: var(--danger); color: var(--danger); }
-@media (max-width: 640px) { .ms-grid { grid-template-columns: 1fr; } }
+/* カレンダーの下の、月のまとめ（社員ごとに1行） */
+.month-sum { margin-top: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: grid; gap: 4px; }
+.month-sum h3 { margin: 0; font-size: 13px; display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
+.ms-biz { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.ms-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ms-table th, .ms-table td { padding: 2px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.ms-table thead th { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+.ms-table tbody tr:last-child th, .ms-table tbody tr:last-child td { border-bottom: 0; }
+.ms-table th[scope=row], .ms-table thead th:first-child { text-align: left; font-weight: 600; }
+.ms-table td.etc, .ms-table thead th:last-child { text-align: left; color: var(--muted); }
+.ms-table td.work { color: var(--work); font-weight: 700; } .ms-table td.off { color: var(--off); font-weight: 700; }
+.ms-table td.absent { color: var(--danger); font-weight: 700; }
+.ms-table tr.me { background: var(--surface-2); }
 
 .list-opt { margin: 0 0 8px; font-size: 13px; }
 

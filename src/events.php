@@ -494,11 +494,12 @@ function holiday_map(string $from, string $to): array
 }
 
 /**
- * その月の、自分の出勤日・休みの日数。営業日は「平日で、祝日・会社の休業日でない日」。
+ * その月の、指定した社員たちの出勤日・休みの日数。営業日は「平日で、祝日・会社の休業日でない日」。
  * 休みは営業日の分だけ数える（土日祝にまたがる休みは、平日の分だけ）。午前・午後の半休は0.5日。
- * @return array{month:string,biz_days:int,off_days:float,work_days:float,by_tag:array<int,array{tag:string,days:float}>}
+ * @param array<int,array{id:int|string,name:string}> $users
+ * @return array{month:string,biz_days:int,people:array<int,array{id:int,name:string,off_days:float,work_days:float,by_tag:array<int,array{tag:string,days:float}>}>}
  */
-function month_summary(array $user, string $ym): array
+function month_summary_multi(array $users, string $ym): array
 {
     $first = $ym . '-01';
     $last = date('Y-m-t', strtotime($first));
@@ -510,34 +511,66 @@ function month_summary(array $user, string $ym): array
             $biz[$d] = true;
         }
     }
-    $perDay = [];
-    $perDayTag = [];
-    foreach (rows("SELECT tag, start_date, end_date FROM events WHERE kind = 'off' AND owner_id = ? AND start_date <= ? AND end_date >= ?", [$user['id'], $last, $first]) as $e) {
-        $tag = $e['tag'] !== '' ? $e['tag'] : '休み';
-        $w = mb_strpos($tag, '半休') !== false ? 0.5 : 1.0;
-        $from = max($e['start_date'], $first);
-        $to = min($e['end_date'], $last);
-        for ($t = strtotime($from), $end = strtotime($to); $t <= $end; $t = strtotime('+1 day', $t)) {
-            $d = date('Y-m-d', $t);
-            if (isset($biz[$d])) {
-                $perDay[$d] = min(1.0, ($perDay[$d] ?? 0.0) + $w); // 同じ日に午前・午後の半休が2つあっても、1日まで
-                $perDayTag[$tag][$d] = min(1.0, ($perDayTag[$tag][$d] ?? 0.0) + $w); // 同じ分類を重ねて登録しても、1日は1日
+    $people = [];
+    foreach ($users as $u) {
+        $perDay = [];
+        $perDayTag = [];
+        foreach (rows("SELECT tag, start_date, end_date FROM events WHERE kind = 'off' AND owner_id = ? AND start_date <= ? AND end_date >= ?", [$u['id'], $last, $first]) as $e) {
+            $tag = $e['tag'] !== '' ? $e['tag'] : '休み';
+            $w = mb_strpos($tag, '半休') !== false ? 0.5 : 1.0;
+            $from = max($e['start_date'], $first);
+            $to = min($e['end_date'], $last);
+            for ($t = strtotime($from), $end = strtotime($to); $t <= $end; $t = strtotime('+1 day', $t)) {
+                $d = date('Y-m-d', $t);
+                if (isset($biz[$d])) {
+                    $perDay[$d] = min(1.0, ($perDay[$d] ?? 0.0) + $w); // 同じ日に午前・午後の半休が2つあっても、1日まで
+                    $perDayTag[$tag][$d] = min(1.0, ($perDayTag[$tag][$d] ?? 0.0) + $w); // 同じ分類を重ねて登録しても、1日は1日
+                }
             }
         }
-    }
-    $byTag = array_map('array_sum', $perDayTag);
-    $off = array_sum($perDay);
-    $order = array_merge(cfg('off_tags'), ['休み']);
-    $list = [];
-    foreach ($order as $tag) {
-        // 有給と欠勤は、0日でも表示する（休みの内訳がひと目で分かるように）
-        if (isset($byTag[$tag]) || in_array($tag, ['有給', '欠勤'], true)) {
-            $list[] = ['tag' => $tag, 'days' => (float)($byTag[$tag] ?? 0.0)];
-            unset($byTag[$tag]);
+        $byTag = array_map('array_sum', $perDayTag);
+        $off = (float)array_sum($perDay);
+        $order = array_merge(cfg('off_tags'), ['休み']);
+        $list = [];
+        foreach ($order as $tag) {
+            // 有給と欠勤は、0日でも表示する（休みの内訳がひと目で分かるように）
+            if (isset($byTag[$tag]) || in_array($tag, ['有給', '欠勤'], true)) {
+                $list[] = ['tag' => $tag, 'days' => (float)($byTag[$tag] ?? 0.0)];
+                unset($byTag[$tag]);
+            }
         }
+        foreach ($byTag as $tag => $days) { // 設定から外れた分類で登録済みのもの
+            $list[] = ['tag' => (string)$tag, 'days' => (float)$days];
+        }
+        $people[] = ['id' => (int)$u['id'], 'name' => (string)$u['name'], 'off_days' => $off, 'work_days' => count($biz) - $off, 'by_tag' => $list];
     }
-    foreach ($byTag as $tag => $days) { // 設定から外れた分類で登録済みのもの
-        $list[] = ['tag' => (string)$tag, 'days' => (float)$days];
+    return ['month' => $ym, 'biz_days' => count($biz), 'people' => $people];
+}
+
+/**
+ * その月の、自分の出勤日・休みの日数（month_summary_multi の1人分）。
+ * @return array{month:string,biz_days:int,off_days:float,work_days:float,by_tag:array<int,array{tag:string,days:float}>}
+ */
+function month_summary(array $user, string $ym): array
+{
+    $m = month_summary_multi([['id' => $user['id'], 'name' => $user['name'] ?? '']], $ym);
+    $p = $m['people'][0];
+    return ['month' => $m['month'], 'biz_days' => $m['biz_days'], 'off_days' => $p['off_days'], 'work_days' => $p['work_days'], 'by_tag' => $p['by_tag']];
+}
+
+/**
+ * 月のまとめに出す社員。業務版で全社なら全社員（自分が先頭）、特定の社員を選んでいればその人だけ。プライベート版は自分だけ。
+ * @return array<int,array{id:int,name:string}>
+ */
+function summary_users(array $user, string $view, int $who): array
+{
+    $all = array_map(function ($u) { return ['id' => (int)$u['id'], 'name' => $u['name']]; }, rows('SELECT id, name FROM users WHERE active = 1 ORDER BY name'));
+    if ($view !== 'team') {
+        return [['id' => (int)$user['id'], 'name' => $user['name']]];
     }
-    return ['month' => $ym, 'biz_days' => count($biz), 'off_days' => (float)$off, 'work_days' => count($biz) - (float)$off, 'by_tag' => $list];
+    if ($who > 0) {
+        return array_values(array_filter($all, function ($u) use ($who) { return $u['id'] === $who; }));
+    }
+    usort($all, function ($a, $b) use ($user) { return ($b['id'] === (int)$user['id']) <=> ($a['id'] === (int)$user['id']); }); // 自分が先頭
+    return $all;
 }

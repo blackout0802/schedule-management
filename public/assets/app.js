@@ -391,20 +391,32 @@
     if (sum) board.appendChild(sum);
   }
 
-  /* カレンダーの下: その月の、自分の出勤日と休みの日数（休みは分類ごと） */
+  /* カレンダーの下: その月の出勤日と休みの日数。自分／全社員／選んだ社員（業務版で「表示する人」に合わせる）を、社員ごとに1行で */
   function fmtDays(n) { return (Math.round(n * 10) / 10) + '日'; }
   function monthSummary() {
     var m = S.summary;
-    if (SHARE || !m || m.month !== S.year + '-' + pad(S.month)) return null;
-    var tags = m.by_tag.map(function (t) { return el('span', { class: 'ms-tag' + (t.tag === '欠勤' && t.days > 0 ? ' absent' : ''), text: t.tag + ' ' + fmtDays(t.days) }); });
+    if (SHARE || !m || m.month !== S.year + '-' + pad(S.month) || !m.people || !m.people.length) return null;
+    var wid = S.view === 'team' ? whoId() : S.me.user.id;
+    var who = S.view === 'team' && !wid ? '全社員' : wid === S.me.user.id ? '自分' : whoName() + 'さん';
+    var tagDays = function (p, tag) { var t = p.by_tag.filter(function (x) { return x.tag === tag; })[0]; return t ? t.days : 0; };
+    var rows = m.people.map(function (p) {
+      var other = p.by_tag.filter(function (x) { return x.tag !== '有給' && x.tag !== '欠勤' && x.days > 0; }).map(function (x) { return x.tag + ' ' + fmtDays(x.days); }).join('・');
+      var abs = tagDays(p, '欠勤');
+      return el('tr', { class: p.id === S.me.user.id && m.people.length > 1 ? 'me' : '' },
+        el('th', { scope: 'row', text: p.name }),
+        el('td', { class: 'n work', text: fmtDays(p.work_days) }),
+        el('td', { class: 'n off', text: fmtDays(p.off_days) }),
+        el('td', { class: 'n', text: fmtDays(tagDays(p, '有給')) }),
+        el('td', { class: 'n' + (abs > 0 ? ' absent' : ''), text: fmtDays(abs) }),
+        el('td', { class: 'etc', text: other || '—' }));
+    });
     return el('section', { class: 'month-sum', 'aria-label': S.month + '月の出勤日と休みの日数' },
-      el('h3', { text: S.month + '月のまとめ（自分の分）' }),
-      el('div', { class: 'ms-grid' },
-        el('div', { class: 'ms-box work' }, el('span', { class: 'ms-l', text: '出勤日' }), el('b', { class: 'ms-n', text: fmtDays(m.work_days) })),
-        el('div', { class: 'ms-box off' }, el('span', { class: 'ms-l', text: '休みの日' }), el('b', { class: 'ms-n', text: fmtDays(m.off_days) }),
-          el('span', { class: 'ms-tags' }, tags)),
-        el('div', { class: 'ms-box' }, el('span', { class: 'ms-l', text: '営業日' }), el('b', { class: 'ms-n', text: fmtDays(m.biz_days) }), el('span', { class: 'ms-note', text: '土日祝・会社の休業日を除く' }))));
+      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' })),
+      el('div', { class: 'scroll-x' }, el('table', { class: 'ms-table' },
+        el('thead', null, el('tr', null, ['名前', '出勤日', '休み', '有給', '欠勤', 'その他の休み'].map(function (h) { return el('th', { scope: 'col', text: h }); }))),
+        el('tbody', null, rows))));
   }
+
 
   function renderWeek(days, todayStr) {
     var pack = weekSegments(days);
@@ -1531,7 +1543,23 @@
   var pollBusy = false;
   function canRefresh() { return !S.drag && !modals.length; }
   /* 予定とToDoは別々に判定し、古くなったほうだけを読み直す（自分が予定を更新したあとに、予定まで二重に読み直さない） */
+  /* アプリが更新されたら、開いたままの画面も自動で開き直す（入力中・ドラッグ中・ダイアログを開いている間は、終わるまで待つ） */
+  function maybeReload() {
+    if (!S.reloadPending) return false;
+    var a = document.activeElement;
+    var typing = a && ((a.tagName === 'INPUT' && a.type === 'text' && a.value !== '') || (a.tagName === 'TEXTAREA' && a.value !== ''));
+    if (!canRefresh() || typing) {
+      if (!S.reloadNotified) { S.reloadNotified = true; toast('新しい版に更新されました。入力が終わると、自動で開き直します'); }
+      return true;
+    }
+    flushMemo(); // 書きかけの日報メモを保存してから
+    toast('新しい版に更新されました。画面を開き直します');
+    S.reloadPending = false;
+    setTimeout(function () { location.reload(); }, 800);
+    return true;
+  }
   function maybeRefresh() {
+    if (maybeReload()) return;
     if ((!S.pendEv && !S.pendTd) || !canRefresh()) return;
     var ev = S.pendEv, td = S.pendTd;
     S.pendEv = false; S.pendTd = false;
@@ -1543,6 +1571,7 @@
     pollBusy = true;
     api('rev', { quiet: true }).then(function (j) {
       pollBusy = false;
+      if (j.build && window.SCHEDULE_BUILD && j.build !== window.SCHEDULE_BUILD) S.reloadPending = true;
       if (S.revEv !== null && j.rev !== S.revEv) S.pendEv = true;
       if (!SHARE && S.revTd !== null && j.rev !== S.revTd) S.pendTd = true;
       maybeRefresh();

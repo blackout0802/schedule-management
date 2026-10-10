@@ -132,7 +132,7 @@ function handle_api(): void
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
         }
-        api_out(['rev' => data_rev()]);
+        api_out(['rev' => data_rev(), 'build' => app_build()]);
     }
     $cal = BizCalendar::fromDb();
 
@@ -177,7 +177,7 @@ function handle_api(): void
             ];
             $sum = (string)($_GET['sum'] ?? ''); // 表示している月（YYYY-MM）。あれば、その月の自分の出勤日・休みの日数も返す
             if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $sum)) {
-                $out['summary'] = month_summary($user, $sum);
+                $out['summary'] = month_summary_multi(summary_users($user, $view, ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0), $sum);
             }
             api_out($out);
 
