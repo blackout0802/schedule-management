@@ -557,13 +557,14 @@
   function renderToolbar() {
     var tb = document.getElementById('toolbar');
     tb.textContent = '';
+    var todoOnly = !SHARE && S.mode === 'list'; // リストは、ToDoだけ（月の移動・表示する人は要らない）
     tb.appendChild(el('div', { class: 'toolbar' },
-      el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', title: '前の月（←）', text: '‹', onclick: function () { navMonth(-1); } }),
-      el('h2', { text: S.year + '年' + S.month + '月' }),
-      el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { navMonth(1); } }),
-      el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
+      todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', title: '前の月（←）', text: '‹', onclick: function () { navMonth(-1); } }),
+      el('h2', { text: todoOnly ? 'ToDo' + (S.view === 'team' ? '（業務）' : '（プライベート）') : S.year + '年' + S.month + '月' }),
+      todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { navMonth(1); } }),
+      todoOnly ? null : el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
       el('span', { class: 'spacer', style: 'flex:1' }),
-      SHARE || S.view !== 'team' ? null : el('label', { class: 'who' }, '表示する人',
+      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' }, '表示する人',
         el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { selectWho(this.value); } },
           el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
@@ -575,7 +576,7 @@
       SHARE ? null : el('button', { class: 'btn', type: 'button', text: '↻ 繰り返し業務', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }),
       SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
     ));
-    tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
+    if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
   }
@@ -584,7 +585,7 @@
   function renderFilters() {
     var box = document.getElementById('filters');
     box.textContent = '';
-    if (S.view !== 'me') return;
+    if (S.view !== 'me' || (!SHARE && S.mode === 'list')) return;
     var onChange = function () { store('sched.filters', { tags: S.tags, showOff: S.showOff }); load(); };
     var chips = S.me.work_tags.map(function (t) {
       return el('label', { class: 'fchip' }, el('input', { type: 'checkbox', checked: S.tags.indexOf(t) >= 0, onchange: function (e) {
@@ -784,7 +785,7 @@
     return bar;
   }
 
-  /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
+  /* リスト表示: ログインして使う画面は、ToDoの管理だけ（予定は、カレンダーで見る）。共有リンク（会社用）は、今月の予定を日ごとに */
   function plainBar(e, ds) {
     var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
@@ -800,10 +801,10 @@
       var mgr = el('section', { id: 'todo-mgr', class: 'todo todo-mgr', 'aria-label': 'ToDoの管理' });
       board.appendChild(mgr);
       renderTodoInto(mgr, true, keepFrom);
+      return;
     }
     var todayStr = ymd(new Date());
-    // プライベート版のリストは、基本、自分の予定（プライベート・休み）だけにする。業務の予定は、必要なときだけ表示する
-    var hideWork = S.view === 'me' && !SHARE && !S.listWork;
+    var hideWork = false;
     var list = el('div', { class: 'list' });
     var any = false;
     var last = new Date(S.year, S.month, 0).getDate();
@@ -824,7 +825,7 @@
     }
     if (!any) list.appendChild(el('p', { class: 'empty-note', text: 'この月の予定はまだありません。' }));
     board.appendChild(el('h3', { class: 'list-h', text: S.year + '年' + S.month + '月の予定' }));
-    if (S.view === 'me' && !SHARE) {
+    if (false) {
       board.appendChild(el('label', { class: 'check list-opt' },
         el('input', { type: 'checkbox', id: 'list-work', checked: !!S.listWork, style: 'width:auto', onchange: function () { S.listWork = this.checked; store('sched.listWork', S.listWork); renderBoard(); } }),
         '業務の予定も表示する（初期設定は、非表示）'));
@@ -1339,7 +1340,7 @@
     if (mgr) renderTodoInto(mgr, true);
   }
 
-  function setMode(m) { S.mode = m; store('sched.mode', m); renderToolbar(); renderBoard(); }
+  function setMode(m) { S.mode = m; store('sched.mode', m); renderToolbar(); renderFilters(); renderBoard(); if (m === 'cal') load(); }
 
   /* 自動更新などで描き直しても、入力中の文字・選んでいる種類・カーソルを失わないよう、描き直す前に控える */
   function captureTodoInput(box) {
@@ -1369,7 +1370,7 @@
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
     if (keep && keep.focus) setTimeout(function () { input.focus(); try { input.setSelectionRange(keep.s, keep.e); } catch (e) { /* 何もしない */ } }, 0);
     if (full) {
-      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます（下の「今月の予定」の日の行に落としても、その日の予定になります）。下の予定をこの列へドラッグすると、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
+      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
       box.appendChild(form);
       box.appendChild(renderKanban());
     } else {
