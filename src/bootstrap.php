@@ -245,7 +245,7 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
     }
-    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''"] as $col => $def) {
+    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''", 'prefs' => "VARCHAR(500) NOT NULL DEFAULT ''"] as $col => $def) {
         try {
             db()->query("SELECT $col FROM users LIMIT 1")->fetchAll();
         } catch (PDOException $e) {

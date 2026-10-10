@@ -97,9 +97,10 @@ main { max-width: 1280px; }
 .cell.today .num .d { background: var(--work); color: #fff; border-radius: 999px; padding: 0 6px; }
 .hname { font-size: 10px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar { position: relative; z-index: 2; margin: 1px 3px; padding: 0 6px; height: 20px; line-height: 20px; font-size: 11.5px; font-weight: 500; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: none; }
-.bar.work { background: var(--work-soft); color: var(--work); }
-.bar.off { background: var(--off-soft); color: var(--off); }
-.bar.private { background: var(--private-soft); color: var(--private); }
+/* 色は、本人が「色の設定」で変えられる（--uc-* が文字色・塗りつぶし、--ub-* が淡い背景）。未設定なら標準の色 */
+.bar.work { background: var(--ub-work, var(--work-soft)); color: var(--uc-work, var(--work)); }
+.bar.off { background: var(--ub-off, var(--off-soft)); color: var(--uc-off, var(--off)); }
+.bar.private { background: var(--ub-private, var(--private-soft)); color: var(--uc-private, var(--private)); }
 .bar.cl { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .bar.cr { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .bar[draggable="true"] { cursor: grab; }
@@ -275,9 +276,9 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 /* 重要な予定: 色を塗りつぶして、太字＋★で目立たせる */
 .bar.imp { font-weight: 700; box-shadow: 0 0 0 1px currentColor inset; }
-.bar.work.imp { background: var(--work); color: var(--surface); box-shadow: none; }
-.bar.off.imp { background: var(--off); color: var(--surface); box-shadow: none; }
-.bar.private.imp { background: var(--private); color: var(--surface); box-shadow: none; }
+.bar.work.imp { background: var(--uc-work, var(--work)); color: var(--surface); box-shadow: none; }
+.bar.off.imp { background: var(--uc-off, var(--off)); color: var(--surface); box-shadow: none; }
+.bar.private.imp { background: var(--uc-private, var(--private)); color: var(--surface); box-shadow: none; }
 .imp-opt { font-weight: 600; }
 
 /* 家族用リンク: 前回から更新された予定の目印と、更新履歴 */
@@ -329,5 +330,17 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .month-sum h3 .btn.small { padding: 0 8px; font-size: 12px; line-height: 1.6; }
 
 /* 毎月の繰り返し業務は、文字を茶色（ダークでは橙）にして、単発の業務（青）と見分ける。重要な予定は、塗りつぶしの強調を優先 */
-.bar.work.rec:not(.imp) { color: var(--rec); }
-.legend .rec-sample { color: var(--rec); font-weight: 700; }
+.bar.work.rec:not(.imp) { color: var(--uc-rec, var(--rec)); }
+.legend .rec-sample { color: var(--uc-rec, var(--rec)); font-weight: 700; }
+
+/* 色の設定 */
+.cs-rows { display: grid; gap: 12px; }
+.cs-row { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.cs-top { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; }
+.cs-name { font-weight: 700; }
+.cs-sw { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cs-sw button.sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
+.cs-sw button.sw[aria-pressed=true] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface) inset; }
+.cs-sw input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.cs-warn { font-size: 12px; color: var(--danger); font-weight: 700; }
+.cs-sample { display: grid; gap: 4px; padding: 8px; background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; }

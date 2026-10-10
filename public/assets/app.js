@@ -125,6 +125,94 @@
     if (e.key === 'Escape' && modals.length && !modals[modals.length - 1].locked) modals[modals.length - 1].close();
   });
 
+  /* ---------- 予定の色（本人の画面だけ） ----------
+     単発の業務・繰り返しの業務・休み・プライベートの色を、本人が選べる。選んだ色は、文字（塗りつぶし）の色になり、淡い背景は、その色から作る。
+     ダークモードでは、暗い色が読めなくなるので、選んだ色を明るい側へ寄せて表示する。 */
+  var COLOR_DEFS = [
+    ['work', '単発の業務', 'bar work', '打ち合わせの準備'], ['rec', '繰り返しの業務', 'bar work rec', '↻ 毎月の締め'],
+    ['off', '休み', 'bar off', '山田 花子 有給'], ['private', 'プライベート', 'bar private', '歯医者の予約']
+  ];
+  var COLOR_PRESETS = ['#2155d6', '#0b7285', '#0d7f62', '#2b8a3e', '#9a4a00', '#c0392b', '#a61e4d', '#8337c9', '#5f3dc4', '#495057'];
+  function isDarkTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark') return true;
+    if (t === 'light') return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function toneColor(hex) {
+    if (!isDarkTheme()) return hex;
+    var n = parseInt(hex.slice(1), 16), mix = function (c) { return Math.round(c + (255 - c) * 0.45); };
+    return 'rgb(' + mix(n >> 16 & 255) + ',' + mix(n >> 8 & 255) + ',' + mix(n & 255) + ')';
+  }
+  /* 色の設定から、CSSの変数（--uc-* 文字・塗りつぶし、--ub-* 淡い背景）を作る。未設定の項目は作らない（標準の色になる） */
+  function colorVars(colors) {
+    var v = {};
+    COLOR_DEFS.forEach(function (d) {
+      var c = colors && colors[d[0]];
+      if (!c) return;
+      var f = toneColor(c);
+      v['--uc-' + d[0]] = f;
+      if (d[0] !== 'rec') v['--ub-' + d[0]] = 'color-mix(in srgb, ' + f + ' 16%, var(--surface))';
+    });
+    return v;
+  }
+  function applyColors(colors) {
+    var st = document.documentElement.style, v = colorVars(colors);
+    COLOR_DEFS.forEach(function (d) { st.removeProperty('--uc-' + d[0]); st.removeProperty('--ub-' + d[0]); });
+    Object.keys(v).forEach(function (k) { st.setProperty(k, v[k]); });
+  }
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onTheme = function () { if (S.me && S.me.prefs) applyColors(S.me.prefs.colors); };
+    if (mq.addEventListener) mq.addEventListener('change', onTheme); else if (mq.addListener) mq.addListener(onTheme);
+  }
+  function parseRgb(str) {
+    var m = /^rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)/.exec(str) || null;
+    if (m) return [+m[1], +m[2], +m[3]];
+    m = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(str); // color-mix の結果は、この形で返ることがある
+    return m ? [Math.round(m[1] * 255), Math.round(m[2] * 255), Math.round(m[3] * 255)] : null;
+  }
+  function contrastRatio(a, b) {
+    var l = function (rgb) { var c = rgb.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+    var x = l(a), y = l(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+  function openColorDialog() {
+    var pending = {};
+    COLOR_DEFS.forEach(function (d) { pending[d[0]] = (S.me.prefs && S.me.prefs.colors && S.me.prefs.colors[d[0]]) || ''; });
+    var rows = el('div', { class: 'cs-rows' });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    function styleOf() { var v = colorVars(pending); return Object.keys(v).map(function (k) { return k + ':' + v[k]; }).join(';'); }
+    function draw() {
+      rows.textContent = '';
+      COLOR_DEFS.forEach(function (d) {
+        var key = d[0], cur = pending[key];
+        var sample = el('div', { class: 'cs-sample', style: styleOf() }, el('div', { class: d[2], text: d[3] }));
+        var warn = el('span', { class: 'cs-warn', hidden: true, text: '⚠ 背景と色が近く、読みにくいかもしれません' });
+        var sw = el('div', { class: 'cs-sw' }, COLOR_PRESETS.map(function (c) {
+          return el('button', { type: 'button', class: 'sw', style: 'background:' + c, 'aria-label': c, 'aria-pressed': cur === c ? 'true' : 'false', title: c, onclick: function () { pending[key] = c; draw(); } });
+        }), el('input', { type: 'color', 'aria-label': d[1] + 'の色を自由に選ぶ', value: cur || '#2155d6', onchange: function () { pending[key] = this.value.toLowerCase(); draw(); } }),
+          el('button', { type: 'button', class: 'btn small', text: '標準に戻す', disabled: !cur, onclick: function () { pending[key] = ''; draw(); } }));
+        rows.appendChild(el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: d[1] }), warn), sw, sample));
+        var bar = sample.querySelector('.bar'), cs = getComputedStyle(bar), fg = parseRgb(cs.color), bg = parseRgb(cs.backgroundColor);
+        if (cur && fg && bg && contrastRatio(fg, bg) < 4.5) warn.hidden = false;
+      });
+    }
+    draw();
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('prefs_save', { body: { colors: pending } }).then(function (j) {
+        S.me.prefs = j.prefs; applyColors(j.prefs.colors); ov.close(); toast('色を保存しました'); renderBoard();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('p', { class: 'hint', text: '予定の色を、自分の画面だけ変えられます（他の人の画面・共有リンクは、標準の色のままです）。選んだ色が、文字の色になり、背景は、その色から淡く作ります。ダークモードでは、暗い色を自動で明るくします。' }),
+      rows, err,
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn left', type: 'button', text: 'すべて標準に戻す', onclick: function () { COLOR_DEFS.forEach(function (d) { pending[d[0]] = ''; }); draw(); } }),
+        el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
+    var ov = openModal('予定の色の設定', form, true);
+  }
+
   /* ---------- ショートカットキー ----------
      c カレンダー / l リスト / t 今日 / ← → 前の月・次の月 / n 予定を追加 / b 業務版 / p プライベート版 / ? 一覧
      入力欄に文字を打っているとき、ダイアログを開いているとき、Ctrl・Alt・Command を押しているときは、動かさない。
@@ -194,6 +282,7 @@
       items.push(el('button', { type: 'button', text: 'システム更新', onclick: function () { location.href = 'update.php'; } }));
     }
     items.push(el('hr'));
+    items.push(el('button', { type: 'button', text: '予定の色の設定', onclick: function () { closeMenu(); openColorDialog(); } }));
     items.push(el('button', { type: 'button', text: 'ショートカットキー（?）', onclick: function () { closeMenu(); openShortcuts(); } }));
     items.push(el('button', { type: 'button', text: 'パスワードの変更', onclick: function () { closeMenu(); openPasswordDialog(); } }));
     items.push(el('button', { type: 'button', text: 'ログアウト', onclick: doLogout }));
@@ -509,10 +598,10 @@
     }
     board.appendChild(el('div', { class: 'cal-wrap' }, el('div', { class: 'cal' }, head, weeks)));
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
-      el('span', null, el('i', { style: 'background:var(--work)' }), '業務'),
-      el('span', null, el('i', { style: 'background:var(--off)' }), '休み'),
-      S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--private)' }), 'プライベート') : null,
-      el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務（茶色の文字）' }), '／単発の業務は青の文字'),
+      el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
+      el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み'),
+      S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--uc-private, var(--private))' }), 'プライベート') : null,
+      el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' }), '／単発の業務（文字の色で区別・色は右上のメニューの「予定の色の設定」で変更）'),
       el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
       SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます・画面の右端へ持っていくとToDoにできます' }),
       el('span', { text: 'ショートカット: ? で一覧' }),
@@ -1852,6 +1941,7 @@
   }
   api('me').then(function (me) {
     S.me = me;
+    applyColors(me.prefs && me.prefs.colors);
     csrf = me.csrf;
     var now = new Date();
     S.year = now.getFullYear(); S.month = now.getMonth() + 1;

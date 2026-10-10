@@ -152,6 +152,7 @@ function handle_api(): void
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
                 'family_share' => get_family_share($user),
+                'prefs' => get_prefs($user),
                 'work_tags' => cfg('work_tags'),
                 'off_tags' => cfg('off_tags'),
                 'slack' => slack_enabled(),
@@ -311,6 +312,9 @@ function handle_api(): void
 
         case 'share_options':
             api_out(['family_share' => save_family_share($user, !empty($in['off']), is_array($in['tags'] ?? null) ? $in['tags'] : [])]);
+
+        case 'prefs_save': // 予定の色（本人の画面だけ）
+            api_out(['prefs' => save_color_prefs($user, is_array($in['colors'] ?? null) ? $in['colors'] : [])]);
 
         case 'share_create':
             try {

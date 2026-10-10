@@ -476,6 +476,14 @@ check('休み優先: 休みをドラッグで動かしても、反映される�
 q("DELETE FROM events WHERE owner_id IN (?, ?) AND kind = 'off' AND start_date >= '2027-06-01' AND start_date <= '2027-06-30'", [$lvO['id'], $b['id']]);
 q('DELETE FROM events WHERE series_id IN (?, ?)', [$sidR, $sidD]); q('DELETE FROM series WHERE id IN (?, ?)', [$sidR, $sidD]);
 
+// ---- 個人の色の設定 ----
+check('色の設定: 初期は、すべて標準の色（空）', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
+save_color_prefs($a, ['work' => '#2155D6', 'rec' => '#9a4a00', 'off' => 'red', 'private' => '#12345', 'evil' => '#000000']);
+check('色の設定: #rrggbb だけが保存され（小文字にそろう）、不正な値・知らない項目は捨てる', get_prefs($a)['colors'], ['work' => '#2155d6', 'rec' => '#9a4a00', 'off' => '', 'private' => '']);
+check('色の設定: 他の人の設定には影響しない', get_prefs($b)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
+save_color_prefs($a, []);
+check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
+
 // ---- 日報メモ ----
 check('メモ: 取り消し線と改行は残る', sanitize_memo_html('<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>'), '<div>終わった<s>商品の登録</s></div><div><br></div><div>次</div>');
 check('メモ: strike/del は s にそろう', sanitize_memo_html('<strike>a</strike><del>b</del>'), '<s>a</s><s>b</s>');
