@@ -80,7 +80,7 @@ main { max-width: 1280px; }
 
 /* calendar: 1週間ごとの行。連続する予定は1本のバーにまとめる */
 .cal-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-.cal { min-width: 560px; }
+.cal { min-width: 0; }
 .cal-dow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--surface-2); border-bottom: 1px solid var(--line); }
 .cal-dow .dow { font-size: 12px; font-weight: 700; text-align: center; padding: 4px 0; color: var(--muted); }
 .cal-dow .dow.sun { color: var(--danger); } .cal-dow .dow.sat { color: var(--work); }
@@ -416,3 +416,17 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .del-sample { text-decoration: line-through; text-decoration-thickness: 2px; font-weight: 700; margin-right: 6px; }
 .upd-banner.del .upd-msg { display: inline-flex; align-items: center; }
 .detail.del dd:first-of-type { text-decoration: line-through; }
+
+/* スマホ: カレンダーを、横にスクロールしなくても1画面に収める（7日分を画面の幅で等分。予定の文字は、入りきらない分を省略し、押すと詳細が出る） */
+@media (max-width: 640px) {
+  .cal-wrap { overflow-x: hidden; }
+  .cell { padding: 1px 1px; }
+  .num { font-size: 11px; gap: 2px; height: 18px; padding-left: 2px; }
+  .cell.today .num .d { padding: 0 4px; }
+  .hname { display: none; }
+  .cal-dow .dow { font-size: 11px; padding: 3px 0; }
+  .bar { margin: 1px 1px; padding: 0 2px; height: 17px; line-height: 17px; font-size: 10px; border-radius: 3px; }
+  .bar.cl { margin-left: 0; }
+  .bar.cr { margin-right: 0; }
+  .todo-hover { display: none; } /* 右端のToDoの取っ手は、マウスで使うもの（スマホでは、カレンダーに重なるので出さない） */
+}

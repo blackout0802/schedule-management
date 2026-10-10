@@ -75,6 +75,7 @@
     inp.addEventListener('change', function () { timeVal(inp); });
     return inp;
   }
+  function NARROW() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); } // スマホの幅
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parse(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
@@ -502,15 +503,17 @@
         n ? el('button', { class: 'btn small', type: 'button', text: '確認した', onclick: markSeen }) : null));
   }
 
-  function eventLabel(e, first) {
+  function eventLabel(e, first, compact) {
     var t;
     if (e.kind === 'off' && SHARE && SHARE.kind === 'family') {
       t = '休み'; // 家族用の共有には、名前も休みの種類も出さない
+    } else if (e.kind === 'off' && compact) {
+      t = e.owner_name.split(/[\s　]+/)[0] + (e.tag || '休み'); // スマホのカレンダー: 狭いので「山田有給」のように詰める
     } else if (e.kind === 'off') {
       t = e.owner_name + ' ' + (e.tag || '休み');
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
-    var time = first && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
+    var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
     return (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
@@ -567,7 +570,7 @@
     var e = g.ev;
     var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
-      text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL, NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
       onclick: function (ev) { ev.stopPropagation(); openEventDialog(e); },
       onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
@@ -706,7 +709,7 @@
   function renderWeek(days, todayStr) {
     var pack = weekSegments(days);
     var L = Math.max(pack.lanes, 3);
-    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:24px repeat(' + L + ',22px) minmax(6px,1fr)' });
+    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + (NARROW() ? '20px repeat(' + L + ',19px)' : '24px repeat(' + L + ',22px)') + ' minmax(6px,1fr)' });
     days.forEach(function (d, c) {
       var s = ymd(d), hol = S.holidays[s];
       var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '');
