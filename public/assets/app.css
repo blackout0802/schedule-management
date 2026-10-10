@@ -3,6 +3,7 @@
   --work: #2155d6; --work-soft: #e2eafc; --off: #0d7f62; --off-soft: #d9f2ea;
   --private: #8337c9; --private-soft: #efe4fa; --danger: #c0392b; --danger-soft: #fbe5e2;
   --overlay: rgba(10, 18, 32, .5);
+  --fw: 600; /* 文字の基本の太さ（以前は400〜500）。太字（600〜700）の部分は、そのまま */
   --rec: #9a4a00; /* 毎月の繰り返し業務の文字色（単発の業務は青） */
   --font: "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
 }
@@ -15,21 +16,21 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.6; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.6; font-weight: var(--fw); }
 button, input, select, textarea { font: inherit; color: inherit; }
 .muted { color: var(--muted); }
 .error { color: var(--danger); background: var(--danger-soft); padding: 8px 12px; border-radius: 6px; }
 :focus-visible { outline: 2px solid var(--work); outline-offset: 2px; }
 
 /* buttons & inputs */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; cursor: pointer; text-decoration: none; font-weight: 500; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; cursor: pointer; text-decoration: none; font-weight: var(--fw); white-space: nowrap; }
 .btn:hover { background: var(--surface-2); }
 .btn.primary { background: var(--work); border-color: var(--work); color: #fff; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
 .btn.small { padding: 3px 10px; font-size: 13px; }
 .btn.ghost { border-color: transparent; background: transparent; }
-label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 500; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); font-weight: var(--fw); }
 input, select, textarea { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); width: 100%; font-size: 15px; color: var(--ink); }
 textarea { resize: vertical; min-height: 64px; }
 
@@ -96,7 +97,7 @@ main { max-width: 1280px; }
 .cell.sat .num { color: var(--work); }
 .cell.today .num .d { background: var(--work); color: #fff; border-radius: 999px; padding: 0 6px; }
 .hname { font-size: 10px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar { position: relative; z-index: 2; margin: 1px 3px; padding: 0 6px; height: 20px; line-height: 20px; font-size: 11.5px; font-weight: 500; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: none; }
+.bar { position: relative; z-index: 2; margin: 1px 3px; padding: 0 6px; height: 20px; line-height: 20px; font-size: 11.5px; font-weight: var(--fw); border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: none; }
 /* 色は、本人が「色の設定」で変えられる（--uc-* が文字色・塗りつぶし、--ub-* が淡い背景）。未設定なら標準の色 */
 .bar.work { background: var(--ub-work, var(--work-soft)); color: var(--uc-work, var(--work)); }
 .bar.off { background: var(--ub-off, var(--off-soft)); color: var(--uc-off, var(--off)); }
@@ -207,7 +208,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .list-day { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .list-day:last-child { border-bottom: 0; }
 .list-day .dt { font-variant-numeric: tabular-nums; font-weight: 700; }
-.list-day .dt small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.list-day .dt small { display: block; font-weight: var(--fw); color: var(--muted); font-size: 12px; }
 .list-day.sun .dt, .list-day.hol .dt { color: var(--danger); } .list-day.sat .dt { color: var(--work); }
 .list-day.today { background: var(--work-soft); }
 .list-items { display: grid; gap: 3px; align-content: start; }
@@ -221,7 +222,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .kb-col { background: var(--surface-2); border-radius: 10px; padding: 10px; display: grid; gap: 7px; align-content: start; min-height: 160px; }
 .kb-col h3 { margin: 0; font-size: 13px; display: flex; justify-content: space-between; }
 .kb-col.doing h3 { color: var(--work); } .kb-col.done h3 { color: var(--off); }
-.kb-col .cnt { font-size: 12px; color: var(--muted); font-weight: 500; }
+.kb-col .cnt { font-size: 12px; color: var(--muted); font-weight: var(--fw); }
 .kb-col.drop { outline: 2px dashed var(--work); outline-offset: -2px; background: var(--work-soft); }
 .kb-card { flex-direction: column; border-left-width: 4px; }
 .kb-card .t-title { font-weight: 600; }
@@ -257,10 +258,10 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* カレンダーの下の、月のまとめ（社員ごとに1行） */
 .month-sum { margin-top: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: grid; gap: 4px; }
 .month-sum h3 { margin: 0; font-size: 13px; display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
-.ms-biz { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.ms-biz { font-size: 11.5px; font-weight: var(--fw); color: var(--muted); }
 .ms-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .ms-table th, .ms-table td { padding: 2px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
-.ms-table thead th { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+.ms-table thead th { font-size: 11.5px; font-weight: var(--fw); color: var(--muted); }
 .ms-table tbody tr:last-child th, .ms-table tbody tr:last-child td { border-bottom: 0; }
 .ms-table th[scope=row], .ms-table thead th:first-child { text-align: left; font-weight: 600; }
 .ms-table td.etc, .ms-table thead th:last-child { text-align: left; color: var(--muted); }
@@ -321,7 +322,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .todo-edge { color: var(--off); border-right-color: var(--off); background: linear-gradient(to left, var(--off-soft), transparent); }
 .td-zone { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; background: var(--surface-2); }
 .td-zone h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; } .td-zone.doing h3 { color: var(--work); }
-.td-zone .cnt { font-size: 12px; color: var(--muted); font-weight: 500; }
+.td-zone .cnt { font-size: 12px; color: var(--muted); font-weight: var(--fw); }
 .td-item { font-size: 13px; padding: 3px 8px; border-left: 3px solid var(--work); background: var(--surface); border-radius: 4px; overflow-wrap: anywhere; } .td-item.private { border-left-color: var(--private); }
 .td-more { font-size: 12px; color: var(--muted); }
 .td-drop { margin-top: 4px; border: 2px dashed var(--line); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 700; }
@@ -352,3 +353,20 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* 設定ボタンのメニュー */
 .topbar-in .menu + .menu { margin-left: 8px; }
 .menu-h { padding: 6px 10px 2px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+
+/* カレンダーの右端にカーソルを持っていくと出る、ToDoのパネル */
+.todo-hover { position: fixed; right: 0; top: 40%; z-index: 30; width: 20px; height: 100px; display: flex; align-items: center; justify-content: center; writing-mode: vertical-rl; letter-spacing: .2em; font-size: 12px; font-weight: 700; color: var(--work); background: var(--work-soft); border: 1px solid var(--line); border-right: 0; border-radius: 8px 0 0 8px; cursor: pointer; opacity: .85; }
+.todo-hover:hover { opacity: 1; width: 26px; }
+.todo-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); z-index: 45; background: var(--surface); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(10, 18, 32, .22); padding: 14px; display: grid; gap: 8px; align-content: start; overflow-y: auto; transform: translateX(105%); transition: transform .18s ease; }
+.todo-panel.open { transform: translateX(0); }
+.todo-panel.away { transform: translateX(110%); opacity: .0; pointer-events: none; }
+.tp-head { display: flex; align-items: center; gap: 8px; } .tp-head .btn { margin-left: auto; }
+.tp-hint { font-size: 11.5px; color: var(--muted); }
+.tp-add { display: flex; gap: 6px; flex-wrap: wrap; } .tp-add input[type=text] { flex: 1 1 140px; min-width: 0; padding: 6px 8px; font-size: 14px; } .tp-add select { width: auto; padding: 6px 4px; font-size: 13px; }
+.tp-g { margin: 6px 0 0; font-size: 13px; display: flex; justify-content: space-between; } .tp-g.st-doing { color: var(--work); } .tp-g .cnt { font-size: 12px; color: var(--muted); font-weight: var(--fw); }
+.tp-card { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: 6px 8px; background: var(--surface); cursor: grab; display: grid; gap: 2px; }
+.tp-card.work { border-left-color: var(--work); } .tp-card.private { border-left-color: var(--private); }
+.tp-card:hover { background: var(--surface-2); }
+.tp-title { font-weight: 700; overflow-wrap: anywhere; }
+.tp-meta { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+option { font-weight: var(--fw); }

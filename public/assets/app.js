@@ -123,6 +123,7 @@
   }
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && modals.length && !modals[modals.length - 1].locked) modals[modals.length - 1].close();
+    else if (e.key === 'Escape' && !modals.length && document.getElementById('todo-panel')) closeTodoPanel(true);
   });
 
   /* ---------- 予定の色（本人の画面だけ） ----------
@@ -247,7 +248,7 @@
      日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
   var SHORTCUTS = [
     ['c', 'カレンダーを表示'], ['l', 'リストを表示'], ['t', '今月に戻る（今日）'], ['← / →', '前の月 / 次の月'],
-    ['n', '予定を追加'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
+    ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
   ];
   function shortcutKey(e) {
     var m = /^Key([A-Z])$/.exec(e.code || '');
@@ -279,6 +280,7 @@
     else if (k === 'ArrowRight') navMonth(1);
     else if (k === '?') openShortcuts();
     else if (!SHARE && k === 'n') openEventDialog(null, ymd(new Date()));
+    else if (!SHARE && k === 'd' && S.mode === 'cal') { if (document.getElementById('todo-panel')) closeTodoPanel(true); else openTodoPanel(); }
     else if (!SHARE && k === 'b') setView('team');
     else if (!SHARE && k === 'p') setView('me');
     else done = false;
@@ -623,6 +625,7 @@
     if (ub) board.appendChild(ub);
     var lay = document.querySelector('.layout');
     if (lay) lay.classList.toggle('list-mode', S.mode === 'list');
+    syncTodoHover();
     if (S.mode === 'list') { renderListView(board, mgrKeep); return; }
     var todayStr = ymd(new Date());
     var r = gridRange();
@@ -750,7 +753,82 @@
   function teardownCalEdge() {
     if (calEdgeFn) { document.removeEventListener('dragover', calEdgeFn); calEdgeFn = null; }
     clearTimeout(calCloseTimer);
-    ['cal-edge', 'cal-drop', 'todo-edge', 'todo-drop'].forEach(function (id) { var x = document.getElementById(id); if (x) x.remove(); });
+    ['cal-edge', 'cal-drop', 'todo-edge', 'todo-drop', 'todo-panel'].forEach(function (id) { var x = document.getElementById(id); if (x) x.remove(); });
+  }
+
+  /* ---------- カレンダーの右端にカーソルを持っていくと、ToDoが出る（そこからカレンダーの日付へドラッグして予定にできる） ---------- */
+  var todoPanelTimer = null, tpDraft = '';
+  function syncTodoHover() {
+    var want = !SHARE && S.me && S.mode === 'cal';
+    var z = document.getElementById('todo-hover');
+    if (want && !z) {
+      z = el('div', { id: 'todo-hover', class: 'todo-hover', title: 'ToDoを表示（d）', text: 'ToDo' });
+      z.addEventListener('mouseenter', openTodoPanel);
+      z.addEventListener('mouseleave', scheduleCloseTodoPanel);
+      z.addEventListener('click', openTodoPanel); // タッチでも開けるように
+      document.body.appendChild(z);
+    } else if (!want) {
+      if (z) z.remove();
+      closeTodoPanel(true);
+    }
+  }
+  function scheduleCloseTodoPanel() { clearTimeout(todoPanelTimer); todoPanelTimer = setTimeout(function () { closeTodoPanel(); }, 450); }
+  function closeTodoPanel(now) {
+    clearTimeout(todoPanelTimer);
+    var p = document.getElementById('todo-panel');
+    if (!p) return;
+    if (now) { p.remove(); return; }
+    p.classList.remove('open');
+    setTimeout(function () { if (!p.classList.contains('open')) p.remove(); }, 200);
+  }
+  function openTodoPanel() {
+    clearTimeout(todoPanelTimer);
+    if (S.drag || S.mode !== 'cal' || SHARE) return;
+    var p = document.getElementById('todo-panel');
+    if (p) { p.classList.add('open'); return; }
+    p = el('div', { id: 'todo-panel', class: 'todo-panel', role: 'dialog', 'aria-label': 'ToDo' });
+    p.addEventListener('mouseenter', function () { clearTimeout(todoPanelTimer); });
+    p.addEventListener('mouseleave', scheduleCloseTodoPanel);
+    document.body.appendChild(p);
+    renderTodoPanel(p);
+    requestAnimationFrame(function () { p.classList.add('open'); });
+  }
+  function renderTodoPanel(p) {
+    var hadFocus = p.querySelector('input[type=text]') === document.activeElement;
+    var keep = p.querySelector('input[type=text]');
+    if (keep) tpDraft = keep.value;
+    p.textContent = '';
+    var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容', value: tpDraft });
+    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類' }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
+    var form = el('form', { class: 'tp-add', onsubmit: function (e) {
+      e.preventDefault();
+      if (!input.value.trim()) return;
+      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { tpDraft = ''; input.value = ''; loadTodos(); }).catch(fail);
+    } }, input, kindSel, el('button', { class: 'btn primary small', type: 'submit', text: '追加' }));
+    p.appendChild(el('div', { class: 'tp-head' }, el('b', { text: 'ToDo' }), el('span', { class: 'tp-hint', text: 'カレンダーの日付へドラッグすると予定になります' }),
+      el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', text: '✕', onclick: function () { closeTodoPanel(true); } })));
+    p.appendChild(form);
+    var groups = [['doing', '進行中'], ['todo', '未着手']], any = false;
+    groups.forEach(function (g) {
+      var items = S.todos.filter(function (t) { return t.status === g[0]; });
+      if (!items.length) return;
+      any = true;
+      p.appendChild(el('h3', { class: 'tp-g st-' + g[0] }, g[1], el('span', { class: 'cnt', text: String(items.length) })));
+      items.forEach(function (t) {
+        var card = el('div', { class: 'tp-card ' + t.kind, draggable: 'true', 'data-id': String(t.id) },
+          el('div', { class: 'tp-title', text: t.title }),
+          el('div', { class: 'tp-meta' }, t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null),
+            el('button', { class: 'btn small ghost', type: 'button', text: '日付', title: '日付を選んで予定にする', onclick: function () { openTodoScheduleDialog(t); } })));
+        card.addEventListener('dragstart', function (ev) {
+          startDrag(ev, { t: 'todo', id: t.id });
+          setTimeout(function () { p.classList.add('away'); }, 30); // ドラッグを始めたら、パネルを脇へどけて、カレンダーの日付に落とせるようにする
+        });
+        card.addEventListener('dragend', function () { endDrag(); });
+        p.appendChild(card);
+      });
+    });
+    if (!any) p.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。上の欄から追加できます。' }));
+    if (hadFocus) setTimeout(function () { input.focus(); }, 0);
   }
 
   /* ---------- カレンダーの予定を、画面の右端へ持っていくと、ToDoの列（未着手・進行中）に落とせる ---------- */
@@ -1036,6 +1114,8 @@
 
   /* 細い欄（カレンダーの横）と、リストタブの管理画面の両方を描く */
   function renderTodo() {
+    var tp = document.getElementById('todo-panel');
+    if (tp && !tp.classList.contains('away')) renderTodoPanel(tp);
     var side = document.getElementById('todo');
     if (side) renderTodoInto(side, false);
     var mgr = document.getElementById('todo-mgr');
