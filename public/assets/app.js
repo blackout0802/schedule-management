@@ -132,7 +132,16 @@
     ['work', '単発の業務', 'bar work', '打ち合わせの準備'], ['rec', '繰り返しの業務', 'bar work rec', '↻ 毎月の締め'],
     ['off', '休み', 'bar off', '山田 花子 有給'], ['private', 'プライベート', 'bar private', '歯医者の予約']
   ];
-  var COLOR_PRESETS = ['#2155d6', '#0b7285', '#0d7f62', '#2b8a3e', '#9a4a00', '#c0392b', '#a61e4d', '#8337c9', '#5f3dc4', '#495057'];
+  /* 候補の色: 17色相 × 3段階（明るめ・標準・濃い）。縦に3段で並べる。どれも、背景に対して読める濃さにしてある */
+  var COLOR_PRESETS = [
+    '#ba2323', '#891a1a', '#5a1111',   '#a74220', '#7b3018', '#4f1f0f',   '#91531c', '#6a3d14', '#44270d',   '#7c5e18', '#5a4511', '#3a2c0b',
+    '#5b6914', '#434d0f', '#2b3109',   '#257116', '#1b5210', '#11350a',   '#15713b', '#10522c', '#0a351c',   '#156f59', '#105141', '#0a342a',
+    '#166d75', '#104f55', '#0b3337',   '#1b6990', '#144d69', '#0d3144',   '#2361b7', '#1a4787', '#102e57',   '#3a54d9', '#2139ae', '#162571',
+    '#6943db', '#4924bb', '#30177a',   '#8d28d4', '#671e9c', '#431366',   '#a221ad', '#781880', '#4e1054',   '#b3226b', '#84194f', '#571033',
+    '#56606a', '#454d55', '#22282e'
+  ];
+  var COLOR_NAMES = ['赤', '朱', '橙', '黄土', '黄緑', '緑', '深緑', '青緑', '水', '空', '青', '藍', '青紫', '紫', '赤紫', '桃', '灰'];
+  var TONE_NAMES = ['明るめ', '標準', '濃い'];
   function isDarkTheme() {
     var t = document.documentElement.getAttribute('data-theme');
     if (t === 'dark') return true;
@@ -189,9 +198,10 @@
         var key = d[0], cur = pending[key];
         var sample = el('div', { class: 'cs-sample', style: styleOf() }, el('div', { class: d[2], text: d[3] }));
         var warn = el('span', { class: 'cs-warn', hidden: true, text: '⚠ 背景と色が近く、読みにくいかもしれません' });
-        var sw = el('div', { class: 'cs-sw' }, COLOR_PRESETS.map(function (c) {
-          return el('button', { type: 'button', class: 'sw', style: 'background:' + c, 'aria-label': c, 'aria-pressed': cur === c ? 'true' : 'false', title: c, onclick: function () { pending[key] = c; draw(); } });
-        }), el('input', { type: 'color', 'aria-label': d[1] + 'の色を自由に選ぶ', value: cur || '#2155d6', onchange: function () { pending[key] = this.value.toLowerCase(); draw(); } }),
+        var sw = el('div', { class: 'cs-sw' }, el('div', { class: 'pal', role: 'group', 'aria-label': d[1] + 'の色の候補' }, COLOR_PRESETS.map(function (c, i) {
+          var nm = COLOR_NAMES[Math.floor(i / 3)] + '（' + TONE_NAMES[i % 3] + '）';
+          return el('button', { type: 'button', class: 'sw', style: 'background:' + c, 'aria-label': nm + ' ' + c, 'aria-pressed': cur === c ? 'true' : 'false', title: nm + ' ' + c, onclick: function () { pending[key] = c; draw(); } });
+        })), el('input', { type: 'color', 'aria-label': d[1] + 'の色を自由に選ぶ', value: cur || '#2155d6', onchange: function () { pending[key] = this.value.toLowerCase(); draw(); } }),
           el('button', { type: 'button', class: 'btn small', text: '標準に戻す', disabled: !cur, onclick: function () { pending[key] = ''; draw(); } }));
         rows.appendChild(el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: d[1] }), warn), sw, sample));
         var bar = sample.querySelector('.bar'), cs = getComputedStyle(bar), fg = parseRgb(cs.color), bg = parseRgb(cs.backgroundColor);

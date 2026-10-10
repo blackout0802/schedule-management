@@ -344,3 +344,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cs-sw input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
 .cs-warn { font-size: 12px; color: var(--danger); font-weight: 700; }
 .cs-sample { display: grid; gap: 4px; padding: 8px; background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; }
+.cs-sw .pal { display: grid; grid-template-rows: repeat(3, 24px); grid-auto-flow: column; grid-auto-columns: 24px; gap: 4px; max-width: 100%; }
+.cs-sw button.sw { width: 24px; height: 24px; border-radius: 5px; }
+@media (max-width: 640px) { .cs-sw .pal { grid-template-rows: repeat(6, 26px); grid-auto-columns: 26px; } }
