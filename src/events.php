@@ -64,8 +64,9 @@ function list_events(array $user, string $from, string $to, string $view, array 
     }
     $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
                   WHERE e.start_date <= ? AND e.end_date >= ? AND $where ORDER BY e.start_date, e.start_time, e.id", $params);
-    return array_map(function ($e) use ($user) {
-        return event_for_client($e, $user);
+    $colors = owner_colors_map();
+    return array_map(function ($e) use ($user, $colors) {
+        return event_for_client($e, $user, $colors);
     }, $list);
 }
 
@@ -77,8 +78,25 @@ function can_edit_event(array $e, array $user): bool
     return (int)$e['owner_id'] === (int)$user['id'] || is_admin($user);
 }
 
-function event_for_client(array $e, array $user): array
+/**
+ * 社員ごとの「予定の色」（設定した項目だけ）。全員の画面で、その人の予定をその色で表示するために、予定と一緒に返す。
+ * @return array<int,array<string,string>> 社員id => ['work' => '#rrggbb', ...]（1つも設定していない人は含まない）
+ */
+function owner_colors_map(): array
 {
+    $map = [];
+    foreach (rows("SELECT id, prefs FROM users WHERE prefs <> ''") as $r) {
+        $c = array_filter(get_prefs(['id' => (int)$r['id']])['colors'], function ($v) { return $v !== ''; });
+        if ($c) {
+            $map[(int)$r['id']] = $c;
+        }
+    }
+    return $map;
+}
+
+function event_for_client(array $e, array $user, ?array $colorsMap = null): array
+{
+    $colorsMap = $colorsMap ?? owner_colors_map();
     return [
         'id' => (int)$e['id'],
         'title' => $e['title'],
@@ -96,6 +114,7 @@ function event_for_client(array $e, array $user): array
         'recurring' => $e['series_id'] !== null,
         'series_id' => $e['series_id'] !== null ? (int)$e['series_id'] : null,
         'editable' => can_edit_event($e, $user),
+        'colors' => (object)($colorsMap[(int)$e['owner_id']] ?? []), // 持ち主が決めた色（なければ空 = 標準の色）
     ];
 }
 

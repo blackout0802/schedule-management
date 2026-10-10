@@ -482,6 +482,14 @@ save_color_prefs($a, ['work' => '#2155D6', 'rec' => '#9a4a00', 'off' => 'red', '
 check('色の設定: #rrggbb だけが保存され（小文字にそろう）、不正な値・知らない項目は捨てる', get_prefs($a)['colors'], ['work' => '#2155d6', 'rec' => '#9a4a00', 'off' => '', 'private' => '']);
 check('色の設定: 他の人の設定には影響しない', get_prefs($b)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
 save_color_prefs($a, []);
+save_color_prefs($a, ['work' => '#c0392b', 'off' => '#2b8a3e']);
+$colEv = $mk($a, ['kind' => 'work', 'title' => '色テスト', 'tag' => '定例業務', 'start' => '2027-07-05', 'end' => '2027-07-05']);
+$colOwn = function (array $viewer) { foreach (list_events($viewer, '2027-07-01', '2027-07-31', 'team') as $e) { if ($e['title'] === '色テスト') return (array)$e['colors']; } return null; };
+check('色の設定: 持ち主の色が、予定と一緒に、他の人（鈴木・管理者）の画面にも届く', [$colOwn($b), $colOwn($admin)], [['work' => '#c0392b', 'off' => '#2b8a3e'], ['work' => '#c0392b', 'off' => '#2b8a3e']]);
+check('色の設定: 色を決めていない人の予定は、標準（空）', (function () use ($mk, $b) { $x = $mk($b, ['kind' => 'work', 'title' => '色なしの人', 'tag' => '定例業務', 'start' => '2027-07-06', 'end' => '2027-07-06']); foreach (list_events($b, '2027-07-01', '2027-07-31', 'team') as $e) { if ($e['title'] === '色なしの人') return (array)$e['colors']; } return null; })(), []);
+check('色の設定: 共有リンク（会社用）にも、持ち主の色が付く', (function () use ($admin) { $l = share_link_find(share_link_create('company', $admin)['token']); foreach (share_events($l, '2027-07-01', '2027-07-31') as $e) { if ($e['title'] === '色テスト') return (array)$e['colors']; } return null; })(), ['work' => '#c0392b', 'off' => '#2b8a3e']);
+q("DELETE FROM events WHERE start_date >= '2027-07-01' AND start_date <= '2027-07-31'");
+save_color_prefs($a, []);
 check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
 
 // ---- 日報メモ ----

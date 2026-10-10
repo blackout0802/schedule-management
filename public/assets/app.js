@@ -156,14 +156,14 @@
     });
     return v;
   }
-  function applyColors(colors) {
-    var st = document.documentElement.style, v = colorVars(colors);
-    COLOR_DEFS.forEach(function (d) { st.removeProperty('--uc-' + d[0]); st.removeProperty('--ub-' + d[0]); });
-    Object.keys(v).forEach(function (k) { st.setProperty(k, v[k]); });
+  /* 予定の持ち主が決めた色を、その予定の帯だけに当てる（全員の画面で、その人の予定が、その人の色になる） */
+  function eventColorStyle(e) {
+    var v = colorVars(e.colors);
+    return Object.keys(v).map(function (k) { return ';' + k + ':' + v[k]; }).join('');
   }
   if (window.matchMedia) {
     var mq = window.matchMedia('(prefers-color-scheme: dark)');
-    var onTheme = function () { if (S.me && S.me.prefs) applyColors(S.me.prefs.colors); };
+    var onTheme = function () { if (S.me && S.events && S.events.length) renderBoard(); }; // 明るさが変わったら、色の寄せ方も変わるので描き直す
     if (mq.addEventListener) mq.addEventListener('change', onTheme); else if (mq.addListener) mq.addListener(onTheme);
   }
   function parseRgb(str) {
@@ -202,10 +202,10 @@
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
       api('prefs_save', { body: { colors: pending } }).then(function (j) {
-        S.me.prefs = j.prefs; applyColors(j.prefs.colors); ov.close(); toast('色を保存しました'); renderBoard();
+        S.me.prefs = j.prefs; ov.close(); toast('色を保存しました'); load(); // 自分の予定の色が変わるので、予定を読み直す（他の人の画面にも、自動で反映される）
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
-      el('p', { class: 'hint', text: '予定の色を、自分の画面だけ変えられます（他の人の画面・共有リンクは、標準の色のままです）。選んだ色が、文字の色になり、背景は、その色から淡く作ります。ダークモードでは、暗い色を自動で明るくします。' }),
+      el('p', { class: 'hint', text: 'あなたの予定の色を決めます。保存すると、他の人の画面（共有リンクを含む）でも、あなたの予定がこの色で表示されます。選んだ色が文字（重要な予定は塗りつぶし）の色になり、背景は、その色から淡く作ります。ダークモードでは、暗い色を自動で明るくします。プライベートの予定の色は、あなたの画面だけです。' }),
       rows, err,
       el('div', { class: 'actions' },
         el('button', { class: 'btn left', type: 'button', text: 'すべて標準に戻す', onclick: function () { COLOR_DEFS.forEach(function (d) { pending[d[0]] = ''; }); draw(); } }),
@@ -508,7 +508,7 @@
   function barFor(g, days) {
     var e = g.ev;
     var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
-      style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2),
+      style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
       text: (g.contL ? '… ' : '') + eventLabel(e, !g.contL), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
       onclick: function (ev) { ev.stopPropagation(); openEventDialog(e); },
@@ -528,7 +528,7 @@
 
   /* リスト表示: ToDoの管理 + 今月の予定を日ごとに */
   function plainBar(e, ds) {
-    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
     if (!SHARE && e.editable) { // リストの予定を、ToDoの列へ・別の日の行へドラッグできる
@@ -1941,7 +1941,6 @@
   }
   api('me').then(function (me) {
     S.me = me;
-    applyColors(me.prefs && me.prefs.colors);
     csrf = me.csrf;
     var now = new Date();
     S.year = now.getFullYear(); S.month = now.getMonth() + 1;
