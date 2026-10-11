@@ -427,6 +427,11 @@
         { id: 'slack', title: 'Slack通知の送り先・テスト', admin: true, build: openSlackDialog },
         { id: 'slackcfg', title: 'Slack通知の時間・文面', admin: true, build: openSlackCfgDialog },
         { id: 'audit', title: '変更履歴', admin: true, build: openAuditPanel },
+        { id: 'backup', title: 'バックアップ', admin: true, build: function () {
+          openModal('バックアップ', el('div', { class: 'form' },
+            el('p', { class: 'hint', text: 'データ（プライベートの予定も含む）を、パスワードで暗号化した1つのファイルに保存します。パスワードを知らない人は、管理者でも中身を見られません。パスワードを忘れると復元できないので、ご注意ください。' }),
+            el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'backup.php', text: 'バックアップの画面を開く' }))));
+        } },
         { id: 'update', title: 'システム更新', admin: true, build: function () {
           openModal('システム更新', el('div', { class: 'form' },
             el('p', { class: 'hint', text: '新しい版の更新ファイル（zip）を選んで、システムを更新します。更新の前の状態に戻すこともできます。ショートカットキー「s」でも開けます。' }),

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../src/events.php';
 require_once __DIR__ . '/../src/slack.php';
 require_once __DIR__ . '/../src/updater.php';
 require_once __DIR__ . '/../src/share.php';
+require_once __DIR__ . '/../src/backup.php';
 
 $fail = 0;
 $pass = 0;
@@ -944,6 +945,44 @@ check('拒否: 更新できるファイルが無い zip', $thr(function () use (
 $r2 = updater_apply($mkzip(['repo-main/src/gh.php' => '<?php // GH', 'repo-main/public/assets/gh.css' => 'a{}', 'repo-main/README.md' => 'x', 'repo-main/tests/run.php' => '<?php'], 'gh.zip'), "$U/web", "$U/app");
 check('GitHubのzip: 先頭フォルダを外して適用', [$r2['changed'], is_file("$U/app/src/gh.php"), is_file("$U/web/assets/gh.css")], [['src/gh.php', 'public/assets/gh.css'], true, true]);
 check('復元: 名前の検証(../ を拒否)', $thr(function () use ($U) { updater_restore('../x.zip', "$U/web", "$U/app"); }) !== null, true);
+
+
+// ---- バックアップ（暗号化・復元） ----
+$thB = function (callable $f) { try { $f(); return null; } catch (BackupException $x) { return $x->getMessage(); } };
+$bkPriv = save_event(['kind' => 'private', 'title' => 'ひみつの通院予定', 'tag' => '', 'start' => '2026-11-05', 'end' => '2026-11-05', 'start_time' => '', 'end_time' => '', 'note' => 'メモひみつ', 'owner_id' => (int)$a['id'], 'family_shared' => 0, 'important' => 0], $a, null);
+$bkWork = save_event(['kind' => 'work', 'title' => 'バックアップ確認会議', 'tag' => '全体会議', 'start' => '2026-11-06', 'end' => '2026-11-06', 'start_time' => '', 'end_time' => '', 'note' => '', 'owner_id' => (int)$a['id'], 'family_shared' => 0, 'important' => 0], $a, null);
+$bk = backup_create('backup-pass-1');
+check('バックアップ: 暗号化したファイルには、予定の件名・メモが平文で入らない', [strpos($bk['blob'], 'ひみつの通院予定') === false, strpos($bk['blob'], 'メモひみつ') === false, strpos($bk['blob'], 'バックアップ確認会議') === false, strpos($bk['blob'], 'password') === false], [true, true, true, true]);
+check('バックアップ: ファイルの先頭は形式の印', substr($bk['blob'], 0, 8), 'SCHEDBK1');
+$bkData = backup_inspect(backup_decrypt($bk['blob'], 'backup-pass-1'));
+check('バックアップ: 正しいパスワードで開け、プライベートの予定も入っている', in_array('ひみつの通院予定', array_column($bkData['tables']['events'], 'title'), true), true);
+check('バックアップ: 社員・予定の件数が記録される', [$bk['counts']['users'] > 0, $bk['counts']['events'] >= 2], [true, true]);
+check('バックアップ: ログイン失敗の記録は含めない', isset($bkData['tables']['login_fails']), false);
+check('バックアップ: 違うパスワードでは開けない', $thB(function () use ($bk) { backup_decrypt($bk['blob'], 'wrong-pass-123'); }) !== null, true);
+$bad = $bk['blob']; $bad[strlen($bad) - 3] = chr(ord($bad[strlen($bad) - 3]) ^ 1);
+check('バックアップ: 中身が1か所でも書き換えられたら、開けない', $thB(function () use ($bad) { backup_decrypt($bad, 'backup-pass-1'); }) !== null, true);
+$bad2 = $bk['blob']; $bad2[10] = chr(ord($bad2[10]) ^ 1);
+check('バックアップ: 先頭部分（塩）の改ざんも、開けない', $thB(function () use ($bad2) { backup_decrypt($bad2, 'backup-pass-1'); }) !== null, true);
+check('バックアップ: バックアップではないファイルは、拒否', $thB(function () { backup_decrypt('これは違うファイル' . str_repeat('x', 80), 'backup-pass-1'); }) !== null, true);
+check('バックアップ: 短いパスワードは、拒否', $thB(function () { backup_create('short'); }) !== null, true);
+$bkA = $bk['blob']; $bkB = backup_create('backup-pass-1')['blob'];
+check('バックアップ: 同じ内容・同じパスワードでも、毎回ちがう暗号文（塩とIVがランダム）', $bkA !== $bkB, true);
+// 復元: あとから変えた内容が、バックアップの時点に戻る（スキーマ版・更新番号は、いまのまま）
+$verBefore = row('SELECT meta_value FROM app_meta WHERE meta_key = ?', ['schema_version'])['meta_value'];
+q('DELETE FROM events WHERE id = ?', [$bkPriv['id']]);
+save_event(['kind' => 'work', 'title' => 'バックアップ後に増えた予定', 'tag' => '全体会議', 'start' => '2026-11-07', 'end' => '2026-11-07', 'start_time' => '', 'end_time' => '', 'note' => '', 'owner_id' => (int)$a['id'], 'family_shared' => 0, 'important' => 0], $a, null);
+$cnt = backup_restore_data($bkData);
+$titles = array_column(rows('SELECT title FROM events'), 'title');
+check('復元: 消した予定（プライベート）が戻る', in_array('ひみつの通院予定', $titles, true), true);
+check('復元: バックアップ後に増えた予定は消える', in_array('バックアップ後に増えた予定', $titles, true), false);
+check('復元: 件数が、バックアップと同じ', $cnt['events'], $bk['counts']['events']);
+check('復元: 社員（パスワードのハッシュも）がそのまま戻り、ログインできる', (bool)login_attempt('a@example.com', 'password1'), true);
+check('復元: スキーマ版は、いまのまま', row('SELECT meta_value FROM app_meta WHERE meta_key = ?', ['schema_version'])['meta_value'], $verBefore);
+$newerData = $bkData; $newerData['schema_version'] = SCHEMA_VERSION + 1;
+check('復元: いまより新しい版のバックアップは、拒否', $thB(function () use ($newerData) { backup_inspect(json_encode($newerData)); }) !== null, true);
+$evCount = (int)row('SELECT COUNT(*) AS c FROM events')['c'];
+$brokenData = $bkData; $brokenData['tables']['users'][0]['email'] = null; // NOT NULL に違反させて、途中で失敗させる
+check('復元: 途中で失敗したら、データは元のまま', $thB(function () use ($brokenData) { backup_restore_data($brokenData); }) !== null && (int)row('SELECT COUNT(*) AS c FROM events')['c'] === $evCount, true);
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け

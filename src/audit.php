@@ -13,7 +13,7 @@ const AUDIT_TYPES = [
     'event' => '予定', 'series' => '繰り返し業務', 'user' => '社員', 'holiday' => '休業日',
     'share' => '共有リンク', 'slack' => 'Slack通知', 'security' => 'セキュリティ',
 ];
-const AUDIT_ACTIONS = ['add' => '追加', 'update' => '変更', 'delete' => '削除', 'reset' => 'リセット'];
+const AUDIT_ACTIONS = ['add' => '追加', 'update' => '変更', 'delete' => '削除', 'reset' => 'リセット', 'backup' => 'バックアップ', 'restore' => '復元'];
 
 /** この操作をしている人（api.php が、ログインを確認したあとにセットする）。cron などでは null（システム） */
 function audit_set_actor(?array $user): void
