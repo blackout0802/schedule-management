@@ -125,8 +125,10 @@ $names = ['users' => '社員', 'events' => '予定', 'series' => '繰り返し�
   <?php if ($err): ?><p class="error" role="alert"><?= h($err) ?></p><?php endif; ?>
   <?php if ($msg): ?>
     <div class="notice" role="status"><?= $msg ?>
-      <ul><?php foreach ($restored as $t => $n): if (isset($names[$t])): ?><li><?= h($names[$t]) ?>: <?= (int)$n ?>件</li><?php endif; endforeach; ?></ul>
-      <p style="margin:6px 0 0">データを入れ替えたので、いちど<a href="login.php">ログインし直して</a>ください。</p>
+      <?php if ($restored !== null): ?>
+        <ul><?php foreach ($restored as $t => $n): if (isset($names[$t])): ?><li><?= h($names[$t]) ?>: <?= (int)$n ?>件</li><?php endif; endforeach; ?></ul>
+        <p style="margin:6px 0 0">データを入れ替えたので、いちど<a href="login.php">ログインし直して</a>ください。</p>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
   <?php if (!$available): ?><p class="error">このサーバーでは、暗号化（OpenSSL の AES-256-GCM）が使えないため、バックアップを作れません。</p><?php endif; ?>

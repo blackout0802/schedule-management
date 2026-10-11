@@ -6,6 +6,7 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/events.php';
 require_once __DIR__ . '/slack.php';
+require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/share.php';
 
 function api_out($data, int $code = 200): void
@@ -153,6 +154,7 @@ function handle_api(): void
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
                 'family_share' => get_family_share($user),
+                'backup_alert' => is_admin($user) ? backup_alert_for_screen() : null, // 月1回の手動バックアップのお知らせ（管理者だけ）
                 'prefs' => get_prefs($user),
                 'work_tags' => cfg('work_tags'),
                 'off_tags' => cfg('off_tags'),
@@ -613,6 +615,11 @@ function handle_api(): void
             $tu = row('SELECT name FROM users WHERE id = ?', [$tid]);
             audit_log('user', 'reset', 'パスワードをリセット', $tu ? $tu['name'] : '', '一時パスワードを発行（次のログインで本人が変更）');
             api_out(['password' => $tmp]);
+
+        case 'backup_snooze': // 手動バックアップのお知らせを、7日間だけ消す（管理者）
+            require_admin($user);
+            backup_snooze(7);
+            api_out(['ok' => true]);
 
         case 'audit_list': // 変更履歴（管理者）
             require_admin($user);

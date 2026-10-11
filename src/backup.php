@@ -242,11 +242,12 @@ function backup_auto_files(): array
 {
     $out = [];
     foreach (glob(backup_dir() . '/auto-*.enc') ?: [] as $f) {
-        if (preg_match('/^auto-(\d{8})-(\d{6})\.enc$/', basename($f), $m)) {
-            $out[] = ['name' => basename($f), 'size' => (int)filesize($f), 'at' => substr($m[1], 0, 4) . '-' . substr($m[1], 4, 2) . '-' . substr($m[1], 6, 2) . ' ' . substr($m[2], 0, 2) . ':' . substr($m[2], 2, 2)];
+        if (preg_match('/^auto-(\d{8})-(\d{6})(?:-(\d+))?\.enc$/', basename($f), $m)) {
+            $out[] = ['name' => basename($f), 'size' => (int)filesize($f), 'at' => substr($m[1], 0, 4) . '-' . substr($m[1], 4, 2) . '-' . substr($m[1], 6, 2) . ' ' . substr($m[2], 0, 2) . ':' . substr($m[2], 2, 2),
+                'sort' => $m[1] . $m[2] . sprintf('%04d', (int)($m[3] ?? 0))];
         }
     }
-    usort($out, function ($a, $b) { return strcmp($b['name'], $a['name']); });
+    usort($out, function ($a, $b) { return strcmp($b['sort'], $a['sort']); });
     return $out;
 }
 
@@ -272,7 +273,11 @@ function backup_auto_run(): string
             @file_put_contents($dir . '/.htaccess', "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n  Order deny,allow\n  Deny from all\n</IfModule>\n");
         }
         $b = backup_create($pass);
-        $name = 'auto-' . date('Ymd-His') . '.enc';
+        $base = 'auto-' . date('Ymd-His');
+        $name = $base . '.enc';
+        for ($i = 2; is_file($dir . '/' . $name) && $i < 100; $i++) { // 同じ秒に2回作っても、上書きしない
+            $name = $base . '-' . $i . '.enc';
+        }
         $tmp = $dir . '/.tmp-' . getmypid() . '.part';
         if (@file_put_contents($tmp, $b['blob']) === false || !@rename($tmp, $dir . '/' . $name)) {
             @unlink($tmp);

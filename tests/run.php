@@ -984,6 +984,55 @@ $evCount = (int)row('SELECT COUNT(*) AS c FROM events')['c'];
 $brokenData = $bkData; $brokenData['tables']['users'][0]['email'] = null; // NOT NULL に違反させて、途中で失敗させる
 check('復元: 途中で失敗したら、データは元のまま', $thB(function () use ($brokenData) { backup_restore_data($brokenData); }) !== null && (int)row('SELECT COUNT(*) AS c FROM events')['c'] === $evCount, true);
 
+
+// ---- 自動バックアップ・月1回のお知らせ ----
+$autoDir = backup_dir();
+foreach (glob($autoDir . '/*') ?: [] as $f) { @unlink($f); }
+check('自動バックアップ: パスワード未設定なら、動かない', [backup_auto_status()['enabled'], backup_auto_due(strtotime('2026-11-10 04:00:00'))], [false, []]);
+backup_meta_set('backup_auto_pass', 'auto-pass-123');
+check('自動バックアップ: パスワード設定で有効になる（DB）', [backup_auto_status()['enabled'], backup_auto_status()['source']], [true, 'db']);
+check('自動バックアップ: 3時より前は、作らない', backup_auto_due(strtotime('2026-11-10 02:59:00')), []);
+$msgA = backup_auto_due(strtotime('2026-11-10 03:05:00'));
+check('自動バックアップ: 3時すぎに1回作る', [count($msgA), count(backup_auto_files())], [1, 1]);
+$fileA = backup_auto_files()[0];
+check('自動バックアップ: ファイルは暗号化され、設定したパスワードで復元できる', [substr(file_get_contents(backup_dir() . '/' . $fileA['name']), 0, 8), isset(backup_inspect(backup_decrypt(file_get_contents(backup_dir() . '/' . $fileA['name']), 'auto-pass-123'))['tables']['events'])], ['SCHEDBK1', true]);
+check('自動バックアップ: 同じ日の2回目は、作らない', backup_auto_due(strtotime(date('Y-m-d') . ' 15:00:00')), []);
+check('自動バックアップ: 保存先には、Webから見えないよう .htaccess がある', is_file(backup_dir() . '/.htaccess'), true);
+check('自動バックアップ: 自動バックアップの設定そのもの（パスワード）は、バックアップに含まれない', array_filter(backup_collect()['tables']['app_meta'], function ($r) { return strpos($r['meta_key'], 'backup_') === 0; }), []);
+check('自動バックアップ: 名前の検証（一覧にあるものだけ取り出せる）', [backup_auto_file_path($fileA['name']) !== null, backup_auto_file_path('../../config.php'), backup_auto_file_path('auto-19990101-000000.enc')], [true, null, null]);
+// 古いものは消える（既定: 新しい30個）
+for ($i = 1; $i <= 33; $i++) { file_put_contents(backup_dir() . sprintf('/auto-2026%02d%02d-010000.enc', 1 + intdiv($i - 1, 28), 1 + ($i - 1) % 28), 'x'); }
+backup_auto_run();
+check('自動バックアップ: 保存は新しい30個まで（古いものは消える）', count(backup_auto_files()), 30);
+// 失敗: 書けないとき
+backup_meta_set('backup_auto_pass', 'short');
+check('自動バックアップ: 失敗したときは、記録される', [$thB(function () { backup_auto_run(); }) !== null, backup_auto_status()['last_error'] !== ''], [true, true]);
+backup_meta_set('backup_auto_pass', 'auto-pass-123');
+backup_meta_set('backup_auto_at', '');
+backup_meta_set('backup_auto_try', (string)strtotime('2030-01-01 03:00:00'));
+check('自動バックアップ: 失敗のあと、1時間は、やり直さない', backup_auto_due(strtotime('2030-01-01 03:30:00')), []);
+check('自動バックアップ: 1時間たてば、やり直す', count(backup_auto_due(strtotime('2030-01-01 04:10:00'))), 1);
+foreach (glob(backup_dir() . '/*') ?: [] as $f) { if (basename($f) !== '.htaccess') { @unlink($f); } }
+backup_meta_set('backup_auto_pass', '');
+// 月1回のお知らせ
+foreach (['backup_manual_at', 'backup_first', 'backup_snooze', 'backup_alert_slack'] as $k) { backup_meta_set($k, ''); }
+$t0 = strtotime('2026-11-01 10:00:00');
+check('お知らせ: 使い始めた日が基準（すぐには出ない）', [backup_alert_status($t0)['overdue'], backup_alert_for_screen() === null], [false, true]);
+check('お知らせ: 29日後は、まだ出ない', backup_alert_status($t0 + 29 * 86400)['overdue'], false);
+check('お知らせ: 30日たつと出る', backup_alert_status($t0 + 30 * 86400)['overdue'], true);
+backup_snooze(7);
+check('お知らせ: 「あとで」で、7日間は消える', backup_alert_status(time())['snoozed'], true);
+backup_meta_set('backup_snooze', (string)(time() - 10));
+check('お知らせ: 7日たつと、また出る', backup_alert_status(time() + 60)['snoozed'], false);
+backup_manual_mark();
+check('お知らせ: 手動でダウンロードすると、数え直す（出なくなる）', [backup_alert_status()['overdue'], backup_alert_status()['last'] !== null, backup_alert_status()['snoozed']], [false, true, false]);
+backup_meta_set('backup_manual_at', date('Y-m-d H:i:s', strtotime('-31 days')));
+check('お知らせ: 画面に出す内容（管理者用）', backup_alert_for_screen() !== null && backup_alert_for_screen()['days'] >= 31, true);
+// Slack: オフなら送らない／オンなら月に1回
+$sentSlack = 0;
+check('お知らせ(Slack): オフのときは、送らない', backup_alert_due(strtotime('2026-12-05 10:00:00')), []);
+backup_meta_set('backup_alert_slack', '1');
+check('お知らせ(Slack): Slackの送り先が無ければ、送れない（何もしない）', backup_alert_due(strtotime('2026-12-05 10:00:00')), []);
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

@@ -844,6 +844,29 @@
     board.appendChild(list);
   }
 
+  function openTipsDialog(tips) {
+    var ov = openModal('カレンダーの使い方', el('div', { class: 'form' },
+      el('ul', { class: 'tips-list' }, tips.map(function (t) { return el('li', { text: t }); })),
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
+    ov.outsideClose = true;
+  }
+
+  /* 管理者へ: 月1回の手動バックアップのお知らせ（カレンダー・リストの上）。「あとで」で7日間消す */
+  function backupBanner() {
+    var al = !SHARE && S.me && S.me.backup_alert;
+    if (!al) return null;
+    var box = el('div', { class: 'notice backup-alert', role: 'status' },
+      el('b', { text: 'バックアップの時期です。' }),
+      el('span', { text: al.last ? '（最後に手動でダウンロードしたのは、' + al.last.slice(0, 10) + '・' + al.days + '日前）' : '（まだ一度も、手動でダウンロードしていません）' }),
+      ' データが消えてしまう場合に備えて、バックアップのファイルをダウンロードして、別の場所に保管してください。',
+      el('span', { class: 'ba-actions' },
+        el('a', { class: 'btn small primary', href: 'backup.php', text: 'バックアップの画面を開く' }),
+        el('button', { class: 'btn small ghost', type: 'button', text: 'あとで（7日間表示しない）', onclick: function () {
+          api('backup_snooze', { body: {} }).then(function () { S.me.backup_alert = null; renderBoard(); }).catch(fail);
+        } })));
+    return box;
+  }
+
   function renderBoard() {
     var board = document.getElementById('board');
     if (!board) return;
@@ -853,6 +876,8 @@
     if (db) board.appendChild(db);
     var ub = updatesBanner();
     if (ub) board.appendChild(ub);
+    var bb = backupBanner();
+    if (bb) board.appendChild(bb);
     var lay = document.querySelector('.layout');
     if (lay) lay.classList.toggle('list-mode', S.mode === 'list');
     syncTodoHover();
@@ -871,17 +896,21 @@
     }
     var slide = S.slide; S.slide = '';
     board.appendChild(el('div', { class: 'cal-wrap' + (slide ? ' slide-' + slide : '') }, el('div', { class: 'cal', style: offdayPref().color ? '--offday-bg:' + offdayBg(offdayPref().color) : null }, head, weeks)));
+    /* 使い方の説明は、画面に並べず、「ⓘ 使い方」のダイアログにまとめる */
+    var tips = [];
+    if (!FAMILY) tips.push('繰り返しの業務は「↻」付き・色は文字の色で区別します（標準）。色は、右上の「設定」→「予定の色」で変えられます。');
+    if (!FAMILY) tips.push('期間のある業務は、土日祝を除いて1本にまとめて表示します。');
+    if (!SHARE) tips.push('予定は、ドラッグして別の日へ動かせます。画面の右端へ持っていくと、ToDoにできます。');
+    if (!FAMILY && !NARROW()) tips.push('ショートカット: ? を押すと、キーの一覧が出ます。');
+    if (NARROW()) tips.push('カレンダーを左右にスワイプすると、前の月・次の月に切り替わります。');
+    if (POLL_MS && !FAMILY) tips.push('他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に、自動で反映されます。');
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
       el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
       el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み'),
       offdayPref().on ? el('span', null, el('i', { class: 'offday-sw', style: offdayPref().color ? 'background:' + offdayBg(offdayPref().color) : null }), '休みの人がいる日') : null,
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--uc-private, var(--private))' }), 'プライベート') : null,
-      FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' }), '／単発の業務（標準では文字の色で区別・色は右上の「設定」→「予定の色の設定」で変更）'),
-      FAMILY ? null : el('span', { text: '期間のある業務は、土日祝を除いて1本にまとめて表示' }),
-      SHARE ? null : el('span', { text: '予定はドラッグで別の日へ動かせます・画面の右端へ持っていくとToDoにできます' }),
-      FAMILY || NARROW() ? null : el('span', { text: 'ショートカット: ? で一覧' }),
-      NARROW() ? el('span', { text: '左右にスワイプすると、前の月・次の月に切り替わります' }) : null,
-      POLL_MS && !FAMILY ? el('span', { text: '他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に自動で反映されます' }) : null,
+      FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' })),
+      tips.length ? el('button', { class: 'legend-help', type: 'button', text: 'ⓘ 使い方', title: 'カレンダーの使い方', onclick: function () { openTipsDialog(tips); } }) : null,
       FAMILY && delCount() ? el('span', null, el('span', { class: 'del-sample', text: '取消線' }), '＝削除された予定（押して「確認した」を選ぶと消えます）') : null));
     var sum = monthSummary();
     if (sum) board.appendChild(sum);

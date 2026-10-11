@@ -1,7 +1,7 @@
 :root {
   --bg: #f2f2f7; --surface: #fff; --surface-2: #efeff4; --ink: #1c1c1e; --muted: #6e6e73; --line: #e3e3e8;
-  --work: #0071e3; --work-soft: #e6f1fd; --off: #248a3d; --off-soft: #e3f5e8;
-  --private: #af52de; --private-soft: #f3e8fb; --danger: #e0281e; --danger-soft: #fdeceb;
+  --work: #0066d6; --work-soft: #e6f1fd; --off: #1f7a37; --off-soft: #e3f5e8; /* 文字の色は、背景に対して読みやすさ（コントラスト）4.5以上 */
+  --private: #8e35bd; --private-soft: #f3e8fb; --danger: #e0281e; --danger-soft: #fdeceb;
   --overlay: rgba(10, 18, 32, .5);
   --fw: 400; /* 文字の基本の太さ（Apple風に細め）。太く戻したいときは、ここを 500〜600 にする */
   --rec: #b25000; /* 毎月の繰り返し業務の文字色（単発の業務は青） */
@@ -618,3 +618,12 @@ kbd { border-radius: 6px; }
 .todo-add-row { display: flex; align-items: center; gap: 6px; }
 .todo-add-row select { width: auto; padding: 5px 6px; font-size: 13px; }
 .todo-add-row .spacer { flex: 1; }
+
+/* 月1回の手動バックアップのお知らせ（管理者） */
+.backup-alert { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 4px; }
+.backup-alert .ba-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+
+/* カレンダー下の凡例: 色の見本だけ。使い方の説明は「ⓘ 使い方」にまとめた */
+.legend-help { border: 0; background: transparent; color: var(--work); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; padding: 0 4px; border-radius: 6px; margin-left: auto; }
+.legend-help:hover { background: color-mix(in srgb, var(--work) 9%, transparent); }
+.tips-list { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; line-height: 1.6; }
