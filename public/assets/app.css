@@ -609,3 +609,12 @@ kbd { border-radius: 6px; }
 .bar.plain { border-radius: 6px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .list, :root:not([data-theme="light"]) .set-sec, :root:not([data-theme="light"]) .login-card { box-shadow: none; } }
 :root[data-theme="dark"] .list, :root[data-theme="dark"] .set-sec, :root[data-theme="dark"] .login-card { box-shadow: none; }
+
+/* ToDoの追加: 未着手の一番下の「＋ 追加」（押すと、その場に入力欄が開く） */
+.todo-add-btn { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--work); font-weight: 500; font-size: 14px; padding: 7px 8px; border-radius: 10px; cursor: pointer; }
+.todo-add-btn:hover { background: color-mix(in srgb, var(--work) 9%, transparent); }
+.todo-add { display: grid; gap: 8px; margin-top: 2px; padding: 8px; border: .5px solid var(--line); border-radius: 12px; background: var(--surface); }
+.todo-add input[type=text] { flex: none; width: 100%; padding: 8px 10px; font-size: 14px; }
+.todo-add-row { display: flex; align-items: center; gap: 6px; }
+.todo-add-row select { width: auto; padding: 5px 6px; font-size: 13px; }
+.todo-add-row .spacer { flex: 1; }

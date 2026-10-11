@@ -986,7 +986,7 @@
   }
 
   /* ---------- カレンダーの右端にカーソルを持っていくと、ToDoが出る（そこからカレンダーの日付へドラッグして予定にできる） ---------- */
-  var todoPanelTimer = null, tpDraft = '';
+  var todoPanelTimer = null;
   function syncTodoHover() {
     var want = !SHARE && S.me && S.mode === 'cal' && S.page !== 'settings';
     var z = document.getElementById('todo-hover');
@@ -1027,21 +1027,11 @@
     requestAnimationFrame(function () { p.classList.add('open'); });
   }
   function renderTodoPanel(p) {
-    var hadFocus = p.querySelector('input[type=text]') === document.activeElement;
-    var keep = p.querySelector('input[type=text]');
-    if (keep) tpDraft = keep.value;
+    var refocus = addFocused('panel');
     p.textContent = '';
-    var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容', value: tpDraft });
-    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類' }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
-    var form = el('form', { class: 'tp-add', onsubmit: function (e) {
-      e.preventDefault();
-      if (!input.value.trim()) return;
-      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { tpDraft = ''; input.value = ''; loadTodos(); }).catch(fail);
-    } }, input, kindSel, el('button', { class: 'btn primary small', type: 'submit', text: '追加' }));
     p.appendChild(el('div', { class: 'tp-head' }, el('b', { text: 'ToDo' }), 
       el('button', { class: 'btn small ghost', type: 'button', 'aria-label': '閉じる', text: '✕', onclick: function () { closeTodoPanel(true); } })));
     p.appendChild(el('p', { class: 'tp-sub', text: 'ToDoをカレンダーの日付へ、カレンダーの予定をこの欄へドラッグできます' }));
-    p.appendChild(form);
     // 進行中・未着手の2つの欄は、ToDoが無くても必ず出す（カレンダーの予定を、ここへドロップしてToDoにできる）
     var evOk = function () { return S.drag && S.drag.t === 'event' && S.drag.ok; };
     [['doing', '進行中'], ['todo', '未着手']].forEach(function (g) {
@@ -1070,6 +1060,7 @@
       });
       if (!items.length) zone.appendChild(el('p', { class: 'tp-empty', text: g[0] === 'doing' ? '進行中のToDoはありません' : '未着手のToDoはありません' }));
       zone.appendChild(el('div', { class: 'tp-drop', text: 'ここに予定をドロップすると、ToDo（' + g[1] + '）になります' }));
+      if (g[0] === 'todo') zone.appendChild(todoAddControl('panel', refocus)); // 未着手の一番下に「＋ 追加」
       // 予定を、この欄にドロップ
       zone.addEventListener('dragover', function (ev) { if (!evOk()) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; zone.classList.add('drop'); });
       zone.addEventListener('dragleave', function (ev) { if (!zone.contains(ev.relatedTarget)) zone.classList.remove('drop'); });
@@ -1080,7 +1071,6 @@
       });
       p.appendChild(zone);
     });
-    if (hadFocus) setTimeout(function () { input.focus(); }, 0);
   }
 
   /* ---------- カレンダーの予定を、画面の右端へ持っていくと、ToDoの列（未着手・進行中）に落とせる ---------- */
@@ -1350,38 +1340,55 @@
 
   /* 自動更新などで描き直しても、入力中の文字・選んでいる種類・カーソルを失わないよう、描き直す前に控える */
   function captureTodoInput(box) {
-    var i = box && box.querySelector('.todo-add input[type=text]'), sel = box && box.querySelector('.todo-add select');
-    return i ? { v: i.value, focus: document.activeElement === i, s: i.selectionStart, e: i.selectionEnd, k: sel ? sel.value : null } : null;
+    var i = box && box.querySelector('.todo-add input[type=text]');
+    return i ? { focus: document.activeElement === i } : null;
   }
 
-  function renderTodoInto(box, full, keepFrom) {
-    var keep = keepFrom || captureTodoInput(box);
-    box.textContent = '';
-    var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容' });
-    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類' }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
-    if (keep) {
-      input.value = keep.v;
-      if (kindSel && keep.k) kindSel.value = keep.k;
+  /* ToDoの追加: 未着手の一番下の「＋ 追加」を押すと、その場に入力欄が開く（Enterで追加・Escで閉じる。続けて入力できる）。
+     どの欄で開いているかは S.addIn（'mgr'=リスト画面 / 'panel'=カレンダー画面のToDo / 'side'）、入力途中の内容は S.addDrafts（欄ごと）に持つ */
+  function addFocused(owner) {
+    var a = document.activeElement;
+    return !!(a && a.matches && a.matches('input[type=text]') && a.closest('.todo-add') && a.closest('[data-add-owner="' + owner + '"]'));
+  }
+  function todoAddControl(owner, refocus) {
+    if (S.addIn !== owner) {
+      return el('button', { class: 'todo-add-btn', type: 'button', text: '＋ 追加', title: 'ToDoを追加する',
+        onclick: function () { S.addIn = owner; S.addFocus = owner; renderTodo(); var i = document.querySelector('[data-add-owner="' + owner + '"] input[type=text]'); if (i) { S.addFocus = null; i.focus(); } } });
     }
-    var form = el('form', { class: 'todo-add', onsubmit: function (e) {
+    var drafts = S.addDrafts || (S.addDrafts = {}), d = drafts[owner] || (drafts[owner] = { v: '', k: '' });
+    var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容', value: d.v,
+      oninput: function () { d.v = input.value; },
+      onkeydown: function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeTodoAdd(); } } });
+    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類', onchange: function () { d.k = kindSel.value; } }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
+    if (kindSel && d.k) kindSel.value = d.k;
+    var form = el('form', { class: 'todo-add', 'data-add-owner': owner, onsubmit: function (e) {
       e.preventDefault();
       if (!input.value.trim()) return;
-      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { input.value = ''; loadTodos(); }).catch(fail);
-    } }, input, kindSel, el('button', { class: 'btn primary small', type: 'submit', text: '追加' }));
+      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { d.v = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
+    } }, input,
+      el('div', { class: 'todo-add-row' }, kindSel, el('span', { class: 'spacer' }),
+        el('button', { class: 'btn small ghost', type: 'button', text: 'キャンセル', onclick: closeTodoAdd }),
+        el('button', { class: 'btn primary small', type: 'submit', text: '追加' })));
+    if (refocus || S.addFocus === owner) { S.addFocus = null; setTimeout(function () { input.focus(); }, 0); }
+    return form;
+  }
+  function closeTodoAdd() { if (S.addDrafts && S.addIn) delete S.addDrafts[S.addIn]; S.addIn = null; renderTodo(); }
 
+  function renderTodoInto(box, full, keepFrom) {
+    var owner = box.id === 'todo-mgr' ? 'mgr' : 'side';
+    var refocus = keepFrom ? !!keepFrom.focus : addFocused(owner);
+    box.textContent = '';
     var list = el('div', { class: 'todo-list' });
     S.todos.forEach(function (t) { list.appendChild(todoItem(t)); });
-    if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。上の欄に入力して追加できます。' }));
+    if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。' }));
+    if (!full) list.appendChild(todoAddControl(owner, refocus));
 
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
-    if (keep && keep.focus) setTimeout(function () { input.focus(); try { input.setSelectionRange(keep.s, keep.e); } catch (e) { /* 何もしない */ } }, 0);
     if (full) {
       box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
-      box.appendChild(form);
-      box.appendChild(renderKanban());
+      box.appendChild(renderKanban(refocus));
     } else {
       box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。左のチェックで完了にすると、リストから消えて「完了」に移ります。' : 'あなただけに見えるToDoです。左のチェックで完了にすると、リストから消えて「完了」に移ります。' }));
-      box.appendChild(form);
       box.appendChild(list);
     }
 
@@ -1489,7 +1496,7 @@
     return card;
   }
 
-  function renderKanban() {
+  function renderKanban(refocus) {
     var tab = store('sched.kbTab');
     if (tab !== 'todo' && tab !== 'doing' && tab !== 'done') tab = 'doing';
     var wrap = el('div', { class: 'kanban', 'data-tab': tab });
@@ -1509,7 +1516,8 @@
       var col = el('div', { class: 'kb-col ' + status, 'data-status': status },
         el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length) })));
       items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
-      if (!items.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : 'ToDoはありません。上の欄から追加できます。' }));
+      if (!items.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : 'ToDoはありません。' }));
+      if (status === 'todo') col.appendChild(todoAddControl('mgr', refocus)); // 未着手の一番下に「＋ 追加」
       if (status === 'done' && items.length) {
         col.appendChild(el('button', { class: 'btn small danger', type: 'button', text: '完了をすべて削除', onclick: function () {
           if (!window.confirm('完了したToDo ' + S.done.length + '件を、すべて削除します。元に戻せません。よろしいですか？')) return;
