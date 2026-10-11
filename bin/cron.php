@@ -3,6 +3,7 @@
 //
 //   php bin/cron.php nightly   繰り返し業務を12か月先まで作る（深夜 0:30 ごろ）
 //   php bin/cron.php notify    Slack の朝・夕方の通知（5〜10分おきに実行。送る時刻は、画面の「Slack通知の時間・文面」で決める）
+//   php bin/cron.php backup    暗号化した自動バックアップを今すぐ作る（data/backups/）。notify の中でも、毎日3時以降に1回、自動で作る
 //   php bin/cron.php morning   今日の休みを Slack へ今すぐ通知（時刻を cron で決める従来の方法。notify を使うなら不要）
 //   php bin/cron.php evening   明日の休みを Slack へ今すぐ通知（同上）
 //
@@ -13,6 +14,7 @@
 require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/../src/events.php';
 require_once __DIR__ . '/../src/slack.php';
+require_once __DIR__ . '/../src/backup.php';
 
 $isCli = PHP_SAPI === 'cli';
 if (!$isCli) {
@@ -35,7 +37,10 @@ try {
             echo '繰り返し予定: ' . materialize_all() . " 件を更新しました\n";
             break;
         case 'notify':
-            echo implode("\n", notify_due() ?: ['送る通知はありません']) . "\n";
+            echo implode("\n", array_merge(notify_due(), backup_cron_tasks()) ?: ['送る通知はありません']) . "\n";
+            break;
+        case 'backup':
+            echo '自動バックアップを作成しました: ' . backup_auto_run() . "\n";
             break;
         case 'morning':
             materialize_all();
@@ -53,7 +58,7 @@ try {
             echo '明日の休み: ' . notify_offs_for_day($tomorrow, '明日') . " 件\n";
             break;
         default:
-            fwrite(STDERR, "mode は nightly / notify / morning / evening のいずれかです\n");
+            fwrite(STDERR, "mode は nightly / notify / backup / morning / evening のいずれかです\n");
             exit(1);
     }
 } catch (Throwable $e) {
