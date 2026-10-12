@@ -1033,6 +1033,30 @@ $sentSlack = 0;
 check('お知らせ(Slack): オフのときは、送らない', backup_alert_due(strtotime('2026-12-05 10:00:00')), []);
 backup_meta_set('backup_alert_slack', '1');
 check('お知らせ(Slack): Slackの送り先が無ければ、送れない（何もしない）', backup_alert_due(strtotime('2026-12-05 10:00:00')), []);
+
+// ---- 家族用の更新履歴の削除 ----
+$flA = save_event(['kind' => 'private', 'title' => '履歴削除A', 'tag' => '', 'start' => date('Y-m-d'), 'end' => date('Y-m-d'), 'start_time' => '', 'end_time' => '', 'note' => '', 'owner_id' => (int)$a['id'], 'family_shared' => 1, 'important' => 0], $a, null);
+$flB = save_event(['kind' => 'private', 'title' => '履歴削除B', 'tag' => '', 'start' => date('Y-m-d'), 'end' => date('Y-m-d'), 'start_time' => '', 'end_time' => '', 'note' => '', 'owner_id' => (int)$b['id'], 'family_shared' => 1, 'important' => 0], $b, null);
+$flAll = rows('SELECT id FROM event_log WHERE owner_id = ? ORDER BY id', [(int)$a['id']]);
+$flBAll = (int)row('SELECT COUNT(*) AS c FROM event_log WHERE owner_id = ?', [(int)$b['id']])['c'];
+$flFirst = (int)$flAll[0]['id'];
+check('更新履歴の削除: 他の人の履歴は、消せない', family_log_delete((int)$b['id'], $flFirst), 0);
+check('更新履歴の削除: 1件だけ消す', [family_log_delete((int)$a['id'], $flFirst), count(rows('SELECT id FROM event_log WHERE owner_id = ?', [(int)$a['id']])) === count($flAll) - 1], [1, true]);
+check('更新履歴の削除: 家族に見える履歴からも消える', in_array($flFirst, array_column(family_event_log((int)$a['id'])['entries'], 'id'), true), false);
+// 削除した予定の取消線（墓石）も、記録といっしょに消える
+delete_event($flA);
+$tombBefore = family_tombstones((int)$a['id'], date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+1 day')), [], []);
+check('更新履歴の削除: 削除した予定は、取消線として残る', count($tombBefore) >= 1, true);
+$delLog = (int)row("SELECT MAX(id) AS m FROM event_log WHERE owner_id = ? AND action = 'delete'", [(int)$a['id']])['m'];
+family_log_delete((int)$a['id'], $delLog);
+check('更新履歴の削除: その記録を消すと、取消線も消える', count(family_tombstones((int)$a['id'], date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+1 day')), [], [])), count($tombBefore) - 1);
+$nAll = family_log_delete((int)$a['id'], null);
+check('更新履歴の削除: すべて削除', [(int)row('SELECT COUNT(*) AS c FROM event_log WHERE owner_id = ?', [(int)$a['id']])['c'], $nAll >= 0], [0, true]);
+check('更新履歴の削除: 他の人の履歴は、そのまま', (int)row('SELECT COUNT(*) AS c FROM event_log WHERE owner_id = ?', [(int)$b['id']])['c'], $flBAll);
+check('更新履歴の削除: 予定そのものは、消えない', (bool)row('SELECT id FROM events WHERE id = ?', [(int)$flB['id']]), true);
+$flNew = save_event(['kind' => 'private', 'title' => '履歴削除C', 'tag' => '', 'start' => date('Y-m-d'), 'end' => date('Y-m-d'), 'start_time' => '', 'end_time' => '', 'note' => '', 'owner_id' => (int)$a['id'], 'family_shared' => 1, 'important' => 0], $a, null);
+check('更新履歴の削除: 削除のあとの新しい記録は、これまでより大きい番号（家族の「新着」判定が崩れない）', (int)family_event_log((int)$a['id'])['last_id'] > $flFirst, true);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

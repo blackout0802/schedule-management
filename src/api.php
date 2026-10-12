@@ -616,6 +616,23 @@ function handle_api(): void
             audit_log('user', 'reset', 'パスワードをリセット', $tu ? $tu['name'] : '', '一時パスワードを発行（次のログインで本人が変更）');
             api_out(['password' => $tmp]);
 
+        case 'family_log_list': // 自分の家族用リンクに見える更新履歴（持ち主が確認・削除するための一覧）
+            api_out(family_event_log((int)$user['id'], 200));
+
+        case 'family_log_delete': // 家族用の更新履歴を削除（自分の分だけ。1件、または、すべて）
+            if (!empty($in['all'])) {
+                $n = family_log_delete((int)$user['id'], null);
+            } else {
+                if (empty($in['id']) || !is_numeric($in['id'])) {
+                    api_fail('削除する履歴を選んでください。');
+                }
+                $n = family_log_delete((int)$user['id'], (int)$in['id']);
+            }
+            if ($n > 0) {
+                audit_log('share', 'delete', '家族用の更新履歴を削除', $user['name'], $n . '件'); // 中身（予定の件名）は、管理者の履歴には残さない
+            }
+            api_out(['ok' => true, 'deleted' => $n]);
+
         case 'backup_snooze': // 手動バックアップのお知らせを、7日間だけ消す（管理者）
             require_admin($user);
             backup_snooze(7);

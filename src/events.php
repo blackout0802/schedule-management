@@ -762,6 +762,20 @@ function family_event_log(int $ownerId, int $limit = 100): array
 }
 
 
+/**
+ * 家族用の更新履歴を削除する（予定の持ち主が、自分の分だけ）。$id が null なら、自分の分をすべて。削除した件数を返す。
+ * 削除された予定の「取消線」表示（家族が確認するまで残る）も、この記録から作っているので、記録といっしょに消える。
+ * 予定そのものは消えない。
+ */
+function family_log_delete(int $ownerId, ?int $id): int
+{
+    if ($id === null) {
+        return q('DELETE FROM event_log WHERE owner_id = ?', [$ownerId])->rowCount();
+    }
+    return q('DELETE FROM event_log WHERE owner_id = ? AND id = ?', [$ownerId, $id])->rowCount();
+}
+
+
 /** 予定が追加・変更・削除されたあとの後始末（休みが動いたら繰り返し業務を組み直す。家族用の更新履歴に残す） */
 function event_changed(?array $before, ?array $after): void
 {

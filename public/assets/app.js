@@ -2015,6 +2015,41 @@
     ov.outsideClose = true;
   }
 
+  /* 家族用ページの「更新履歴」を、持ち主が確認して削除する（1件ずつ／すべて） */
+  function openFamilyLogDialog() {
+    var body = el('div', { class: 'form' });
+    var ov = openModal('家族に見える更新履歴', body, true);
+    var label = { add: '追加', update: '変更', delete: '削除' };
+    function refresh() {
+      api('family_log_list').then(function (j) {
+        body.textContent = '';
+        body.appendChild(el('p', { class: 'hint', text: '家族用リンクの「更新履歴を見る」に出る、あなたの予定の追加・変更・削除の記録です（新しい順・最新200件まで）。ここで削除すると、家族の画面の履歴から消えます。予定そのものは消えません。' }));
+        body.appendChild(el('p', { class: 'hint', text: '※ 削除した予定を、家族がまだ「確認」していないときの取消線（カレンダー上）も、いっしょに消えます。' }));
+        if (!j.entries.length) {
+          body.appendChild(el('p', { class: 'muted', text: '更新の記録はありません。' }));
+        } else {
+          body.appendChild(el('ul', { class: 'log-list' }, j.entries.map(function (e) {
+            var when = e.from === e.to ? mdw(e.from) : mdw(e.from) + ' 〜 ' + mdw(e.to);
+            return el('li', { class: 'log-item ' + e.action },
+              el('div', { class: 'log-top' }, el('span', { class: 'log-at', text: fmtAt(e.at) }), el('span', { class: 'log-act ' + e.action, text: label[e.action] || e.action }),
+                el('button', { class: 'btn small ghost danger', type: 'button', style: 'margin-left:auto', text: '削除', 'aria-label': 'この履歴を削除', onclick: function () {
+                  api('family_log_delete', { body: { id: e.id } }).then(function () { toast('削除しました'); refresh(); load(); }).catch(fail);
+                } })),
+              el('div', { class: 'log-title' + (e.action === 'delete' ? ' gone' : ''), text: e.title + '　' + when }),
+              e.detail ? el('div', { class: 'log-detail', text: e.detail }) : null);
+          })));
+        }
+        body.appendChild(el('div', { class: 'actions' },
+          j.entries.length ? el('button', { class: 'btn danger', type: 'button', text: 'すべて削除', onclick: function () {
+            if (!window.confirm('家族に見える更新履歴を、すべて削除します（' + j.entries.length + '件）。元に戻せません。予定そのものは消えません。よろしいですか？')) return;
+            api('family_log_delete', { body: { all: true } }).then(function (r) { toast(r.deleted + '件を削除しました'); refresh(); load(); }).catch(fail);
+          } }) : null,
+          el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+      }).catch(fail);
+    }
+    refresh();
+  }
+
   /* ---------- 共有リンク ---------- */
   function openShareDialog() {
     var body = el('div', { class: 'form' });
@@ -2044,6 +2079,8 @@
           ? 'あなたの予定のうち、家族に共有すると決めたものだけが、カレンダーで見られます。プライベートは初期状態で共有（外した予定だけ隠れます）、業務・休みは、選んだものだけが共有されます。ログイン不要で、見るだけです。'
           : '会社の業務の予定と休みが見られます。プライベートの予定は含まれません。ログイン不要で、見るだけです。' }));
       if (family) box.appendChild(scopeBox());
+      if (family) box.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
+        el('button', { class: 'btn small', type: 'button', text: '家族に見える更新履歴を管理（削除）', title: '家族用ページの「更新履歴を見る」に出る記録を、確認・削除します', onclick: openFamilyLogDialog })));
       if (l.path) {
         var url = absUrl(l.path);
         var input = el('input', { type: 'text', readonly: true, value: url, 'aria-label': 'リンクのURL', onclick: function (e) { e.target.select(); } });
