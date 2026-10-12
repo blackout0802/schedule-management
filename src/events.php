@@ -294,6 +294,24 @@ function todo_for_client(array $t): array
         'done_at' => $t['done_at'] ?? null, 'status' => todo_status_of($t)];
 }
 
+/**
+ * 業務のToDoは、社員全員に見える（見るだけ。変えられるのは持ち主だけ）。プライベートのToDoは、本人だけ。
+ * 他の社員の業務のToDo（未完了・完了したもの新しい順）。業務版のリスト画面で、持ち主の名前つきで出す。
+ * @return array{todos:array,done:array}
+ */
+function list_others_todos(array $user, int $doneLimit = 30): array
+{
+    $map = function (array $t): array {
+        return ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => 'work', 'tag' => $t['tag'], 'note' => $t['note'], 'family_shared' => false,
+            'done_at' => $t['done_at'] ?? null, 'status' => todo_status_of($t), 'owner_id' => (int)$t['owner_id'], 'owner_name' => $t['owner_name'], 'editable' => false];
+    };
+    $base = "SELECT t.*, u.name AS owner_name FROM todos t JOIN users u ON u.id = t.owner_id WHERE t.kind = 'work' AND t.owner_id <> ? AND u.active = 1";
+    return [
+        'todos' => array_map($map, rows($base . ' AND t.done_at IS NULL ORDER BY u.name, t.sort_order, t.id', [$user['id']])),
+        'done' => array_map($map, rows($base . ' AND t.done_at IS NOT NULL ORDER BY t.done_at DESC, t.id DESC LIMIT ' . (int)$doneLimit, [$user['id']])),
+    ];
+}
+
 /** 未完了のToDo。@param string $view 'team' なら業務のToDoだけ */
 function list_todos(array $user, string $view): array
 {

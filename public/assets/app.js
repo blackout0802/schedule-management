@@ -16,7 +16,7 @@
   };
 
   var S = {
-    me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memoHtml: '', memoLoaded: false,
+    me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], others: { todos: [], done: [] }, drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memoHtml: '', memoLoaded: false,
     events: [], holidays: {}, tags: null, showOff: true, loading: false,
     page: !SHARE && location.hash === '#settings' ? 'settings' : 'main' // 'settings' = 設定のページ（URL の #settings）
   };
@@ -1354,7 +1354,7 @@
   /* ---------- ToDo ---------- */
   function loadTodos() {
     if (S.page === 'settings') return Promise.resolve();
-    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; S.revTd = j.rev; renderTodo(); }).catch(fail);
+    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; S.others = j.others || { todos: [], done: [] }; S.revTd = j.rev; renderTodo(); }).catch(fail);
   }
 
   /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
@@ -1411,7 +1411,7 @@
     var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容', value: d.v,
       oninput: function () { d.v = input.value; },
       onkeydown: function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeTodoAdd(); } } });
-    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類', onchange: function () { d.k = kindSel.value; } }, el('option', { value: 'private', text: 'プライベート' }), el('option', { value: 'work', text: '業務' })) : null;
+    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類', onchange: function () { d.k = kindSel.value; } }, el('option', { value: 'private', text: 'プライベート（自分だけ）' }), el('option', { value: 'work', text: '業務（全員に見える）' })) : null;
     if (kindSel && d.k) kindSel.value = d.k;
     var form = el('form', { class: 'todo-add', 'data-add-owner': owner, onsubmit: function (e) {
       e.preventDefault();
@@ -1437,7 +1437,8 @@
 
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
     if (full) {
-      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（あなただけに見えます）。' : 'あなただけに見えるToDoです。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
+      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（全員に見えます。変えられるのは持ち主だけです）。' : 'プライベートのToDoは、あなただけに見えます（種類が「業務」のToDoは、全員に見えます）。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
+      if (S.view === 'team') box.appendChild(todoWhoBar());
       box.appendChild(renderKanban(refocus));
     } else {
       box.appendChild(el('p', { class: 'hint', text: S.view === 'team' ? '業務のToDoです（あなただけに見えます）。左のチェックで完了にすると、リストから消えて「完了」に移ります。' : 'あなただけに見えるToDoです。左のチェックで完了にすると、リストから消えて「完了」に移ります。' }));
@@ -1548,6 +1549,41 @@
     return card;
   }
 
+  /* 業務のToDoは、全員に見える（見るだけ）。業務版のリスト画面で、「自分だけ／全員／○○さん」を選べる */
+  function todoWho() { var w = store('sched.todoWho'); return w === 'me' || (w && S.me.users.some(function (u) { return String(u.id) === String(w) && u.id !== S.me.user.id; })) ? String(w) : 'all'; }
+  function othersIn(status) {
+    if (S.view !== 'team') return [];
+    var w = todoWho();
+    if (w === 'me') return [];
+    var src = status === 'done' ? S.others.done : S.others.todos.filter(function (t) { return t.status === status; });
+    return src.filter(function (t) { return w === 'all' || String(t.owner_id) === w; });
+  }
+  function othersCard(t) {
+    var card = el('div', { class: 'todo-item kb-card work other' + (t.status === 'done' ? ' done' : ''), 'data-id': String(t.id), tabindex: '0', role: 'button', title: 'クリックで内容を見る（見るだけ。' + t.owner_name + 'さんのToDo）',
+      onclick: function () { openOthersTodo(t); }, onkeydown: function (e) { if (e.key === 'Enter') openOthersTodo(t); } },
+      el('div', { class: 't-body' },
+        el('div', { class: 't-title', text: t.title }),
+        el('div', { class: 't-main' }, el('span', { class: 'pill owner', text: t.owner_name }), t.tag ? el('span', { class: 'pill', text: t.tag }) : null,
+          t.status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null)));
+    return card;
+  }
+  function openOthersTodo(t) {
+    var ov = openModal('ToDo（' + t.owner_name + 'さん）', el('div', { class: 'form' },
+      el('dl', { class: 'detail' }, el('dt', { text: '内容' }), el('dd', { text: t.title }),
+        el('dt', { text: '状態' }), el('dd', { text: t.status === 'done' ? '完了' : t.status === 'doing' ? '進行中' : '未着手' }),
+        t.tag ? el('dt', { text: '分類' }) : null, t.tag ? el('dd', { text: t.tag }) : null,
+        t.note ? el('dt', { text: 'メモ' }) : null, t.note ? el('dd', { text: t.note, style: 'white-space:pre-wrap' }) : null),
+      el('p', { class: 'hint', text: '業務のToDoは、全員に見えます（見るだけ。変えられるのは、' + t.owner_name + 'さんだけです）。' }),
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
+    ov.outsideClose = true;
+  }
+  function todoWhoBar() {
+    var sel = el('select', { 'aria-label': '表示するToDo', onchange: function () { store('sched.todoWho', sel.value); renderTodo(); } },
+      el('option', { value: 'all', text: '全員のToDo' }), el('option', { value: 'me', text: '自分のToDo' }),
+      S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name + 'さん' }); }));
+    sel.value = todoWho();
+    return el('div', { class: 'todo-who' }, el('label', { class: 'inline' }, '表示:', sel));
+  }
   function renderKanban(refocus) {
     var tab = store('sched.kbTab');
     if (tab !== 'todo' && tab !== 'doing' && tab !== 'done') tab = 'doing';
@@ -1555,7 +1591,7 @@
     // スマホ幅では、列を並べず、状態をタブで切り替える（幅が広いときは隠れる）
     var tabs = el('div', { class: 'kb-tabs', role: 'tablist', 'aria-label': 'ToDoの状態' });
     KANBAN.forEach(function (c) {
-      var n = c[0] === 'done' ? S.done.length : S.todos.filter(function (t) { return t.status === c[0]; }).length;
+      var n = (c[0] === 'done' ? S.done.length : S.todos.filter(function (t) { return t.status === c[0]; }).length) + othersIn(c[0]).length;
       tabs.appendChild(el('button', { type: 'button', role: 'tab', class: 'kb-tab ' + c[0], 'aria-selected': c[0] === tab ? 'true' : 'false',
         text: c[1] + ' ' + n, onclick: function () {
           store('sched.kbTab', c[0]); wrap.setAttribute('data-tab', c[0]);
@@ -1565,10 +1601,15 @@
     wrap.appendChild(tabs);
     KANBAN.forEach(function (c) {
       var status = c[0], items = status === 'done' ? S.done : S.todos.filter(function (t) { return t.status === status; });
+      var oth = othersIn(status);
       var col = el('div', { class: 'kb-col ' + status, 'data-status': status },
-        el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length) })));
+        el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length + oth.length) })));
       items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
-      if (!items.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : 'ToDoはありません。' }));
+      if (!items.length && !oth.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : 'ToDoはありません。' }));
+      if (oth.length) { // 業務版: 他の人の業務のToDo（見るだけ）
+        col.appendChild(el('div', { class: 'kb-others-h', text: '他の人のToDo' }));
+        oth.forEach(function (t) { col.appendChild(othersCard(t)); });
+      }
       if (status === 'todo') col.appendChild(todoAddControl('mgr', refocus)); // 未着手の一番下に「＋ 追加」
       if (status === 'done' && items.length) {
         col.appendChild(el('button', { class: 'btn small danger', type: 'button', text: '完了をすべて削除', onclick: function () {

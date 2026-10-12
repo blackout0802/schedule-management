@@ -1074,6 +1074,28 @@ $beforeAll = $au0();
 check('変更履歴の削除: すべて削除し、削除の記録だけが残る', [audit_delete('all'), $au0(), row('SELECT label FROM audit_log')['label']], [$beforeAll, 1, '変更履歴を削除']);
 check('変更履歴の削除: 知らないモードは、何もしない', audit_delete('x'), 0);
 
+
+// ---- 業務のToDoの共有（全員に見える・見るだけ） ----
+q('DELETE FROM todos');
+$tdA1 = save_todo(['title' => '山田の業務ToDo', 'kind' => 'work', 'tag' => '', 'note' => '山田のメモ', 'family_shared' => 0], $a, null);
+$tdA2 = save_todo(['title' => '山田のプライベートToDo', 'kind' => 'private', 'tag' => '', 'note' => 'ひみつ', 'family_shared' => 0], $a, null);
+$tdB1 = save_todo(['title' => '鈴木の業務ToDo', 'kind' => 'work', 'tag' => '', 'note' => '', 'family_shared' => 0], $b, null);
+$tdDone = save_todo(['title' => '鈴木の完了済みToDo', 'kind' => 'work', 'tag' => '', 'note' => '', 'family_shared' => 0], $b, null);
+set_todo_done($tdDone, true);
+$oa = list_others_todos($admin);
+check('業務のToDoの共有: 管理者にも、他の社員の業務のToDoが見える（持ち主の名前つき）', [array_column($oa['todos'], 'title'), array_unique(array_column($oa['todos'], 'owner_name'))], [['山田の業務ToDo', '鈴木の業務ToDo'], ['山田', '鈴木']] );
+check('業務のToDoの共有: 完了したものも見える', array_column($oa['done'], 'title'), ['鈴木の完了済みToDo']);
+check('業務のToDoの共有: プライベートのToDoは、誰にも見えない', in_array('山田のプライベートToDo', array_merge(array_column($oa['todos'], 'title'), array_column($oa['done'], 'title')), true), false);
+check('業務のToDoの共有: プライベートのメモ（ひみつ）も、出てこない', strpos(json_encode($oa, JSON_UNESCAPED_UNICODE), 'ひみつ') === false, true);
+$ob = list_others_todos($b);
+check('業務のToDoの共有: 自分のToDoは「他の人」に含まれない', array_column($ob['todos'], 'title'), ['山田の業務ToDo']);
+check('業務のToDoの共有: 見るだけ（editable=false・持ち主はそのまま）', [$ob['todos'][0]['editable'], $ob['todos'][0]['owner_id']], [false, (int)$a['id']]);
+check('業務のToDoの共有: 他の人は、変更できない（持ち主だけが探せる）', [find_todo((int)$tdA1['id'], $b), (bool)find_todo((int)$tdA1['id'], $a)], [null, true]);
+q('UPDATE users SET active = 0 WHERE id = ?', [(int)$b['id']]);
+check('業務のToDoの共有: 利用停止の社員のToDoは、出ない', array_column(list_others_todos($a)['todos'], 'title'), []);
+q('UPDATE users SET active = 1 WHERE id = ?', [(int)$b['id']]);
+check('業務のToDoの共有: 自分のToDo一覧（list_todos）は、これまで通り自分の分だけ', [array_column(list_todos($a, 'team'), 'title'), array_column(list_todos($a, 'me'), 'title')], [['山田の業務ToDo'], ['山田の業務ToDo', '山田のプライベートToDo']]);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

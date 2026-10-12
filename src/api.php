@@ -250,7 +250,11 @@ function handle_api(): void
         case 'todo_list':
             $tv = ($_GET['view'] ?? 'me') === 'team' ? 'team' : 'me';
             $rev = data_rev();
-            api_out(['todos' => list_todos($user, $tv), 'done' => list_done_todos($user, $tv), 'rev' => $rev]);
+            $out = ['todos' => list_todos($user, $tv), 'done' => list_done_todos($user, $tv), 'rev' => $rev];
+            if ($tv === 'team') {
+                $out['others'] = list_others_todos($user); // 業務のToDoは、全員に見える（見るだけ）
+            }
+            api_out($out);
 
         case 'todo_done':
             $t = find_todo((int)($in['id'] ?? 0), $user);

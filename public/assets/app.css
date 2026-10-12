@@ -633,3 +633,12 @@ kbd { border-radius: 6px; }
 .audit-item .au-del { position: absolute; right: 6px; top: 6px; }
 .audit-bulk { border-top: .5px solid var(--line); margin-top: 8px; padding-top: 10px; }
 .audit-bulk-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* 業務のToDoの共有: 他の人のToDoは、見るだけ（持ち主の名前つき・少し淡く） */
+.todo-who { display: flex; justify-content: flex-end; }
+.todo-who select { width: auto; padding: 4px 8px; font-size: 13px; }
+.todo-who label.inline { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
+.kb-others-h { font-size: 11.5px; font-weight: 500; letter-spacing: .06em; color: var(--muted); margin: 6px 2px 0; }
+.todo-item.other { cursor: pointer; background: color-mix(in srgb, var(--surface) 70%, var(--bg)); border-style: dashed; border-left-style: solid; box-shadow: none; }
+.todo-item.other:hover { background: var(--surface); }
+.pill.owner { background: var(--work-soft); color: var(--work); font-weight: 500; }
