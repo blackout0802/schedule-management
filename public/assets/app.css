@@ -654,3 +654,15 @@ kbd { border-radius: 6px; }
 .tc-at { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .tc-body { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
 .tc-dialog textarea { width: 100%; }
+
+/* コメントの画像 */
+.tc-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tc-thumb { border: .5px solid var(--line); border-radius: 10px; padding: 0; background: var(--surface); cursor: zoom-in; overflow: hidden; line-height: 0; }
+.tc-thumb img { max-height: 140px; max-width: 220px; object-fit: cover; display: block; }
+.tc-big { max-width: 100%; max-height: 75vh; border-radius: 8px; display: block; margin: 0 auto; }
+.tc-pending { display: flex; flex-wrap: wrap; gap: 6px; }
+.tc-pending:empty { display: none; }
+.tc-pend { position: relative; display: inline-block; line-height: 0; }
+.tc-pend img { height: 64px; border-radius: 8px; border: .5px solid var(--line); display: block; }
+.tc-x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--ink); color: var(--bg); font-size: 13px; line-height: 20px; padding: 0; cursor: pointer; }
+.tc-dialog.tc-drop { outline: 2px dashed var(--work); outline-offset: 4px; border-radius: 8px; }

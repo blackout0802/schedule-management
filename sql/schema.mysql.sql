@@ -160,3 +160,18 @@ CREATE TABLE IF NOT EXISTS todo_comments (
   created_at DATETIME NOT NULL,
   KEY ix_todo_comments_todo (todo_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS todo_comment_files (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  comment_id INT UNSIGNED NOT NULL,
+  todo_id INT UNSIGNED NOT NULL,
+  name VARCHAR(100) NOT NULL DEFAULT '',
+  mime VARCHAR(20) NOT NULL,
+  size INT UNSIGNED NOT NULL,
+  width INT UNSIGNED NOT NULL DEFAULT 0,
+  height INT UNSIGNED NOT NULL DEFAULT 0,
+  stored VARCHAR(60) NOT NULL,
+  created_at DATETIME NOT NULL,
+  KEY ix_tcf_comment (comment_id),
+  KEY ix_tcf_todo (todo_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

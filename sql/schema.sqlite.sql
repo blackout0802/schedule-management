@@ -150,3 +150,18 @@ CREATE TABLE IF NOT EXISTS todo_comments (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_todo_comments_todo ON todo_comments (todo_id, id);
+
+CREATE TABLE IF NOT EXISTS todo_comment_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  comment_id INTEGER NOT NULL,
+  todo_id INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  width INTEGER NOT NULL DEFAULT 0,
+  height INTEGER NOT NULL DEFAULT 0,
+  stored TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_tcf_comment ON todo_comment_files (comment_id);
+CREATE INDEX IF NOT EXISTS ix_tcf_todo ON todo_comment_files (todo_id);

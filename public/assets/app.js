@@ -105,6 +105,7 @@
     var qs = Object.keys(opts.params || {}).map(function (k) { return '&' + k + '=' + encodeURIComponent(opts.params[k]); }).join('');
     var init = { method: opts.body ? 'POST' : 'GET', credentials: 'same-origin', headers: {} };
     if (opts.body) { init.headers['Content-Type'] = 'application/json'; init.headers['X-CSRF-Token'] = csrf; init.body = JSON.stringify(opts.body); }
+    if (opts.form) { init.method = 'POST'; init.headers['X-CSRF-Token'] = csrf; init.body = opts.form; } // 画像つき（FormData）。Content-Type は、ブラウザが決める
     var url = SHARE ? 'share_api.php?t=' + encodeURIComponent(SHARE.token) + '&action=' + action + qs : 'api.php?action=' + action + qs;
     return fetch(url, init).then(function (r) {
       if (r.status === 401) { if (!opts.quiet) location.href = 'login.php'; throw new Error('login'); }
@@ -1575,22 +1576,101 @@
     if (t.kind === 'private' || !t.comments) return null;
     return el('span', { class: 'pill tc' + (tcNew(t) ? ' new' : ''), text: '💬 ' + t.comments, title: 'コメント ' + t.comments + '件' + (tcNew(t) ? '（新着あり）' : '') });
   }
+  /* 画像（スクリーンショットなど）を、送る前に縮める。長辺1600pxまで、1枚およそ900KB以下（サーバーの受け取り上限に収まるように）。
+     結果は { blob, url（小さなプレビュー用）, name } */
+  function shrinkImage(file) {
+    return new Promise(function (resolve, reject) {
+      if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) { reject(new Error('画像（PNG・JPEG・GIF・WebP）だけ添付できます。')); return; }
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error('画像を読み込めませんでした。')); };
+      fr.onload = function () {
+        var im = new Image();
+        im.onerror = function () { reject(new Error('画像を読み込めませんでした。')); };
+        im.onload = function () {
+          var MAX = 1600, w = im.naturalWidth, h = im.naturalHeight, k = Math.min(1, MAX / Math.max(w, h));
+          var cv = document.createElement('canvas'), ctx = cv.getContext('2d');
+          var draw = function (scale) { cv.width = Math.max(1, Math.round(w * scale)); cv.height = Math.max(1, Math.round(h * scale)); ctx.clearRect(0, 0, cv.width, cv.height); ctx.drawImage(im, 0, 0, cv.width, cv.height); };
+          var LIMIT = 900 * 1024;
+          var toBlob = function (type, q) { return new Promise(function (res) { cv.toBlob(res, type, q); }); };
+          var step = function (scale) {
+            draw(scale);
+            return toBlob('image/png').then(function (b) {
+              if (b && b.size <= LIMIT) return b;
+              // 大きいときは、白い背景にして JPEG にする（写真・大きなスクリーンショット）
+              var c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; var x2 = c2.getContext('2d'); x2.fillStyle = '#fff'; x2.fillRect(0, 0, c2.width, c2.height); x2.drawImage(cv, 0, 0);
+              var tryQ = function (q) { return new Promise(function (res) { c2.toBlob(res, 'image/jpeg', q); }).then(function (jb) { return jb && (jb.size <= LIMIT || q <= 0.5) ? jb : tryQ(q - 0.15); }); };
+              return tryQ(0.85).then(function (jb) { return jb.size <= LIMIT || scale < 0.3 ? jb : step(scale * 0.75); });
+            });
+          };
+          step(k).then(function (blob) {
+            var th = document.createElement('canvas'), tk = Math.min(1, 160 / Math.max(cv.width, cv.height)); th.width = Math.max(1, Math.round(cv.width * tk)); th.height = Math.max(1, Math.round(cv.height * tk));
+            th.getContext('2d').drawImage(cv, 0, 0, th.width, th.height);
+            var ext = blob.type === 'image/jpeg' ? 'jpg' : 'png';
+            resolve({ blob: blob, url: th.toDataURL('image/png'), name: (file.name || 'screenshot').replace(/\.[^.]*$/, '') + '.' + ext });
+          }, reject);
+        };
+        im.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  function openImageViewer(f) {
+    var img = el('img', { src: 'api.php?action=todo_file&id=' + f.id, alt: f.name || '添付画像', class: 'tc-big' });
+    var ov = openModal('画像', el('div', { class: 'form' }, img,
+      el('div', { class: 'actions' }, el('a', { class: 'btn', href: 'api.php?action=todo_file&id=' + f.id, target: '_blank', rel: 'noopener', text: '別のタブで開く' }), el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))), true);
+    ov.outsideClose = true;
+  }
   function openTodoThread(t) {
     var mine = t.owner_id === undefined || t.owner_id === S.me.user.id;
     var body = el('div', { class: 'form tc-dialog' });
     var ov = openModal('ToDo' + (mine ? '' : '（' + t.owner_name + 'さん）'), body);
     ov.outsideClose = true;
-    var ta = el('textarea', { maxlength: '500', rows: '3', placeholder: 'コメントを入力（Ctrl + Enter で送信）', 'aria-label': 'コメント' });
+    var pending = []; // 添付する画像（送る前）。{ blob, url, name }
+    var ta = el('textarea', { maxlength: '500', rows: '3', placeholder: 'コメントを入力（Ctrl + Enter で送信）。スクリーンショットは、貼り付け（Ctrl + V）できます', 'aria-label': 'コメント' });
+    var fileIn = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, hidden: true, onchange: function () { addFiles(fileIn.files); fileIn.value = ''; } });
+    var thumbs = el('div', { class: 'tc-pending' });
+    var sending = false;
+    function drawThumbs() {
+      thumbs.textContent = '';
+      pending.forEach(function (p, i) {
+        thumbs.appendChild(el('span', { class: 'tc-pend' }, el('img', { src: p.url, alt: p.name }),
+          el('button', { class: 'tc-x', type: 'button', 'aria-label': '画像を外す', text: '×', onclick: function () { pending.splice(i, 1); drawThumbs(); } })));
+      });
+    }
+    function addFiles(list) {
+      var files = Array.prototype.slice.call(list || []).filter(function (f) { return /^image\//.test(f.type); });
+      if (!files.length) return;
+      if (pending.length + files.length > 3) { toast('1つのコメントに付けられる画像は、3枚までです'); files = files.slice(0, Math.max(0, 3 - pending.length)); }
+      files.reduce(function (pr, f) { return pr.then(function () { return shrinkImage(f).then(function (r) { pending.push(r); drawThumbs(); }); }); }, Promise.resolve()).catch(fail);
+    }
+    ta.addEventListener('paste', function (e) {
+      var items = (e.clipboardData && e.clipboardData.items) || [], imgs = [];
+      for (var i = 0; i < items.length; i++) if (items[i].kind === 'file' && /^image\//.test(items[i].type)) imgs.push(items[i].getAsFile());
+      if (imgs.length) { e.preventDefault(); addFiles(imgs); }
+    });
+    body.addEventListener('dragover', function (e) { if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0) { e.preventDefault(); body.classList.add('tc-drop'); } });
+    body.addEventListener('dragleave', function (e) { if (!body.contains(e.relatedTarget)) body.classList.remove('tc-drop'); });
+    body.addEventListener('drop', function (e) { body.classList.remove('tc-drop'); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); addFiles(e.dataTransfer.files); } });
     function send() {
       var v = ta.value.trim();
-      if (!v) return;
-      api('todo_comment_add', { body: { id: t.id, body: v } }).then(function (r) { ta.value = ''; store(tcSeenKey(t), r.comment_id); refresh(); loadTodos(); }).catch(fail);
+      if ((!v && !pending.length) || sending) return;
+      sending = true;
+      var done = function (r) { sending = false; ta.value = ''; pending = []; drawThumbs(); store(tcSeenKey(t), r.comment_id); refresh(); loadTodos(); };
+      var err = function (x) { sending = false; fail(x); };
+      if (pending.length) {
+        var fd = new FormData();
+        fd.append('id', String(t.id)); fd.append('body', v);
+        pending.forEach(function (p) { fd.append('files[]', p.blob, p.name); });
+        api('todo_comment_upload', { form: fd }).then(done, err);
+      } else {
+        api('todo_comment_add', { body: { id: t.id, body: v } }).then(done, err);
+      }
     }
     function refresh() {
       api('todo_comments', { params: { id: String(t.id) } }).then(function (j) {
-        var first = !body.firstChild;
-        body.textContent = '';
+        var first = !body.querySelector('.detail');
         var typed = ta.value;
+        body.textContent = '';
         body.appendChild(el('dl', { class: 'detail' }, el('dt', { text: '内容' }), el('dd', { text: t.title }),
           el('dt', { text: '状態' }), el('dd', { text: j.todo.status === 'done' ? '完了' : j.todo.status === 'doing' ? '進行中' : '未着手' }),
           t.tag ? el('dt', { text: '分類' }) : null, t.tag ? el('dd', { text: t.tag }) : null,
@@ -1601,14 +1681,22 @@
           return el('li', { class: 'tc-item' },
             el('div', { class: 'tc-top' }, el('b', { text: c.author_name }), el('span', { class: 'tc-at', text: fmtAt(c.at) }),
               c.can_delete ? el('button', { class: 'btn small ghost danger', type: 'button', text: '削除', onclick: function () {
-                if (!window.confirm('このコメントを削除します。よろしいですか？')) return;
+                if (!window.confirm('このコメントを削除します' + (c.files.length ? '（画像も消えます）' : '') + '。よろしいですか？')) return;
                 api('todo_comment_delete', { body: { id: c.id } }).then(function () { refresh(); loadTodos(); }).catch(fail);
               } }) : null),
-            el('div', { class: 'tc-body', text: c.body }));
+            c.body ? el('div', { class: 'tc-body', text: c.body }) : null,
+            c.files.length ? el('div', { class: 'tc-files' }, c.files.map(function (f) {
+              var im = el('img', { src: 'api.php?action=todo_file&id=' + f.id, alt: f.name || '添付画像', loading: 'lazy', onclick: function () { openImageViewer(f); } });
+              im.addEventListener('error', function () { im.replaceWith(el('span', { class: 'muted', text: '（画像が見つかりません）' })); });
+              return el('button', { class: 'tc-thumb', type: 'button', title: '大きく見る', 'aria-label': '画像を大きく見る' }, im);
+            })) : null);
         })) : el('p', { class: 'muted', text: 'まだコメントはありません。' }));
         ta.value = typed;
         body.appendChild(ta);
-        body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }),
+        body.appendChild(thumbs);
+        body.appendChild(el('div', { class: 'actions' },
+          el('button', { class: 'btn left', type: 'button', text: '📎 画像を添付', title: '画像（スクリーンショットなど）を3枚まで。貼り付け（Ctrl + V）やドラッグでも添付できます', onclick: function () { fileIn.click(); } }), fileIn,
+          el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }),
           el('button', { class: 'btn primary', type: 'button', text: 'コメントを送る', onclick: send })));
         if (j.comments.length) { store(tcSeenKey(t), j.comments[j.comments.length - 1].id); loadTodosQuiet(); }
         if (first) setTimeout(function () { ta.focus(); }, 0);

@@ -124,9 +124,13 @@ function handle_api(): void
         if (!csrf_valid($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)) {
             api_fail('画面の有効期限が切れました。ページを再読み込みしてください。', 403);
         }
-        $in = json_decode((string)file_get_contents('php://input'), true);
-        if (!is_array($in)) {
-            api_fail('リクエストの形式が正しくありません。');
+        if (strpos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/form-data') === 0) {
+            $in = $_POST; // 画像つきのコメント（ファイルは $_FILES）
+        } else {
+            $in = json_decode((string)file_get_contents('php://input'), true);
+            if (!is_array($in)) {
+                api_fail('リクエストの形式が正しくありません。');
+            }
         }
     }
     if ($action === 'rev') {
@@ -273,6 +277,55 @@ function handle_api(): void
                 api_fail($err);
             }
             api_out(['ok' => true, 'comment_id' => $ok['id']]);
+
+        case 'todo_comment_upload': // 画像つきのコメント（multipart）。画像は3枚まで。画像だけ（文字なし）でもよい
+            $t = todo_for_comments((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            $up = [];
+            $fl = $_FILES['files'] ?? null;
+            if ($fl && is_array($fl['name'] ?? null)) {
+                foreach ($fl['name'] as $i => $nm) {
+                    if (($fl['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
+                    $up[] = ['name' => $nm, 'tmp_name' => $fl['tmp_name'][$i], 'error' => $fl['error'][$i], 'size' => $fl['size'][$i]];
+                }
+            }
+            if (count($up) > ATTACH_MAX_PER_COMMENT) {
+                api_fail('1つのコメントに付けられる画像は、' . ATTACH_MAX_PER_COMMENT . '枚までです。');
+            }
+            try {
+                $proc = array_map('attach_process', $up); // 先に全部を検査する（1枚でもだめなら、何も保存しない）
+                [$ok, $err] = todo_comment_add($t, $user, (string)($in['body'] ?? ''), count($proc));
+                if ($err) {
+                    api_fail($err);
+                }
+                foreach ($proc as $p) {
+                    attach_store((int)$ok['id'], (int)$t['id'], $p);
+                }
+            } catch (AttachException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'comment_id' => $ok['id']]);
+
+        case 'todo_file': // コメントの画像（見てよいToDoのものだけ）
+            $f = attach_find((int)($_GET['id'] ?? 0), $user);
+            if (!$f || !empty($f['missing'])) {
+                http_response_code(404);
+                header('Content-Type: text/plain; charset=utf-8');
+                exit('画像が見つかりません。');
+            }
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+            header('Content-Type: ' . $f['mime']);
+            header('Content-Length: ' . (int)filesize(attach_dir() . '/' . $f['stored']));
+            header('Content-Disposition: inline; filename="image-' . (int)$f['id'] . '.' . (preg_replace('/^.*\./', '', $f['stored'])) . '"');
+            header('Cache-Control: private, max-age=3600');
+            readfile(attach_dir() . '/' . $f['stored']);
+            exit;
 
         case 'todo_comment_delete':
             if (!todo_comment_delete((int)($in['id'] ?? 0), $user)) {
@@ -441,7 +494,7 @@ function handle_api(): void
             if (!$t) {
                 api_fail('ToDoが見つかりません。', 404);
             }
-            q('DELETE FROM todo_comments WHERE todo_id = ?', [$t['id']]);
+            todo_comments_purge('SELECT id FROM todos WHERE id = ?', [$t['id']]);
             q('DELETE FROM todos WHERE id = ?', [$t['id']]);
             api_out(['ok' => true]);
 

@@ -1124,6 +1124,63 @@ clear_done_todos($b, 'team');
 check('ToDoのコメント: ToDoを削除すると、コメントも消える（完了分の一括削除）', (int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [(int)$tdB1['id']])['c'], 0);
 check('ToDoのコメント: バックアップに含まれる', isset(backup_collect()['tables']['todo_comments']), true);
 
+
+// ---- コメントの画像 ----
+define('ATTACH_TEST', true);
+$mkImg = function (string $kind, int $w = 120, int $h = 80) use ($tmp) {
+    $im = imagecreatetruecolor($w, $h); imagefill($im, 0, 0, imagecolorallocate($im, 30, 120, 220)); imagestring($im, 3, 5, 5, 'shot', imagecolorallocate($im, 255, 255, 255));
+    $f = $tmp . '/img-' . uniqid() . '.' . $kind; ob_start();
+    if ($kind === 'png') imagepng($im); elseif ($kind === 'jpg') imagejpeg($im); elseif ($kind === 'gif') imagegif($im); else imagewebp($im);
+    file_put_contents($f, ob_get_clean()); imagedestroy($im);
+    return ['name' => 'スクリーンショット.' . $kind, 'tmp_name' => $f, 'error' => UPLOAD_ERR_OK, 'size' => filesize($f)];
+};
+$thA = function (callable $fn) { try { $fn(); return null; } catch (AttachException $x) { return $x->getMessage(); } };
+$pngP = attach_process($mkImg('png'));
+check('画像: PNGは、PNGのまま受け取る（大きさも分かる）', [$pngP['mime'], $pngP['ext'], $pngP['w'], $pngP['h']], ['image/png', 'png', 120, 80]);
+check('画像: JPEGは、JPEGのまま', attach_process($mkImg('jpg'))['mime'], 'image/jpeg');
+check('画像: GIFは、PNGにそろえる（動かない1枚）', attach_process($mkImg('gif'))['mime'], 'image/png');
+check('画像: WebPも受け取る', attach_process($mkImg('webp'))['mime'], 'image/webp');
+$big = attach_process($mkImg('png', 4000, 1000));
+check('画像: 長辺2000pxまで縮める（縦横の比率は保つ）', [$big['w'], $big['h']], [2000, 500]);
+$txt = $tmp . '/fake.png'; file_put_contents($txt, '<?php echo "x";');
+check('画像: 画像でないファイルは、拡張子が.pngでも拒否', $thA(function () use ($txt) { attach_process(['name' => 'fake.png', 'tmp_name' => $txt, 'error' => UPLOAD_ERR_OK, 'size' => 15]); }) !== null, true);
+$svg = $tmp . '/a.svg'; file_put_contents($svg, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+check('画像: SVG（文字の中にスクリプトを入れられる）は、拒否', $thA(function () use ($svg) { attach_process(['name' => 'a.svg', 'tmp_name' => $svg, 'error' => UPLOAD_ERR_OK, 'size' => 100]); }) !== null, true);
+$poly = $mkImg('png'); file_put_contents($poly['tmp_name'], file_get_contents($poly['tmp_name']) . '<?php system($_GET["c"]); ?>');
+check('画像: 画像のうしろに仕込まれたPHPは、描き直しで消える', strpos(attach_process($poly)['data'], '<?php') === false, true);
+check('画像: 送信エラー（サイズ超過）は、分かりやすい文言', strpos($thA(function () { attach_process(['name' => 'x.png', 'tmp_name' => '', 'error' => UPLOAD_ERR_INI_SIZE, 'size' => 0]); }), '大きすぎ') !== false, true);
+// 保存・取得・削除
+q('DELETE FROM todo_comment_files'); q('DELETE FROM todo_comments');
+foreach (glob(attach_dir() . '/*') ?: [] as $f) { if (basename($f) !== '.htaccess') { @unlink($f); } }
+$tdImg = save_todo(['title' => '画像つきToDo', 'kind' => 'work', 'tag' => '', 'note' => '', 'family_shared' => 0], $a, null);
+[$cI] = todo_comment_add(todo_for_comments((int)$tdImg['id'], $b), $b, '', 1);
+$fid = attach_store((int)$cI['id'], (int)$tdImg['id'], $pngP);
+$stored = row('SELECT stored FROM todo_comment_files WHERE id = ?', [$fid])['stored'];
+check('画像: 本文が空でも、画像があればコメントにできる', [$cI !== null, todo_comment_add(todo_for_comments((int)$tdImg['id'], $b), $b, '', 0)[1] !== null], [true, true]);
+check('画像: 保存先に、ランダムな名前で置かれる（権限 600）', [(bool)preg_match('/^[a-f0-9]{32}\.png$/', $stored), is_file(attach_dir() . '/' . $stored), substr(sprintf('%o', fileperms(attach_dir() . '/' . $stored)), -3)], [true, true, '600']);
+check('画像: 保存先は Web から見えない（.htaccess）', is_file(attach_dir() . '/.htaccess'), true);
+check('画像: コメント一覧に、画像の情報が付く', todo_comments_list(todo_for_comments((int)$tdImg['id'], $a), $a)[0]['files'][0]['w'], 120);
+check('画像: 見てよい社員（他の人・管理者）は、取り出せる', [(bool)attach_find($fid, $b), (bool)attach_find($fid, $admin), (bool)attach_find($fid, $a)], [true, true, true]);
+$tdPriv = save_todo(['title' => '私用', 'kind' => 'private', 'tag' => '', 'note' => '', 'family_shared' => 0], $a, null);
+q('UPDATE todo_comment_files SET todo_id = ? WHERE id = ?', [(int)$tdPriv['id'], $fid]);
+check('画像: プライベートのToDoの画像は、他の人は取り出せない（持ち主だけ）', [attach_find($fid, $b), (bool)attach_find($fid, $a)], [null, true]);
+q('UPDATE todo_comment_files SET todo_id = ? WHERE id = ?', [(int)$tdImg['id'], $fid]);
+check('画像: 存在しない番号は null', attach_find(99999, $a), null);
+check('画像: ファイルが無いときは、missing になる', (function () use ($fid, $stored, $a) { rename(attach_dir() . '/' . $stored, attach_dir() . '/tmp-moved'); $r = attach_find($fid, $a); rename(attach_dir() . '/tmp-moved', attach_dir() . '/' . $stored); return !empty($r['missing']); })(), true);
+// 1つのToDoの上限
+$cap = save_todo(['title' => '上限', 'kind' => 'work', 'tag' => '', 'note' => '', 'family_shared' => 0], $a, null);
+for ($i = 0; $i < ATTACH_MAX_PER_TODO; $i++) { q('INSERT INTO todo_comment_files (comment_id, todo_id, name, mime, size, width, height, stored, created_at) VALUES (0,?,?,?,?,?,?,?,?)', [(int)$cap['id'], 'x', 'image/png', 1, 1, 1, str_repeat('0', 32) . '.png', now_str()]); }
+check('画像: 1つのToDoに付けられるのは30枚まで', todo_comment_add(todo_for_comments((int)$cap['id'], $b), $b, 'もう1枚', 1)[1] !== null, true);
+q('DELETE FROM todo_comment_files WHERE todo_id = ?', [(int)$cap['id']]);
+// 削除で、ファイルも消える
+todo_comment_delete((int)$cI['id'], $a);
+check('画像: コメントを消すと、画像のファイルも消える', [is_file(attach_dir() . '/' . $stored), (int)row('SELECT COUNT(*) AS c FROM todo_comment_files WHERE id = ?', [$fid])['c']], [false, 0]);
+[$cJ] = todo_comment_add(todo_for_comments((int)$tdImg['id'], $b), $b, 'もう一度', 1);
+$fid2 = attach_store((int)$cJ['id'], (int)$tdImg['id'], $pngP); $stored2 = row('SELECT stored FROM todo_comment_files WHERE id = ?', [$fid2])['stored'];
+todo_comments_purge('SELECT id FROM todos WHERE id = ?', [(int)$tdImg['id']]);
+check('画像: ToDoを消す処理で、コメントと画像のファイルが消える', [is_file(attach_dir() . '/' . $stored2), (int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [(int)$tdImg['id']])['c']], [false, 0]);
+check('画像: バックアップには含めない（画像のファイルは、サーバーの data/attachments/ にだけある）', isset(backup_collect()['tables']['todo_comment_files']), false);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

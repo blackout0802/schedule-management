@@ -6,6 +6,7 @@
 //   work    … 全社員に見える。プライベート版ではタグで絞り込める
 //   off     … 全社員に見える
 
+require_once __DIR__ . '/attachments.php';
 require_once __DIR__ . '/recurrence.php';
 require_once __DIR__ . '/audit.php';
 
@@ -332,18 +333,19 @@ function todo_for_comments(int $id, array $user): ?array
 function todo_comments_list(array $todo, array $user): array
 {
     $rows = rows('SELECT c.*, u.name AS author_name FROM todo_comments c LEFT JOIN users u ON u.id = c.author_id WHERE c.todo_id = ? ORDER BY c.id', [$todo['id']]);
-    return array_map(function ($c) use ($todo, $user) {
-        return ['id' => (int)$c['id'], 'author_id' => (int)$c['author_id'], 'author_name' => $c['author_name'] ?? '（退職した社員）', 'body' => $c['body'], 'at' => $c['created_at'],
+    $files = attach_files_of_comments(array_map(function ($c) { return (int)$c['id']; }, $rows));
+    return array_map(function ($c) use ($todo, $user, $files) {
+        return ['id' => (int)$c['id'], 'author_id' => (int)$c['author_id'], 'author_name' => $c['author_name'] ?? '（退職した社員）', 'body' => $c['body'], 'at' => $c['created_at'], 'files' => $files[(int)$c['id']] ?? [],
             'can_delete' => (int)$c['author_id'] === (int)$user['id'] || (int)$todo['owner_id'] === (int)$user['id'] || is_admin($user)];
     }, $rows);
 }
 
 /** @return array{0:?array,1:?string} */
-function todo_comment_add(array $todo, array $user, string $body): array
+function todo_comment_add(array $todo, array $user, string $body, int $fileCount = 0): array
 {
     $body = trim(str_replace("\r\n", "\n", $body));
-    if ($body === '') {
-        return [null, 'コメントを入力してください。'];
+    if ($body === '' && $fileCount === 0) {
+        return [null, 'コメントを入力するか、画像を選んでください。'];
     }
     if (mb_strlen($body) > TODO_COMMENT_MAX) {
         return [null, 'コメントは' . TODO_COMMENT_MAX . '文字以内にしてください。'];
@@ -354,8 +356,18 @@ function todo_comment_add(array $todo, array $user, string $body): array
     if ((int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [$todo['id']])['c'] >= TODO_COMMENT_LIMIT) {
         return [null, 'このToDoのコメントは、上限（' . TODO_COMMENT_LIMIT . '件）に達しています。'];
     }
+    if ($fileCount > 0 && (int)row('SELECT COUNT(*) AS c FROM todo_comment_files WHERE todo_id = ?', [$todo['id']])['c'] + $fileCount > ATTACH_MAX_PER_TODO) {
+        return [null, 'このToDoに付けられる画像は、全部で' . ATTACH_MAX_PER_TODO . '枚までです。'];
+    }
     q('INSERT INTO todo_comments (todo_id, author_id, body, created_at) VALUES (?,?,?,?)', [$todo['id'], $user['id'], $body, now_str()]);
     return [['id' => (int)db()->lastInsertId()], null];
+}
+
+/** ToDoを消すときに、そのコメントと画像も消す（$todoIdsSql は、ToDoの番号を選ぶ SELECT 文）。 */
+function todo_comments_purge(string $todoIdsSql, array $params): void
+{
+    attach_delete_where("todo_id IN ($todoIdsSql)", $params);
+    q("DELETE FROM todo_comments WHERE todo_id IN ($todoIdsSql)", $params);
 }
 
 /** コメントを消せるのは、書いた人・ToDoの持ち主・管理者 */
@@ -368,6 +380,7 @@ function todo_comment_delete(int $commentId, array $user): bool
     if ((int)$c['author_id'] !== (int)$user['id'] && (int)($c['todo_owner'] ?? 0) !== (int)$user['id'] && !is_admin($user)) {
         return false;
     }
+    attach_delete_where('comment_id = ?', [$commentId]);
     q('DELETE FROM todo_comments WHERE id = ?', [$commentId]);
     return true;
 }
@@ -438,7 +451,7 @@ function set_todo_status(array $todo, string $status): array
 /** 完了したToDoをまとめて消す。業務版では業務のものだけ */
 function clear_done_todos(array $user, string $view): int
 {
-    q('DELETE FROM todo_comments WHERE todo_id IN (SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ')', [$user['id']]);
+    todo_comments_purge('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
     $st = q('DELETE FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
     return $st->rowCount();
 }
@@ -496,7 +509,7 @@ function schedule_todo(array $todo, string $date, array $user): array
         'start_time' => '', 'end_time' => '', 'note' => $todo['note'], 'owner_id' => (int)$user['id'],
         'family_shared' => (int)$todo['family_shared'],
     ], $user, null);
-    q('DELETE FROM todo_comments WHERE todo_id = ?', [$todo['id']]);
+    todo_comments_purge('SELECT id FROM todos WHERE id = ?', [$todo['id']]);
     q('DELETE FROM todos WHERE id = ?', [$todo['id']]);
     return $event;
 }
