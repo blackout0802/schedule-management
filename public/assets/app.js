@@ -1093,7 +1093,7 @@
       items.forEach(function (t) {
         var card = el('div', { class: 'tp-card ' + t.kind, draggable: 'true', 'data-id': String(t.id) },
           el('div', { class: 'tp-title', text: t.title }),
-          el('div', { class: 'tp-meta' }, t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null),
+          el('div', { class: 'tp-meta' }, t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null), tcBadge(t),
             el('button', { class: 'btn small ghost', type: 'button', text: '日付', title: '日付を選んで予定にする', onclick: function () { openTodoScheduleDialog(t); } })));
         card.addEventListener('dragstart', function (ev) {
           startDrag(ev, { t: 'todo', id: t.id });
@@ -1515,6 +1515,7 @@
       acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '日付', title: '日付を選んで、カレンダーの予定にする', onclick: function (e) { e.stopPropagation(); openTodoScheduleDialog(t); } }));
       acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '編集', onclick: function (e) { e.stopPropagation(); openTodoDialog(t); } }));
     }
+    if (t.kind === 'work') acts.push(el('button', { class: 'btn small ghost', type: 'button', text: 'コメント', title: 'コメントを見る・書く（業務のToDoは、全員がコメントできます）', onclick: function (e) { e.stopPropagation(); openTodoThread(t); } }));
     acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function (e) {
       e.stopPropagation();
       if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
@@ -1525,7 +1526,7 @@
         el('div', { class: 't-title', text: t.title }),
         el('div', { class: 't-main' },
           t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null),
-          status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null),
+          status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null, tcBadge(t)),
         el('div', { class: 't-actions' }, acts)));
     card.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
     card.addEventListener('dragend', endDrag);
@@ -1559,24 +1560,65 @@
     return src.filter(function (t) { return w === 'all' || String(t.owner_id) === w; });
   }
   function othersCard(t) {
-    var card = el('div', { class: 'todo-item kb-card work other' + (t.status === 'done' ? ' done' : ''), 'data-id': String(t.id), tabindex: '0', role: 'button', title: 'クリックで内容を見る（見るだけ。' + t.owner_name + 'さんのToDo）',
+    var card = el('div', { class: 'todo-item kb-card work other' + (t.status === 'done' ? ' done' : ''), 'data-id': String(t.id), tabindex: '0', role: 'button', title: 'クリックで内容を見る・コメントする（編集・完了はできません。' + t.owner_name + 'さんのToDo）',
       onclick: function () { openOthersTodo(t); }, onkeydown: function (e) { if (e.key === 'Enter') openOthersTodo(t); } },
       el('div', { class: 't-body' },
         el('div', { class: 't-title', text: t.title }),
-        el('div', { class: 't-main' }, el('span', { class: 'pill owner', text: t.owner_name }), t.tag ? el('span', { class: 'pill', text: t.tag }) : null,
+        el('div', { class: 't-main' }, el('span', { class: 'pill owner', text: t.owner_name }), t.tag ? el('span', { class: 'pill', text: t.tag }) : null, tcBadge(t),
           t.status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null)));
     return card;
   }
-  function openOthersTodo(t) {
-    var ov = openModal('ToDo（' + t.owner_name + 'さん）', el('div', { class: 'form' },
-      el('dl', { class: 'detail' }, el('dt', { text: '内容' }), el('dd', { text: t.title }),
-        el('dt', { text: '状態' }), el('dd', { text: t.status === 'done' ? '完了' : t.status === 'doing' ? '進行中' : '未着手' }),
-        t.tag ? el('dt', { text: '分類' }) : null, t.tag ? el('dd', { text: t.tag }) : null,
-        t.note ? el('dt', { text: 'メモ' }) : null, t.note ? el('dd', { text: t.note, style: 'white-space:pre-wrap' }) : null),
-      el('p', { class: 'hint', text: '業務のToDoは、全員に見えます（見るだけ。変えられるのは、' + t.owner_name + 'さんだけです）。' }),
-      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
-    ov.outsideClose = true;
+  /* ToDoのコメント。業務のToDoは全員に見えるので、持ち主以外もコメントを付けられる（編集・完了はできない） */
+  function tcSeenKey(t) { return 'sched.tcseen.' + t.id; }
+  function tcNew(t) { return !!t.comments && (t.last_comment_id || 0) > (Number(store(tcSeenKey(t))) || 0); }
+  function tcBadge(t) {
+    if (t.kind === 'private' || !t.comments) return null;
+    return el('span', { class: 'pill tc' + (tcNew(t) ? ' new' : ''), text: '💬 ' + t.comments, title: 'コメント ' + t.comments + '件' + (tcNew(t) ? '（新着あり）' : '') });
   }
+  function openTodoThread(t) {
+    var mine = t.owner_id === undefined || t.owner_id === S.me.user.id;
+    var body = el('div', { class: 'form tc-dialog' });
+    var ov = openModal('ToDo' + (mine ? '' : '（' + t.owner_name + 'さん）'), body);
+    ov.outsideClose = true;
+    var ta = el('textarea', { maxlength: '500', rows: '3', placeholder: 'コメントを入力（Ctrl + Enter で送信）', 'aria-label': 'コメント' });
+    function send() {
+      var v = ta.value.trim();
+      if (!v) return;
+      api('todo_comment_add', { body: { id: t.id, body: v } }).then(function (r) { ta.value = ''; store(tcSeenKey(t), r.comment_id); refresh(); loadTodos(); }).catch(fail);
+    }
+    function refresh() {
+      api('todo_comments', { params: { id: String(t.id) } }).then(function (j) {
+        var first = !body.firstChild;
+        body.textContent = '';
+        var typed = ta.value;
+        body.appendChild(el('dl', { class: 'detail' }, el('dt', { text: '内容' }), el('dd', { text: t.title }),
+          el('dt', { text: '状態' }), el('dd', { text: j.todo.status === 'done' ? '完了' : j.todo.status === 'doing' ? '進行中' : '未着手' }),
+          t.tag ? el('dt', { text: '分類' }) : null, t.tag ? el('dd', { text: t.tag }) : null,
+          !mine && t.note ? el('dt', { text: 'メモ' }) : null, !mine && t.note ? el('dd', { text: t.note, style: 'white-space:pre-wrap' }) : null));
+        if (!mine) body.appendChild(el('p', { class: 'hint', text: '業務のToDoは全員に見えます。変えられるのは' + t.owner_name + 'さんだけですが、コメントは誰でも付けられます。' }));
+        body.appendChild(el('h4', { class: 'tc-h', text: 'コメント（' + j.comments.length + '件）' }));
+        body.appendChild(j.comments.length ? el('ul', { class: 'tc-list' }, j.comments.map(function (c) {
+          return el('li', { class: 'tc-item' },
+            el('div', { class: 'tc-top' }, el('b', { text: c.author_name }), el('span', { class: 'tc-at', text: fmtAt(c.at) }),
+              c.can_delete ? el('button', { class: 'btn small ghost danger', type: 'button', text: '削除', onclick: function () {
+                if (!window.confirm('このコメントを削除します。よろしいですか？')) return;
+                api('todo_comment_delete', { body: { id: c.id } }).then(function () { refresh(); loadTodos(); }).catch(fail);
+              } }) : null),
+            el('div', { class: 'tc-body', text: c.body }));
+        })) : el('p', { class: 'muted', text: 'まだコメントはありません。' }));
+        ta.value = typed;
+        body.appendChild(ta);
+        body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }),
+          el('button', { class: 'btn primary', type: 'button', text: 'コメントを送る', onclick: send })));
+        if (j.comments.length) { store(tcSeenKey(t), j.comments[j.comments.length - 1].id); loadTodosQuiet(); }
+        if (first) setTimeout(function () { ta.focus(); }, 0);
+      }).catch(fail);
+    }
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } });
+    refresh();
+  }
+  function loadTodosQuiet() { setTimeout(function () { renderTodo(); }, 0); } /* 「新着」の目印を消すため、描き直すだけ */
+  function openOthersTodo(t) { openTodoThread(t); }
   function todoWhoBar() {
     var sel = el('select', { 'aria-label': '表示するToDo', onchange: function () { store('sched.todoWho', sel.value); renderTodo(); } },
       el('option', { value: 'all', text: '全員のToDo' }), el('option', { value: 'me', text: '自分のToDo' }),

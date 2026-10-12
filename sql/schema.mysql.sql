@@ -151,3 +151,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
   KEY ix_audit_at (at),
   KEY ix_audit_type (type, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS todo_comments (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  todo_id INT UNSIGNED NOT NULL,
+  author_id INT UNSIGNED NOT NULL,
+  body VARCHAR(500) NOT NULL,
+  created_at DATETIME NOT NULL,
+  KEY ix_todo_comments_todo (todo_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

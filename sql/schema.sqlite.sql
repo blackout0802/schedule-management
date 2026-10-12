@@ -141,3 +141,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS ix_audit_at ON audit_log (at);
 CREATE INDEX IF NOT EXISTS ix_audit_type ON audit_log (type, id);
+
+CREATE TABLE IF NOT EXISTS todo_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  todo_id INTEGER NOT NULL,
+  author_id INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_todo_comments_todo ON todo_comments (todo_id, id);

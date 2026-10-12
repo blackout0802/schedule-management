@@ -294,6 +294,84 @@ function todo_for_client(array $t): array
         'done_at' => $t['done_at'] ?? null, 'status' => todo_status_of($t)];
 }
 
+/* ------------------------------------------------------------------
+ * ToDoのコメント。業務のToDoは全員に見えるので、持ち主以外の社員も、コメントを付けられる（編集・完了はできない）。
+ * プライベートのToDoには、付けられない（本人にしか見えないため）。
+ * ------------------------------------------------------------------ */
+
+const TODO_COMMENT_MAX = 500;
+const TODO_COMMENT_LIMIT = 200; // 1つのToDoに付けられる数
+
+/** [['id'=>1, ...], ...] に、コメントの数と、いちばん新しいコメントの番号（「新着」の目印用）を付ける */
+function todo_with_comment_stats(array $todos): array
+{
+    if (!$todos) {
+        return $todos;
+    }
+    $ids = array_map(function ($t) { return (int)$t['id']; }, $todos);
+    $stat = [];
+    foreach (rows('SELECT todo_id, COUNT(*) AS c, MAX(id) AS m FROM todo_comments WHERE todo_id IN (' . implode(',', $ids) . ') GROUP BY todo_id') as $r) {
+        $stat[(int)$r['todo_id']] = [(int)$r['c'], (int)$r['m']];
+    }
+    return array_map(function ($t) use ($stat) {
+        $s = $stat[(int)$t['id']] ?? [0, 0];
+        $t['comments'] = $s[0];
+        $t['last_comment_id'] = $s[1];
+        return $t;
+    }, $todos);
+}
+
+/** コメントを付けたり読んだりできるToDo（持ち主か、業務のToDoで持ち主が利用中の社員のもの）。なければ null */
+function todo_for_comments(int $id, array $user): ?array
+{
+    $t = row("SELECT t.*, u.name AS owner_name FROM todos t JOIN users u ON u.id = t.owner_id
+              WHERE t.id = ? AND (t.owner_id = ? OR (t.kind = 'work' AND u.active = 1))", [$id, $user['id']]);
+    return $t ?: null;
+}
+
+function todo_comments_list(array $todo, array $user): array
+{
+    $rows = rows('SELECT c.*, u.name AS author_name FROM todo_comments c LEFT JOIN users u ON u.id = c.author_id WHERE c.todo_id = ? ORDER BY c.id', [$todo['id']]);
+    return array_map(function ($c) use ($todo, $user) {
+        return ['id' => (int)$c['id'], 'author_id' => (int)$c['author_id'], 'author_name' => $c['author_name'] ?? '（退職した社員）', 'body' => $c['body'], 'at' => $c['created_at'],
+            'can_delete' => (int)$c['author_id'] === (int)$user['id'] || (int)$todo['owner_id'] === (int)$user['id'] || is_admin($user)];
+    }, $rows);
+}
+
+/** @return array{0:?array,1:?string} */
+function todo_comment_add(array $todo, array $user, string $body): array
+{
+    $body = trim(str_replace("\r\n", "\n", $body));
+    if ($body === '') {
+        return [null, 'コメントを入力してください。'];
+    }
+    if (mb_strlen($body) > TODO_COMMENT_MAX) {
+        return [null, 'コメントは' . TODO_COMMENT_MAX . '文字以内にしてください。'];
+    }
+    if ($todo['kind'] !== 'work') {
+        return [null, 'プライベートのToDoには、コメントを付けられません。'];
+    }
+    if ((int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [$todo['id']])['c'] >= TODO_COMMENT_LIMIT) {
+        return [null, 'このToDoのコメントは、上限（' . TODO_COMMENT_LIMIT . '件）に達しています。'];
+    }
+    q('INSERT INTO todo_comments (todo_id, author_id, body, created_at) VALUES (?,?,?,?)', [$todo['id'], $user['id'], $body, now_str()]);
+    return [['id' => (int)db()->lastInsertId()], null];
+}
+
+/** コメントを消せるのは、書いた人・ToDoの持ち主・管理者 */
+function todo_comment_delete(int $commentId, array $user): bool
+{
+    $c = row('SELECT c.*, t.owner_id AS todo_owner FROM todo_comments c LEFT JOIN todos t ON t.id = c.todo_id WHERE c.id = ?', [$commentId]);
+    if (!$c) {
+        return false;
+    }
+    if ((int)$c['author_id'] !== (int)$user['id'] && (int)($c['todo_owner'] ?? 0) !== (int)$user['id'] && !is_admin($user)) {
+        return false;
+    }
+    q('DELETE FROM todo_comments WHERE id = ?', [$commentId]);
+    return true;
+}
+
 /**
  * 業務のToDoは、社員全員に見える（見るだけ。変えられるのは持ち主だけ）。プライベートのToDoは、本人だけ。
  * 他の社員の業務のToDo（未完了・完了したもの新しい順）。業務版のリスト画面で、持ち主の名前つきで出す。
@@ -307,8 +385,8 @@ function list_others_todos(array $user, int $doneLimit = 30): array
     };
     $base = "SELECT t.*, u.name AS owner_name FROM todos t JOIN users u ON u.id = t.owner_id WHERE t.kind = 'work' AND t.owner_id <> ? AND u.active = 1";
     return [
-        'todos' => array_map($map, rows($base . ' AND t.done_at IS NULL ORDER BY u.name, t.sort_order, t.id', [$user['id']])),
-        'done' => array_map($map, rows($base . ' AND t.done_at IS NOT NULL ORDER BY t.done_at DESC, t.id DESC LIMIT ' . (int)$doneLimit, [$user['id']])),
+        'todos' => todo_with_comment_stats(array_map($map, rows($base . ' AND t.done_at IS NULL ORDER BY u.name, t.sort_order, t.id', [$user['id']]))),
+        'done' => todo_with_comment_stats(array_map($map, rows($base . ' AND t.done_at IS NOT NULL ORDER BY t.done_at DESC, t.id DESC LIMIT ' . (int)$doneLimit, [$user['id']]))),
     ];
 }
 
@@ -316,14 +394,14 @@ function list_others_todos(array $user, int $doneLimit = 30): array
 function list_todos(array $user, string $view): array
 {
     $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY sort_order, id';
-    return array_map('todo_for_client', rows($sql, [$user['id']]));
+    return todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']])));
 }
 
 /** 完了したToDo（新しい順）。業務版では業務のToDoだけ */
 function list_done_todos(array $user, string $view, int $limit = 100): array
 {
     $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY done_at DESC, id DESC LIMIT ' . (int)$limit;
-    return array_map('todo_for_client', rows($sql, [$user['id']]));
+    return todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']])));
 }
 
 /** 完了にする／未完了に戻す。戻したToDoは、リストの末尾に入る */
@@ -360,6 +438,7 @@ function set_todo_status(array $todo, string $status): array
 /** 完了したToDoをまとめて消す。業務版では業務のものだけ */
 function clear_done_todos(array $user, string $view): int
 {
+    q('DELETE FROM todo_comments WHERE todo_id IN (SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ')', [$user['id']]);
     $st = q('DELETE FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
     return $st->rowCount();
 }
@@ -417,6 +496,7 @@ function schedule_todo(array $todo, string $date, array $user): array
         'start_time' => '', 'end_time' => '', 'note' => $todo['note'], 'owner_id' => (int)$user['id'],
         'family_shared' => (int)$todo['family_shared'],
     ], $user, null);
+    q('DELETE FROM todo_comments WHERE todo_id = ?', [$todo['id']]);
     q('DELETE FROM todos WHERE id = ?', [$todo['id']]);
     return $event;
 }

@@ -1096,6 +1096,34 @@ check('業務のToDoの共有: 利用停止の社員のToDoは、出ない', arr
 q('UPDATE users SET active = 1 WHERE id = ?', [(int)$b['id']]);
 check('業務のToDoの共有: 自分のToDo一覧（list_todos）は、これまで通り自分の分だけ', [array_column(list_todos($a, 'team'), 'title'), array_column(list_todos($a, 'me'), 'title')], [['山田の業務ToDo'], ['山田の業務ToDo', '山田のプライベートToDo']]);
 
+
+// ---- ToDoのコメント ----
+check('ToDoのコメント: 他の社員も、業務のToDoを探せる', [(bool)todo_for_comments((int)$tdA1['id'], $b), (bool)todo_for_comments((int)$tdA1['id'], $admin)], [true, true]);
+check('ToDoのコメント: プライベートのToDoは、他の人には見つからない（持ち主だけ）', [todo_for_comments((int)$tdA2['id'], $b), (bool)todo_for_comments((int)$tdA2['id'], $a)], [null, true]);
+[$c1, $e1] = todo_comment_add(todo_for_comments((int)$tdA1['id'], $b), $b, "確認しました\n来週までに共有をお願いします");
+check('ToDoのコメント: 持ち主以外が、コメントを付けられる', [$e1, $c1 !== null], [null, true]);
+[$c2] = todo_comment_add(todo_for_comments((int)$tdA1['id'], $a), $a, '了解です');
+check('ToDoのコメント: 持ち主も、返事を書ける', $c2 !== null, true);
+$tl = todo_comments_list(todo_for_comments((int)$tdA1['id'], $a), $a);
+check('ToDoのコメント: 古い順に並び、書いた人の名前・本文が付く', [array_column($tl, 'author_name'), strpos($tl[0]['body'], '来週') !== false], [['鈴木', '山田'], true]);
+check('ToDoのコメント: 持ち主は全部消せる。書いた人は自分の分だけ。他の人は消せない', [$tl[0]['can_delete'], $tl[1]['can_delete'], array_column(todo_comments_list(todo_for_comments((int)$tdA1['id'], $b), $b), 'can_delete'), array_column(todo_comments_list(todo_for_comments((int)$tdA1['id'], $admin), $admin), 'can_delete')], [true, true, [true, false], [true, true]]);
+[$cx, $ex] = todo_comment_add(todo_for_comments((int)$tdA2['id'], $a), $a, 'プライベートにコメント');
+check('ToDoのコメント: プライベートのToDoには、付けられない', [$cx, $ex !== null], [null, true]);
+check('ToDoのコメント: 空のコメントは、拒否', todo_comment_add(todo_for_comments((int)$tdA1['id'], $b), $b, "  \n ")[1] !== null, true);
+check('ToDoのコメント: 500文字を超えたら、拒否', todo_comment_add(todo_for_comments((int)$tdA1['id'], $b), $b, str_repeat('あ', 501))[1] !== null, true);
+check('ToDoのコメント: 500文字ちょうどは、OK', todo_comment_add(todo_for_comments((int)$tdA1['id'], $b), $b, str_repeat('あ', 500))[1], null);
+$stat = todo_with_comment_stats([['id' => (int)$tdA1['id']], ['id' => (int)$tdB1['id']]]);
+check('ToDoのコメント: 一覧に、コメントの数と、最新の番号が付く', [$stat[0]['comments'], $stat[0]['last_comment_id'] > 0, $stat[1]['comments']], [3, true, 0]);
+check('ToDoのコメント: 他の社員の一覧（他の人のToDo）にも、数が付く', array_column(list_others_todos($b)['todos'], 'comments'), [3]);
+check('ToDoのコメント: 削除できるのは、書いた人・持ち主・管理者だけ', [todo_comment_delete((int)$tl[0]['id'], $tmpUser), todo_comment_delete((int)$tl[0]['id'], $b), todo_comment_delete((int)$tl[1]['id'], $a)], [false, true, true]);
+$cid = todo_comments_list(todo_for_comments((int)$tdA1['id'], $a), $a)[0]['id'];
+check('ToDoのコメント: 管理者は、だれのコメントも消せる', todo_comment_delete((int)$cid, $admin), true);
+todo_comment_add(todo_for_comments((int)$tdB1['id'], $a), $a, '鈴木さんのToDoへ');
+set_todo_done(row('SELECT * FROM todos WHERE id = ?', [$tdB1['id']]), true);
+clear_done_todos($b, 'team');
+check('ToDoのコメント: ToDoを削除すると、コメントも消える（完了分の一括削除）', (int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [(int)$tdB1['id']])['c'], 0);
+check('ToDoのコメント: バックアップに含まれる', isset(backup_collect()['tables']['todo_comments']), true);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

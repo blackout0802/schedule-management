@@ -642,3 +642,15 @@ kbd { border-radius: 6px; }
 .todo-item.other { cursor: pointer; background: color-mix(in srgb, var(--surface) 70%, var(--bg)); border-style: dashed; border-left-style: solid; box-shadow: none; }
 .todo-item.other:hover { background: var(--surface); }
 .pill.owner { background: var(--work-soft); color: var(--work); font-weight: 500; }
+
+/* ToDoのコメント */
+.pill.tc { background: var(--surface-2); color: var(--muted); font-weight: 500; }
+.pill.tc.new { background: var(--work); color: #fff; }
+.tc-h { margin: 6px 0 0; font-size: 14px; font-weight: 600; }
+.tc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 40vh; overflow-y: auto; }
+.tc-item { border: .5px solid var(--line); border-radius: 12px; padding: 8px 12px; background: var(--surface-2); }
+.tc-top { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.tc-top .btn { margin-left: auto; }
+.tc-at { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tc-body { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+.tc-dialog textarea { width: 100%; }

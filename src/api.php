@@ -256,6 +256,30 @@ function handle_api(): void
             }
             api_out($out);
 
+        case 'todo_comments': // ToDoのコメント一覧（業務のToDoは全員、プライベートは本人だけ）
+            $t = todo_for_comments((int)($_GET['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            api_out(['comments' => todo_comments_list($t, $user), 'todo' => ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => $t['kind'], 'owner_id' => (int)$t['owner_id'], 'owner_name' => $t['owner_name'], 'status' => todo_status_of($t)]]);
+
+        case 'todo_comment_add':
+            $t = todo_for_comments((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            [$ok, $err] = todo_comment_add($t, $user, (string)($in['body'] ?? ''));
+            if ($err) {
+                api_fail($err);
+            }
+            api_out(['ok' => true, 'comment_id' => $ok['id']]);
+
+        case 'todo_comment_delete':
+            if (!todo_comment_delete((int)($in['id'] ?? 0), $user)) {
+                api_fail('このコメントは、削除できません。', 403);
+            }
+            api_out(['ok' => true]);
+
         case 'todo_done':
             $t = find_todo((int)($in['id'] ?? 0), $user);
             if (!$t) {
@@ -417,6 +441,7 @@ function handle_api(): void
             if (!$t) {
                 api_fail('ToDoが見つかりません。', 404);
             }
+            q('DELETE FROM todo_comments WHERE todo_id = ?', [$t['id']]);
             q('DELETE FROM todos WHERE id = ?', [$t['id']]);
             api_out(['ok' => true]);
 

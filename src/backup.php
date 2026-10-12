@@ -14,7 +14,7 @@ class BackupException extends RuntimeException
 }
 
 /** 保存する表。ログイン失敗の記録（login_fails）は、保存しない */
-const BACKUP_TABLES = ['users', 'series', 'events', 'series_skips', 'company_holidays', 'notification_log', 'todos', 'app_meta', 'memos', 'share_links', 'event_log', 'audit_log'];
+const BACKUP_TABLES = ['users', 'series', 'events', 'series_skips', 'company_holidays', 'notification_log', 'todos', 'todo_comments', 'app_meta', 'memos', 'share_links', 'event_log', 'audit_log'];
 /** 復元しても、いまの値のままにする app_meta の項目（アプリの版・更新番号） */
 const BACKUP_KEEP_META = ['schema_version', 'rev', 'backup_auto_pass', 'backup_auto_at', 'backup_auto_err', 'backup_auto_try', 'backup_manual_at', 'backup_first', 'backup_snooze', 'backup_alert_slack'];
 const BACKUP_MAGIC = 'SCHEDBK1';
