@@ -627,3 +627,9 @@ kbd { border-radius: 6px; }
 .legend-help { border: 0; background: transparent; color: var(--work); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; padding: 0 4px; border-radius: 6px; margin-left: auto; }
 .legend-help:hover { background: color-mix(in srgb, var(--work) 9%, transparent); }
 .tips-list { margin: 0; padding-left: 1.3em; display: grid; gap: 8px; line-height: 1.6; }
+
+/* 変更履歴の削除 */
+.audit-item { position: relative; }
+.audit-item .au-del { position: absolute; right: 6px; top: 6px; }
+.audit-bulk { border-top: .5px solid var(--line); margin-top: 8px; padding-top: 10px; }
+.audit-bulk-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

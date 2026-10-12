@@ -471,7 +471,10 @@
         el('div', { class: 'au-top' }, el('span', { class: 'au-at', text: fmt(e.at) }), el('span', { class: 'au-actor', text: e.actor }),
           el('span', { class: 'au-type', text: e.type_name }), el('span', { class: 'au-act ' + e.action, text: actLabel[e.action] || e.action })),
         el('div', { class: 'au-main' }, el('span', { class: 'au-label', text: e.label }), e.target ? el('span', { class: 'au-target', text: '　対象: ' + e.target }) : null),
-        e.detail ? el('div', { class: 'au-detail', text: e.detail }) : null);
+        e.detail ? el('div', { class: 'au-detail', text: e.detail }) : null,
+        el('button', { class: 'btn small ghost danger au-del', type: 'button', text: '削除', 'aria-label': 'この履歴を削除', onclick: function () {
+          api('audit_delete', { body: { id: e.id } }).then(function () { toast('1件を削除しました'); load(true); }).catch(fail);
+        } }));
     }
     function load(reset) {
       if (reset) { last = 0; list.textContent = ''; }
@@ -493,6 +496,21 @@
     body.appendChild(el('p', { class: 'hint', text: '予定（休み・業務）の追加・変更・削除、繰り返し業務、社員の管理、会社の休業日、共有リンク、Slack通知の設定、パスワードの変更を、1年間残します。プライベートの予定・ToDo・日報メモは、記録しません（管理者にも見せない約束のため）。' }));
     body.appendChild(el('div', { class: 'audit-filters' }, fType, fActor, fQ, el('button', { class: 'btn', type: 'button', text: '最新の状態にする', onclick: function () { load(true); } })));
     body.appendChild(list); body.appendChild(el('div', { class: 'actions', style: 'justify-content:center' }, more));
+    // まとめて削除（古いものだけ／すべて）。削除したこと自体は、「変更履歴を削除（N件）」として残る
+    var olderSel = el('select', { 'aria-label': '削除する期間', style: 'width:auto' },
+      [['30', '30日より前'], ['90', '90日より前'], ['180', '半年（180日）より前'], ['365', '1年（365日）より前']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
+    body.appendChild(el('div', { class: 'audit-bulk' },
+      el('b', { text: '履歴を削除する' }),
+      el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '削除は元に戻せません。削除したことと、その件数は、新しい履歴として残ります（中身は残りません）。' }),
+      el('div', { class: 'audit-bulk-row' }, olderSel,
+        el('button', { class: 'btn small danger', type: 'button', text: 'より前の履歴を削除', onclick: function () {
+          if (!window.confirm('「' + olderSel.options[olderSel.selectedIndex].text + '」の変更履歴を、すべて削除します。元に戻せません。よろしいですか？')) return;
+          api('audit_delete', { body: { older_than_days: Number(olderSel.value) } }).then(function (r) { toast(r.deleted + '件を削除しました'); load(true); }).catch(fail);
+        } }),
+        el('button', { class: 'btn small danger', type: 'button', text: 'すべて削除', onclick: function () {
+          if (!window.confirm('変更履歴を、すべて削除します。元に戻せません。よろしいですか？')) return;
+          api('audit_delete', { body: { all: true } }).then(function (r) { toast(r.deleted + '件を削除しました'); load(true); }).catch(fail);
+        } }))));
     load(true);
     return ov;
   }

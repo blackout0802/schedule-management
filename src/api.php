@@ -642,6 +642,23 @@ function handle_api(): void
             require_admin($user);
             api_out(audit_list(['type' => (string)($_GET['type'] ?? ''), 'actor' => (int)($_GET['actor'] ?? 0), 'q' => (string)($_GET['q'] ?? ''), 'before' => (int)($_GET['before'] ?? 0), 'limit' => (int)($_GET['limit'] ?? 50)]) + ['types' => AUDIT_TYPES]);
 
+        case 'audit_delete': // 変更履歴の削除（管理者）。1件／○日より前／すべて
+            require_admin($user);
+            if (!empty($in['all'])) {
+                $n = audit_delete('all');
+            } elseif (!empty($in['older_than_days'])) {
+                if (!is_numeric($in['older_than_days']) || (int)$in['older_than_days'] < 1) {
+                    api_fail('日数を正しく指定してください。');
+                }
+                $n = audit_delete('older', (int)$in['older_than_days']);
+            } else {
+                if (empty($in['id']) || !is_numeric($in['id'])) {
+                    api_fail('削除する履歴を選んでください。');
+                }
+                $n = audit_delete('one', (int)$in['id']);
+            }
+            api_out(['ok' => true, 'deleted' => $n]);
+
         case 'holidays_list':
             api_out(['holidays' => rows('SELECT id, hdate, name FROM company_holidays ORDER BY hdate')]);
 
