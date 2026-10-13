@@ -102,7 +102,8 @@ public/        画面とAPIの入口（公開する部分）
 src/           アプリ本体（bootstrap / auth / events / recurrence / holidays / slack / api）
 sql/           テーブル定義（MySQL用・SQLite用）
 bin/cron.php   毎日動かす自動処理（繰り返し予定の作成・Slack通知）
-tests/run.php  自動テスト
+tests/run.php  自動テスト（部品ごと。SQLite/MySQL）
+tests/e2e/     画面テスト（ブラウザを動かして確かめる。`bash tests/e2e/run.sh`）
 tools/make_update.py  更新用の zip（dist/update-v〜.zip）を作る
 docs/DEPLOY.md スターレンタルサーバーへの導入手順
 config.sample.php  設定ファイルの見本
@@ -130,5 +131,12 @@ SCHEDULE_TEST_USER=ユーザー SCHEDULE_TEST_PASS=パスワード php tests/run
 ```
 
 祝日の計算、繰り返しルールの日付、プライベートが他人に漏れないこと、管理者の権限、繰り返し予定の個別編集・削除、Slack通知の二重送信防止などを確認します。
+
+```bash
+bash tests/e2e/run.sh                   # 画面テスト（Chromiumを動かす。40本ほど。SQLiteで自動）
+bash tests/e2e/run.sh who sum           # 名前を指定して、それだけ
+```
+
+画面テストは、ログイン・カレンダー・ToDo・日報・共有リンク・バックアップなどを、実際の画面から操作して確かめます。必要なもの・MySQLで動かす方法・テストの一覧は [tests/e2e/README.md](tests/e2e/README.md) を見てください（本物の `data/` や `config.php` には触りません）。機能を変えたら、`tests/run.php` と両方を流します。
 
 導入手順は [docs/DEPLOY.md](docs/DEPLOY.md) を見てください。

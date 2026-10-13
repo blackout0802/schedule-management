@@ -1,0 +1,24 @@
+const { chromium } = require(process.env.NODE_PATH + '/playwright');
+const BASE = 'http://127.0.0.1:8099/';
+let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
+(async () => {
+  const b = await chromium.launch(); const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
+  p.on('pageerror', e => console.log('PAGEERR', e.message)); p.on('dialog', d => d.accept());
+  await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1');
+  await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
+  const outside = async () => { await p.mouse.move(5, 500); await p.mouse.down(); await p.mouse.up(); };
+  const open = () => p.locator('.modal').count();
+  await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-users table');
+  await p.click('#set-users >> text=＋ 社員を追加'); await p.waitForFunction(() => document.querySelectorAll('.modal').length === 1);
+  await p.fill('.modal:last-of-type input[name=name]', '入力途中');
+  await outside(); await p.waitForTimeout(300);
+  ok('社員を追加の入力中に外側を押しても、閉じない（入力も残る）', await open() === 1 && await p.inputValue('.modal:last-of-type input[name=name]') === '入力途中', await open());
+  await p.click('.modal:last-of-type >> text=キャンセル'); await p.waitForFunction(() => document.querySelectorAll('.modal').length === 0);
+  ok('キャンセルで閉じる（設定のページは残る）', await open() === 0 && (await p.locator('.settings-page').count()) === 1);
+  await p.click('button:has-text("カレンダーに戻る")'); await p.waitForSelector('.cal');
+  await p.keyboard.press('n'); await p.waitForSelector('.modal'); await p.fill('.modal input[name=title]', 'x'); await outside(); await p.waitForTimeout(300);
+  ok('予定の追加も、外側では閉じない', await open() === 1 && await p.inputValue('.modal input[name=title]') === 'x');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(200); ok('Esc では閉じられる', await open() === 0);
+  await p.keyboard.press('n'); await p.fill('.modal input[name=title]', '詳細テスト'); await p.click('.modal button[type=submit]'); await p.waitForSelector('.bar:has-text("詳細テスト")');
+  await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
+})();

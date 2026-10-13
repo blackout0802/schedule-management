@@ -1,0 +1,21 @@
+const { chromium } = require(process.env.NODE_PATH + '/playwright');
+const BASE = 'http://127.0.0.1:8099/';
+let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
+const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const ds = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+(async () => {
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1280, height: 1000 } }); const y = await ctx.newPage();
+  y.on('pageerror', e => console.log('PAGEERR', e.message)); y.on('dialog', d => d.accept());
+  await y.goto(BASE + 'login.php'); await y.fill('input[name=email]', 'yamada@example.com'); await y.fill('input[name=password]', 'yamadapass1'); await Promise.all([y.waitForURL('**/index.php'), y.click('button[type=submit]')]); await y.waitForSelector('.cal');
+  await y.keyboard.press('n'); await y.waitForSelector('.modal'); await y.click('.modal label:has-text("休み")'); await y.selectOption('.modal select[name=tag]', '欠勤'); await y.fill('.modal input[name=start]', ds); await y.fill('.modal input[name=end]', ds);
+  await y.check('.modal input[name=family_shared]'); await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForSelector('.bar.off');
+  ok('本人の画面では、名前＋分類が出る', (await y.locator('.bar.off').first().innerText()).includes('山田 花子 欠勤'), await y.locator('.bar.off').first().innerText());
+  const url = await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'family' }) }); const j = await r.json(); return JSON.stringify(j); });
+  const tok = /share\.php\?t=([0-9a-f]+)/.exec(url)[1];
+  const f = await (await b.newContext({ viewport: { width: 1280, height: 900 } })).newPage(); await f.goto(BASE + 'share.php?t=' + tok); await f.waitForSelector('.bar.off');
+  const txt = await f.locator('.bar.off').first().innerText(); ok('家族用リンクでは、単に「休み」と表示される', txt.trim() === '休み', txt);
+  ok('名前も分類（欠勤）も出ない', !txt.includes('山田') && !txt.includes('欠勤'), txt);
+  const api = await f.evaluate(async (tk) => { const d = new Date(); const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); const r = await fetch('share_api.php?t=' + tk + '&action=events&from=' + m + '-01&to=' + m + '-28'); return await r.text(); }, tok);
+  ok('サーバーの応答にも、休みの種類（欠勤）は含まれない', !api.includes('欠勤'), api.slice(0, 200));
+  await f.locator('.bar.off').first().click(); await f.waitForSelector('.modal'); const dt = await f.locator('.modal').innerText(); ok('詳細にも、種類は出ない', !dt.includes('欠勤') && dt.includes('休み'), dt);
+  await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
+})();

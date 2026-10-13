@@ -1,0 +1,20 @@
+const { chromium } = require(process.env.NODE_PATH + '/playwright');
+let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1280, height: 860 } });
+  await p.goto('http://127.0.0.1:8099/login.php'); await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1');
+  await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); await p.waitForTimeout(500);
+  const lg = await p.locator('.legend').innerText();
+  ok('カレンダーの下は、色の見本だけ（長い説明文は無い）', !lg.includes('ドラッグ') && !lg.includes('土日祝') && !lg.includes('自動で反映') && lg.includes('業務') && lg.includes('休み') && lg.includes('繰り返しの業務'), lg);
+  await p.screenshot({ path: 'tips-legend.png', clip: { x: 0, y: 640, width: 1280, height: 220 } });
+  await p.click('.legend-help'); await p.waitForSelector('.modal'); const t = await p.locator('.modal').innerText();
+  ok('「ⓘ 使い方」に、説明がまとまっている', ['期間のある業務', 'ドラッグ', 'ショートカット', '自動で反映', '予定の色'].every(k => t.includes(k)), t);
+  await p.screenshot({ path: 'tips-modal.png' });
+  await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.modal')); ok('Escで閉じる', true);
+  await p.click('.legend-help'); await p.waitForSelector('.modal'); await p.click('.modal button:has-text("閉じる")'); await p.waitForFunction(() => !document.querySelector('.modal')); ok('「閉じる」でも閉じる', true);
+  const path = JSON.parse(await p.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'company' }) }); return await r.text(); })).path;
+  const s = await b.newPage({ viewport: { width: 1280, height: 860 } }); await s.goto('http://127.0.0.1:8099/' + path); await s.waitForSelector('.cal');
+  await s.click('.legend-help'); await s.waitForSelector('.modal'); const st = await s.locator('.modal').innerText();
+  ok('会社用の共有ページ: 使い方に、ドラッグの説明は出ない', !st.includes('ドラッグ') && st.includes('土日祝'), st);
+  await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
+})();

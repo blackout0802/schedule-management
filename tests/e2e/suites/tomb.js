@@ -1,0 +1,38 @@
+const { chromium } = require(process.env.NODE_PATH + '/playwright');
+const BASE = 'http://127.0.0.1:8099/';
+let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
+const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const D = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-15`;
+(async () => {
+  const b = await chromium.launch(); const y = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage(); y.on('pageerror', e => console.log('PAGEERR', e.message)); y.on('dialog', d => d.accept());
+  await y.goto(BASE + 'login.php'); await y.fill('input[name=email]', 'yamada@example.com'); await y.fill('input[name=password]', 'yamadapass1'); await Promise.all([y.waitForURL('**/index.php'), y.click('button[type=submit]')]); await y.waitForSelector('.cal');
+  const post = (a, body) => y.evaluate(async ([a, body]) => { const tk = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=' + a, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify(body) }); return await r.json(); }, [a, body]);
+  const e1 = await post('event_save', { kind: 'private', title: '消える予定', start: D, end: D, start_time: '10:00', family_shared: 1 });
+  const e2 = await post('event_save', { kind: 'private', title: '残る予定', start: D, end: D, family_shared: 1 });
+  const e3 = await post('event_save', { kind: 'private', title: '非共有の予定', start: D, end: D, family_shared: 0 });
+  const sh = await post('share_create', { kind: 'family' }); const path = sh.path;
+  const open = async () => { const c = await b.newContext({ viewport: { width: 1280, height: 1000 } }); const f = await c.newPage(); f.on('pageerror', e => console.log('PAGEERR', e.message)); await f.addInitScript(() => { window.SCHEDULE_POLL_TEST_MS = 1000; }); await f.goto(BASE + path); await f.waitForSelector('.upd-banner'); return f; };
+  const f = await open(); const g = await open();
+  const lg = await f.locator('.legend').innerText();
+  ok('家族用の画面に、不要な説明（繰り返し・期間・ショートカット・自動反映）が出ない', !/繰り返しの業務|1本にまとめて|ショートカット|自動で反映/.test(lg), lg);
+  ok('最初は、取消線の予定も、削除の案内も無い', (await f.locator('.bar.deleted').count()) === 0 && (await f.locator('.upd-banner.del').count()) === 0);
+  await post('event_delete', { id: e1.event.id }); await post('event_delete', { id: e3.event.id });
+  await f.waitForSelector('.bar.deleted', { timeout: 15000 });
+  const tx = await f.locator('.bar.deleted').allInnerTexts(); ok('削除した予定が、取消線（deleted）で残る。共有していない予定は出ない', tx.length === 1 && tx[0].includes('消える予定') && !(await f.locator('body').innerText()).includes('非共有の予定'), tx);
+  ok('取消線のスタイルが付いている', (await f.locator('.bar.deleted').first().evaluate(e => getComputedStyle(e).textDecorationLine)).includes('line-through'));
+  ok('残る予定には、取消線が付かない', !(await f.locator('.bar:has-text("残る予定")').first().getAttribute('class')).includes('deleted'));
+  ok('「1件の予定が削除されました」の案内が出る', (await f.locator('.upd-banner.del').innerText()).includes('1件の予定が削除'));
+  ok('凡例に、取消線の説明が出る', (await f.locator('.legend').innerText()).includes('削除された予定'));
+  await f.locator('.bar.deleted').first().click(); await f.waitForSelector('.modal'); const mt = await f.locator('.modal').innerText();
+  ok('押すと、削除された予定の確認画面（件名・日付・時刻・削除日時）', mt.includes('消える予定') && mt.includes('10:00') && mt.includes('削除された日時') && mt.includes('確認した'), mt);
+  await f.click('.modal button:has-text("あとで")'); ok('「あとで」なら、残る', (await f.locator('.bar.deleted').count()) === 1);
+  await f.locator('.bar.deleted').first().click(); await f.click('.modal button:has-text("確認した")'); await f.waitForFunction(() => !document.querySelector('.modal'));
+  ok('「確認した」で、予定が消える（案内も消える）', (await f.locator('.bar.deleted').count()) === 0 && (await f.locator('.upd-banner.del').count()) === 0);
+  await f.waitForTimeout(2500); ok('自動更新のあとも、消えたまま', (await f.locator('.bar.deleted').count()) === 0);
+  await f.reload(); await f.waitForSelector('.upd-banner'); ok('再読み込みしても、消えたまま（このブラウザに記憶）', (await f.locator('.bar.deleted').count()) === 0);
+  ok('別の家族の画面には、その人が確認するまで残る', (await g.locator('.bar.deleted').count()) === 1 || await g.waitForSelector('.bar.deleted', { timeout: 8000 }).then(() => true).catch(() => false));
+  await g.click('.upd-banner.del button:has-text("すべて確認した")'); await g.waitForTimeout(400);
+  ok('「すべて確認した」で、まとめて消える', (await g.locator('.bar.deleted').count()) === 0);
+  // 更新履歴には、削除の記録が残る
+  await f.click('.upd-banner button:has-text("更新履歴を見る")'); await f.waitForSelector('.log-list'); ok('更新履歴には、削除の記録が残る', (await f.locator('.log-list').innerText()).includes('削除'));
+  await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
+})();

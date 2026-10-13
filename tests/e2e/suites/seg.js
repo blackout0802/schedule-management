@@ -1,0 +1,23 @@
+const { chromium } = require(process.env.NODE_PATH + '/playwright');
+let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1200, height: 860 } });
+  await p.goto('http://127.0.0.1:8099/login.php'); await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1');
+  await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); await p.selectOption('#who-sel', 'all'); await p.waitForTimeout(1000);
+  const info = async t => p.$$eval('.bar', (bs, t) => bs.filter(b => b.textContent.includes(t)).map(b => ({ c: b.className, t: b.textContent, r: b.parentElement.className })), t);
+  const g = await info('ギャップ業務');
+  ok('土日をはさむ業務は、2本に分かれる', g.length === 2, g);
+  ok('どちらの端も丸い（続きの印の平らな端にならない）', g.every(x => !/\bcl\b|\bcr\b/.test(x.c)), g);
+  ok('「…」は付かない', g.every(x => !x.t.includes('…')), g);
+  const o = await info('連休');
+  ok('土→日でそのまま続く休みは、2本で、端は平ら', o.length === 2 && /\bcr\b/.test(o[0].c) && /\bcl\b/.test(o[1].c), o);
+  ok('続きの方には「…」が付く', o.length === 2 && o[1].t.includes('…') && !o[0].t.includes('…'), o);
+  const path = JSON.parse(await p.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'company' }) }); return await r.text(); })).path;
+  const sp = await b.newPage({ viewport: { width: 1200, height: 860 } }); await sp.goto('http://127.0.0.1:8099/' + path); await sp.waitForSelector('.cal');
+  await sp.click('.toolbar .seg label:has-text("リスト")'); await sp.waitForTimeout(800);
+  ok('共有ページで「リスト」を押すと、予定のリストに切り替わる', await sp.locator('.list').count() === 1 && await sp.locator('.cal').count() === 0);
+  await sp.screenshot({ path: 'sh-list2.png' });
+  await sp.click('.toolbar .seg label:has-text("カレンダー")'); await sp.waitForSelector('.cal'); ok('カレンダーに戻せる', true);
+  await p.screenshot({ path: 'seg.png', clip: { x: 0, y: 380, width: 1200, height: 320 } });
+  await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
+})();
