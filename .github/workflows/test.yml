@@ -1,0 +1,100 @@
+# push と pull request のたびに、自動テストを流す。
+#   unit    … 部品ごとのテスト（tests/run.php）。PHP 7.4 / 8.1 / 8.3 × SQLite
+#   mariadb … 同じテストを MariaDB で（PHP 8.3）
+#   compat  … PHP 7.4 で使えない書き方がないかの、静的な検査
+#   e2e     … ブラウザ（Chromium）を動かす画面テスト（tests/e2e。SQLite）
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo, pdo_sqlite, mbstring, gd, openssl, zlib, json, curl
+          coverage: none
+      - run: php tests/run.php
+
+  mariadb:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: mariadb:10.6
+        env:
+          MARIADB_ROOT_PASSWORD: rootpw
+          MARIADB_DATABASE: sched_ut
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_mysql, mbstring, gd, openssl, zlib, json, curl
+          coverage: none
+      - run: php tests/run.php
+        env:
+          SCHEDULE_TEST_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=sched_ut;charset=utf8mb4'
+          SCHEDULE_TEST_USER: root
+          SCHEDULE_TEST_PASS: rootpw
+
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+          coverage: none
+      - name: PHP 7.4 との互換性を検査
+        run: |
+          composer global config --no-interaction allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer global require --no-interaction squizlabs/php_codesniffer phpcompatibility/php-compatibility dealerdirect/phpcodesniffer-composer-installer
+          export PATH="$(composer global config bin-dir --absolute --quiet):$PATH"
+          # 関数名が fam で始まるものを、古い拡張と取り違える誤検出だけ除く
+          phpcs --standard=PHPCompatibility --runtime-set testVersion 7.4- --extensions=php \
+            --exclude=PHPCompatibility.Extensions.RemovedExtensions \
+            src public bin tests/run.php tests/e2e/lib tests/e2e/mock config.sample.php
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_sqlite, mbstring, gd, openssl, zlib, json, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Playwright と Chromium
+        run: |
+          npm install -g playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: 画面テスト
+        run: bash tests/e2e/run.sh
+      - name: 失敗したときの、画面の写真などを残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: tests/e2e/.work/out
+          if-no-files-found: ignore
