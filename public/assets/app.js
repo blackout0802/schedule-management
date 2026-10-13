@@ -17,7 +17,7 @@
 
   var S = {
     me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], others: { todos: [], done: [] }, drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memoHtml: '', memoLoaded: false,
-    events: [], holidays: {}, tags: null, showOff: true, loading: false,
+    events: [], holidays: {}, loading: false,
     page: !SHARE && location.hash === '#settings' ? 'settings' : 'main' // 'settings' = 設定のページ（URL の #settings）
   };
 
@@ -386,11 +386,10 @@
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand', text: S.me.app_name }), tabs, el('span', { class: 'spacer' }),
       settingsMenu, userMenu)));
-    root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { id: 'filters' }),
+    root.appendChild(el('main', null, el('div', { id: 'toolbar' }),
       el('div', { class: 'layout' }, el('div', { id: 'board', class: 'board' }),
         el('div', { class: 'side' }, el('aside', { id: 'todo', class: 'todo', 'aria-label': 'ToDoリスト' }), el('section', { id: 'memo', class: 'todo memo', 'aria-label': 'メモ（日報用）' })))));
     renderToolbar();
-    renderFilters();
     loadTodos();
     renderMemo();
   }
@@ -602,24 +601,9 @@
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
-        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、選んだ業務の予定を重ねて表示しています' }));
+        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' }));
   }
 
-
-  function renderFilters() {
-    var box = document.getElementById('filters');
-    if (!box) return; // 共有ページには、絞り込みの欄が無い
-    box.textContent = '';
-    if (S.view !== 'me' || (!SHARE && S.mode === 'list')) return;
-    var onChange = function () { store('sched.filters', { tags: S.tags, showOff: S.showOff }); load(); };
-    var chips = S.me.work_tags.map(function (t) {
-      return el('label', { class: 'fchip' }, el('input', { type: 'checkbox', checked: S.tags.indexOf(t) >= 0, onchange: function (e) {
-        S.tags = e.target.checked ? S.tags.concat([t]) : S.tags.filter(function (x) { return x !== t; }); onChange();
-      } }), t);
-    });
-    chips.push(el('label', { class: 'fchip' }, el('input', { type: 'checkbox', checked: S.showOff, onchange: function (e) { S.showOff = e.target.checked; onChange(); } }), '同僚の休み'));
-    box.appendChild(el('div', { class: 'filters', role: 'group', 'aria-label': '表示する業務の予定' }, el('span', { class: 'lbl', text: '表示する業務:' }), chips));
-  }
 
   /* ---------- データの読み込みと描画 ---------- */
   function gridRange() {
@@ -634,7 +618,6 @@
     if (S.page === 'settings' || !document.getElementById('board')) return; // 設定のページを開いている間は、カレンダーを読み込まない（戻ったときに読み込む）
     var r = gridRange();
     var params = { from: ymd(r.start), to: ymd(r.end), view: S.view };
-    if (S.view === 'me' && !SHARE) { params.tags = S.tags.join(','); params.off = S.showOff ? '1' : '0'; }
     if (S.view === 'team' && !SHARE && whoId()) params.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
     if (!SHARE) params.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
     S.loading = true;
@@ -1293,7 +1276,7 @@
     function syncFam() {
       var k = curKind();
       famLabel.hidden = famOwnerOnly;
-      famText.textContent = k === 'private' ? '家族に共有する（共有リンクで見える）' : '家族にも共有する（家族用の共有リンクで見える。メモ欄の内容も見えます）';
+      famText.textContent = k === 'private' ? '家族に共有する（共有リンクで見える）' : '家族にも共有する（家族用の共有リンクと、あなたのプライベート版に表示。メモ欄の内容も家族に見えます）';
       if (!famTouched) famCb.checked = (isNew || k !== kind) ? k === 'private' : ev.family_shared !== false; // 初期値: プライベートは共有する、業務・休みは共有しない（元の種類に戻したら、元の指定）
       var auto = !famOwnerOnly && famByScope(k);
       famCb.disabled = auto;
@@ -1389,7 +1372,7 @@
     if (mgr) renderTodoInto(mgr, true);
   }
 
-  function setMode(m) { S.mode = m; store('sched.mode', m); renderToolbar(); renderFilters(); renderBoard(); if (m === 'cal') load(); }
+  function setMode(m) { S.mode = m; store('sched.mode', m); renderToolbar(); renderBoard(); if (m === 'cal') load(); }
 
   /* 自動更新などで描き直しても、入力中の文字・選んでいる種類・カーソルを失わないよう、描き直す前に控える */
   function captureTodoInput(box) {
@@ -2254,7 +2237,7 @@
       var boxes = S.me.work_tags.map(function (t) { return el('input', { type: 'checkbox', checked: scope.tags.indexOf(t) >= 0, onchange: save }); });
       return el('div', { class: 'scope' },
         el('b', { text: '家族に見せる範囲（まとめて指定）' }),
-        el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '予定ごとの「家族に共有」のチェックとは別に、すでに登録してある予定も含めて、まとめて見せられます。チェックを外すと、すぐ見えなくなります。' }),
+        el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '予定ごとの「家族に共有」のチェックとは別に、すでに登録してある予定も含めて、まとめて見せられます。チェックを外すと、すぐ見えなくなります。共有した業務・休みは、あなたのプライベート版にも表示されます。' }),
         el('label', { class: 'check' }, offCb, '自分の休みを、すべて見せる'),
         el('div', { class: 'scope-tags' }, el('span', { class: 'hint', text: '見せる業務の分類:' }),
           S.me.work_tags.map(function (t, i) { return el('label', { class: 'fchip' }, boxes[i], t); })),
@@ -2768,9 +2751,6 @@
     csrf = me.csrf;
     var now = new Date();
     S.year = now.getFullYear(); S.month = now.getMonth() + 1;
-    var f = store('sched.filters');
-    S.tags = f && Array.isArray(f.tags) ? f.tags.filter(function (t) { return me.work_tags.indexOf(t) >= 0; }) : me.work_tags.filter(function (t) { return t !== '個人作業'; });
-    S.showOff = f && typeof f.showOff === 'boolean' ? f.showOff : true;
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
     if (/[?&]view=team(&|$)/.test(location.search)) { // 通知のリンクから開いたときは、必ず業務版
       S.view = 'team'; store('sched.view', 'team');

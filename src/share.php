@@ -99,18 +99,10 @@ function share_events(array $link, string $from, string $to): array
     } else {
         // 家族用: 本人の予定のうち、(1) 予定ごとに「家族に共有」にチェックが入っているもの、
         // (2) 本人が「休みを全て見せる」にした場合の休み、(3) 本人が選んだ分類の業務、だけ
-        $fs = get_family_share(['id' => (int)$link['owner_id']]);
-        $conds = ['e.family_shared = 1'];
-        $params = [(int)$link['owner_id'], $to, $from];
-        if ($fs['off']) {
-            $conds[] = "e.kind = 'off'";
-        }
-        if ($fs['tags']) {
-            $conds[] = "(e.kind = 'work' AND e.tag IN (" . implode(',', array_fill(0, count($fs['tags']), '?')) . '))';
-            $params = array_merge($params, $fs['tags']);
-        }
+        [$fcond, $fparams] = family_visible_cond((int)$link['owner_id']);
+        $params = array_merge([(int)$link['owner_id'], $to, $from], $fparams);
         $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
-                      WHERE e.owner_id = ? AND e.start_date <= ? AND e.end_date >= ? AND (" . implode(' OR ', $conds) . ")
+                      WHERE e.owner_id = ? AND e.start_date <= ? AND e.end_date >= ? AND ($fcond)
                       ORDER BY e.start_date, e.start_time, e.id", $params);
     }
     $withNote = $link['kind'] === 'family';

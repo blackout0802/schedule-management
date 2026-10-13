@@ -145,12 +145,20 @@ $titles = function (array $list) { $t = array_column($list, 'title'); sort($t); 
 check('業務版: 他人にはプライベートが見えない', $titles(list_events($b, $today, $today, 'team')), ['A社 打ち合わせ', '休み', '資料作成']);
 check('業務版: 管理者にもプライベートは見えない', in_array('歯医者', $titles(list_events($admin, $today, $today, 'team')), true), false);
 check('業務版: 本人は(業務版では)プライベートを見ない', in_array('歯医者', $titles(list_events($a, $today, $today, 'team')), true), false);
-check('プライベート版: 他人にはプライベートが見えない', in_array('歯医者', $titles(list_events($b, $today, $today, 'me', ['tags' => cfg('work_tags'), 'showOff' => true])), true), false);
-check('プライベート版: 管理者にもプライベートは見えない', in_array('歯医者', $titles(list_events($admin, $today, $today, 'me', ['tags' => cfg('work_tags'), 'showOff' => true])), true), false);
-check('プライベート版: 本人には見える', in_array('歯医者', $titles(list_events($a, $today, $today, 'me', ['tags' => cfg('work_tags'), 'showOff' => true])), true), true);
-check('プライベート版: タグで絞り込み(打ち合わせのみ)', $titles(list_events($b, $today, $today, 'me', ['tags' => ['打ち合わせ'], 'showOff' => false])), ['A社 打ち合わせ']);
-check('プライベート版: 同僚の休みを表示', $titles(list_events($b, $today, $today, 'me', ['tags' => [], 'showOff' => true])), ['休み']);
-check('プライベート版: 自分の休みは常に表示', $titles(list_events($a, $today, $today, 'me', ['tags' => [], 'showOff' => false])), ['休み', '歯医者']);
+$pv = function (array $u) use ($today, $titles) { return $titles(list_events($u, $today, $today, 'me')); };
+check('プライベート版: 他人にはプライベートが見えない', in_array('歯医者', $pv($b), true), false);
+check('プライベート版: 管理者にもプライベートは見えない', in_array('歯医者', $pv($admin), true), false);
+check('プライベート版: 本人には見える（共有にしていない業務・休みは出ない）', $pv($a), ['歯医者']);
+check('プライベート版: 他の社員の業務・休みは出ない', $pv($b), []);
+q("UPDATE events SET family_shared = 1 WHERE title = 'A社 打ち合わせ'");
+check('プライベート版: 「家族に共有」にした業務が重なる', $pv($a), ['A社 打ち合わせ', '歯医者']);
+check('プライベート版: 共有にしても他の社員のプライベート版には出ない', $pv($b), []);
+save_family_share($a, true, ['個人作業']);
+check('プライベート版: 「まとめて共有」の休み・業務分類も重なる（家族用リンクと同じ）', $pv($a), ['A社 打ち合わせ', '休み', '歯医者', '資料作成']);
+check('プライベート版: 家族用リンクに見える予定と一致する（プライベートは初期値が共有）', $pv($a), $titles(share_events(['kind' => 'family', 'owner_id' => $a['id']], $today, $today)));
+save_family_share($a, false, []);
+q("UPDATE events SET family_shared = 0 WHERE title = 'A社 打ち合わせ'");
+check('プライベート版: 共有を外すと、また出ない', $pv($a), ['歯医者']);
 
 $priv = row("SELECT * FROM events WHERE kind='private'");
 check('他人のプライベートは find_event で見つからない', find_event((int)$priv['id'], $admin), null);
@@ -224,7 +232,7 @@ check('複製: 管理者が複製しても持ち主は元の社員', (int)$cr3[0
 $srcPriv = $mk($a, ['kind' => 'private', 'title' => '秘密の予定', 'start' => $d0]);
 [$cr4] = duplicate_event($srcPriv, [$t1], $a);
 check('複製: プライベートはプライベートのまま', $cr4[0]['kind'], 'private');
-check('複製: 他の社員・管理者にはコピーも見えない', [in_array('秘密の予定', $titles(list_events($b, $t1, $t1, 'team')), true), in_array('秘密の予定', $titles(list_events($admin, $t1, $t1, 'me', ['tags' => cfg('work_tags'), 'showOff' => true])), true)], [false, false]);
+check('複製: 他の社員・管理者にはコピーも見えない', [in_array('秘密の予定', $titles(list_events($b, $t1, $t1, 'team')), true), in_array('秘密の予定', $titles(list_events($admin, $t1, $t1, 'me')), true)], [false, false]);
 check('複製: 他人のプライベートは複製元として見つからない', find_event((int)$srcPriv['id'], $b), null);
 check('複製: 一般社員は他人の休みを複製できない（編集権限なし）', can_edit_event($srcOff, $b), false);
 // 繰り返し予定の複製 → 通常の予定になる
@@ -875,7 +883,7 @@ check('種類変更: 休みになった予定は、他の人にも休みとし�
 $k2 = $chg($k1, $a, 'private', ['family_shared' => 1]);
 check('種類変更: 休み→プライベート（分類は空になる）', [$k2['kind'], $k2['tag']], ['private', '']);
 check('種類変更: プライベートにすると、他の人・管理者には見えなくなる', [in_array('種類を変える予定', array_column(list_events($b, $kd, $kd, 'team'), 'title'), true), in_array('種類を変える予定', array_column(list_events($admin, $kd, $kd, 'team'), 'title'), true), find_event((int)$k2['id'], $admin)], [false, false, null]);
-check('種類変更: プライベートにした予定は、本人には見える', in_array('種類を変える予定', array_column(list_events($a, $kd, $kd, 'me', ['tags' => cfg('work_tags'), 'showOff' => true]), 'title'), true), true);
+check('種類変更: プライベートにした予定は、本人には見える', in_array('種類を変える予定', array_column(list_events($a, $kd, $kd, 'me'), 'title'), true), true);
 $k3 = $chg($k2, $a, 'work', ['tag' => '全体会議', 'family_shared' => 0]);
 check('種類変更: プライベート→業務（分類を選べる・家族への共有は共有しない）', [$k3['kind'], $k3['tag'], (int)$k3['family_shared']], ['work', '全体会議', 0]);
 check('種類変更: 業務になった予定は、全員に見える', in_array('種類を変える予定', array_column(list_events($b, $kd, $kd, 'team'), 'title'), true), true);

@@ -3,8 +3,8 @@
 //
 // ルール:
 //   private … 本人にしか返さない（管理者にも返さない）
-//   work    … 全社員に見える。プライベート版ではタグで絞り込める
-//   off     … 全社員に見える
+//   work    … 全社員に見える。持ち主のプライベート版には、「家族に共有」にしたものだけ重なる
+//   off     … 全社員に見える（プライベート版は、work と同じ）
 
 require_once __DIR__ . '/attachments.php';
 require_once __DIR__ . '/recurrence.php';
@@ -22,6 +22,27 @@ function family_flag(string $kind, array $in): int
     return $kind === 'private' ? 1 : 0;
 }
 
+/**
+ * 家族用リンクに見える予定の条件（SQLの断片と値）。持ち主の予定を e の別名で絞る。
+ * (1) 予定ごとに「家族に共有」のもの (2) 本人が「休みを全て」にした場合の休み (3) 本人が選んだ分類の業務
+ * 家族用リンクと、持ち主のプライベート版の表示は、この同じ条件で決める。
+ * @return array{0:string,1:array} [条件, 値]
+ */
+function family_visible_cond(int $ownerId): array
+{
+    $fs = get_family_share(['id' => $ownerId]);
+    $conds = ['e.family_shared = 1'];
+    $params = [];
+    if ($fs['off']) {
+        $conds[] = "e.kind = 'off'";
+    }
+    if ($fs['tags']) {
+        $conds[] = "(e.kind = 'work' AND e.tag IN (" . implode(',', array_fill(0, count($fs['tags']), '?')) . '))';
+        $params = $fs['tags'];
+    }
+    return [implode(' OR ', $conds), $params];
+}
+
 function allowed_tags(string $kind): array
 {
     if ($kind === 'work') {
@@ -36,7 +57,7 @@ function allowed_tags(string $kind): array
 /**
  * 画面に返す予定の一覧。
  * @param string $view 'team'（業務版）または 'me'（プライベート版）
- * @param array  $opts ['tags' => 表示する業務タグ, 'showOff' => 同僚の休みを出すか, 'who' => 業務版で、特定の社員のid（なければ全社）]
+ * @param array  $opts ['who' => 業務版で、特定の社員のid（なければ全社）]
  */
 function list_events(array $user, string $from, string $to, string $view, array $opts = []): array
 {
@@ -49,20 +70,11 @@ function list_events(array $user, string $from, string $to, string $view, array 
             $params[] = (int)$opts['who'];
         }
     } else {
-        $tags = array_values(array_intersect($opts['tags'] ?? cfg('work_tags'), cfg('work_tags')));
-        $parts = ["(kind = 'private' AND owner_id = ?)"];
-        $params[] = $user['id'];
-        if ($tags) {
-            $parts[] = "(kind = 'work' AND tag IN (" . implode(',', array_fill(0, count($tags), '?')) . '))';
-            $params = array_merge($params, $tags);
-        }
-        if (!empty($opts['showOff'])) {
-            $parts[] = "kind = 'off'"; // 同僚の休みも表示
-        } else {
-            $parts[] = "(kind = 'off' AND owner_id = ?)"; // 自分の休みだけ
-            $params[] = $user['id'];
-        }
-        $where = '(' . implode(' OR ', $parts) . ')';
+        // プライベート版: 自分のプライベート予定と、「家族に共有」にした自分の業務・休み（家族が見るものと同じ）だけ。
+        // 他の社員の予定は出さない（業務版で見る）
+        [$fcond, $fparams] = family_visible_cond((int)$user['id']);
+        $where = "(e.owner_id = ? AND (kind = 'private' OR ($fcond)))";
+        $params = array_merge($params, [(int)$user['id']], $fparams);
     }
     $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
                   WHERE e.start_date <= ? AND e.end_date >= ? AND $where ORDER BY e.start_date, e.start_time, e.id", $params);

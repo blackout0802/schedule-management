@@ -175,10 +175,9 @@ function handle_api(): void
             }
             $rev = data_rev(); // データを読む前の番号（読んでいる間に更新されても、次の確認で見つかるように）
             $view = ($_GET['view'] ?? 'team') === 'me' ? 'me' : 'team';
-            $tags = isset($_GET['tags']) && $_GET['tags'] !== '' ? explode(',', (string)$_GET['tags']) : [];
             $holidays = holiday_map($from, $to);
             $out = [
-                'events' => list_events($user, $from, $to, $view, ['tags' => $tags, 'showOff' => ($_GET['off'] ?? '1') === '1', 'who' => ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0]),
+                'events' => list_events($user, $from, $to, $view, ['who' => ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0]),
                 'holidays' => $holidays,
                 'rev' => $rev,
             ];
