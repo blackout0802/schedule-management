@@ -36,6 +36,14 @@ function current_user(): ?array
         return null;
     }
     $_SESSION['pwv'] = (string)$u['pwv'];
+    if (time() - (int)($_SESSION['seen'] ?? 0) >= 600) { // 最後に使った日時は、10分に1回だけ記録する（毎回は書かない）
+        $_SESSION['seen'] = time();
+        try {
+            q('UPDATE users SET last_seen_at = ? WHERE id = ?', [now_str(), $u['id']]);
+        } catch (Throwable $t) {
+            // 列がまだ無い（更新直後）ときは、記録せずに続ける
+        }
+    }
     return $u;
 }
 
@@ -110,6 +118,11 @@ function login_attempt(string $email, string $password, ?bool &$locked = null): 
         q('DELETE FROM login_fails WHERE email = ?', [$email]);
     } catch (Throwable $t) {
         // 何もしない
+    }
+    try { // 管理者の「利用状況」に出す、最後にログインした日時
+        q('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?', [now_str(), now_str(), $u['id']]);
+    } catch (Throwable $t) {
+        // 列がまだ無い（更新直後）ときは、記録せずに続ける
     }
     session_boot();
     session_regenerate_id(true);

@@ -686,3 +686,16 @@ kbd { border-radius: 6px; }
 .memo-editor div[data-md] { font-weight: 700; color: var(--work); cursor: default; user-select: none; }
 .memo-editor div[data-tr] { border-left: 2px solid var(--line); padding-left: 6px; margin-left: -2px; }
 .memo-hist-view { min-height: 200px; max-height: 50vh; white-space: pre-wrap; }
+
+/* v1.45 利用状況（管理者） */
+.usage .usage-sec { margin: 0 0 16px; }
+.usage .usage-sec h4 { margin: 0 0 6px; font-size: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.usage-kv { display: grid; grid-template-columns: minmax(0, 14em) 1fr; gap: 4px 12px; margin: 0; font-size: 14px; }
+.usage-kv dt { color: var(--muted, #667); }
+.usage-kv dd { margin: 0; overflow-wrap: anywhere; }
+.usage-warn { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.usage-warn li { display: flex; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border-left: 4px solid var(--line); font-size: 14px; }
+.usage-warn li.warn { border-left-color: #d9822b; }
+.usage-warn li.info { border-left-color: #4a7bd0; }
+.usage .t tr.off td { color: var(--muted, #667); }
+@media (max-width: 560px) { .usage-kv { grid-template-columns: 1fr; gap: 0; } .usage-kv dd { margin-bottom: 6px; } }

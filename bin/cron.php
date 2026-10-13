@@ -15,6 +15,7 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/../src/events.php';
 require_once __DIR__ . '/../src/slack.php';
 require_once __DIR__ . '/../src/backup.php';
+require_once __DIR__ . '/../src/usage.php';
 
 $isCli = PHP_SAPI === 'cli';
 if (!$isCli) {
@@ -35,9 +36,11 @@ try {
     switch ($mode) {
         case 'nightly':
             echo '繰り返し予定: ' . materialize_all() . " 件を更新しました\n";
+            usage_cron_mark('nightly');
             break;
         case 'notify':
             echo implode("\n", array_merge(notify_due(), backup_cron_tasks()) ?: ['送る通知はありません']) . "\n";
+            usage_cron_mark('notify');
             break;
         case 'backup':
             echo '自動バックアップを作成しました: ' . backup_auto_run() . "\n";

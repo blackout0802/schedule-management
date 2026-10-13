@@ -427,6 +427,12 @@
         { id: 'slack', title: 'Slack通知の送り先・テスト', admin: true, build: openSlackDialog },
         { id: 'slackcfg', title: 'Slack通知の時間・文面', admin: true, build: openSlackCfgDialog },
         { id: 'audit', title: '変更履歴', admin: true, build: openAuditPanel },
+        { id: 'usage', title: '利用状況（ログイン・容量・バックアップ）', admin: true, build: openUsageDialog },
+        { id: 'guide', title: '運用の手引き（印刷できる1ページ）', admin: true, build: function () {
+          openModal('運用の手引き', el('div', { class: 'form' },
+            el('p', { class: 'hint', text: '社員の追加と停止、パスワードを忘れたとき、システム更新、バックアップと復元、cron、困ったときの対処を、1ページにまとめました。担当者が代わるときにも、そのまま印刷して渡せます。' }),
+            el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'guide.php', target: '_blank', rel: 'noopener', text: '運用の手引きを開く' }))));
+        } },
         { id: 'backup', title: 'バックアップ', admin: true, build: function () {
           openModal('バックアップ', el('div', { class: 'form' },
             el('p', { class: 'hint', text: 'データ（プライベートの予定も含む）を、パスワードで暗号化した1つのファイルに保存します。パスワードを知らない人は、管理者でも中身を見られません。パスワードを忘れると復元できないので、ご注意ください。' }),
@@ -452,6 +458,55 @@
       el('p', { class: 'hint', text: SHARE ? 'このページ（共有リンク）を追加すると、アイコンから、この共有ページがそのまま開きます。' : '家族用・会社用の共有リンクのページでも、同じ手順で追加できます（そのページが開くアイコンになります）。' }));
     if (SHARE) { var ov = openModal('ホーム画面に追加', body); ov.outsideClose = true; body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))); }
     else openModal('ホーム画面に追加', body);
+  }
+
+  /* ---------- 利用状況（管理者）: 最終ログイン・容量・バックアップ・cron・気をつけること ---------- */
+  function usageSize(b) { return b >= 1073741824 ? (Math.round(b / 107374182.4) / 10) + ' GB' : b >= 1048576 ? (Math.round(b / 104857.6) / 10) + ' MB' : Math.max(0, Math.round(b / 1024)) + ' KB'; }
+  function usageAt(s) { return s ? (+s.slice(5, 7)) + '/' + (+s.slice(8, 10)) + ' ' + s.slice(11, 16) : '—'; }
+  function usageAgo(s, now) {
+    if (!s) return '記録なし';
+    var d = Math.floor((new Date(now.replace(' ', 'T')) - new Date(s.replace(' ', 'T'))) / 86400000);
+    return usageAt(s) + (d <= 0 ? '（今日）' : d === 1 ? '（昨日）' : '（' + d + '日前）');
+  }
+  function openUsageDialog() {
+    var body = el('div', { class: 'form usage' }, el('p', { class: 'hint', text: '読み込み中…' }));
+    var ov = openModal('利用状況', body, true);
+    api('usage_get').then(function (j) {
+      var st = j.storage, att = st.attachments, bk = j.backup;
+      var sec = function (title, kids) { return el('section', { class: 'usage-sec' }, el('h4', { text: title }), kids); };
+      var kv = function (rows) { return el('dl', { class: 'usage-kv' }, rows.map(function (r) { return [el('dt', { text: r[0] }), el('dd', { text: r[1] })]; })); };
+      body.textContent = '';
+      body.appendChild(el('p', { class: 'hint', text: '数と日時だけを表示します。予定・ToDo・日報の中身や、プライベートの件名は、ここには出ません。' }));
+      body.appendChild(sec('気をつけること', j.warnings.length
+        ? el('ul', { class: 'usage-warn' }, j.warnings.map(function (w) { return el('li', { class: w.level }, el('span', { class: 'ic', 'aria-hidden': 'true', text: w.level === 'warn' ? '⚠' : 'ℹ' }), el('span', { text: w.text })); }))
+        : el('p', { class: 'notice ok-note', text: '✓ 気をつけることはありません。' })));
+      body.appendChild(sec('社員（最後にログイン・最後に使った日時）', el('div', { class: 'scroll-x' }, el('table', { class: 't' },
+        el('thead', null, el('tr', null, ['名前', '最後にログイン', '最後に使った'].map(function (h) { return el('th', { text: h }); }))),
+        el('tbody', null, j.users.map(function (u) {
+          return el('tr', { class: u.active ? '' : 'off' },
+            el('td', { text: u.name + (u.role === 'admin' ? '（管理者）' : '') + (u.active ? '' : '（停止中）') + (u.must_change ? '（初回パスワード未変更）' : '') }),
+            el('td', { text: usageAgo(u.last_login, j.now) }), el('td', { text: usageAgo(u.last_seen, j.now) }));
+        }))))));
+      var attRows = [['ToDoの画像', att.count + ' 枚 / ' + usageSize(att.bytes)]];
+      att.by_user.forEach(function (x) { attRows.push(['　' + x.name, x.count + ' 枚 / ' + usageSize(x.bytes)]); });
+      body.appendChild(sec('容量', kv([['データベース（' + (j.db.type || '不明') + '）', j.db.bytes === null ? '調べられませんでした' : usageSize(j.db.bytes)]].concat(attRows, [
+        ['自動バックアップの置き場所', st.backups.count + ' 件 / ' + usageSize(st.backups.bytes)],
+        ['サーバーの空き', st.disk_free === null ? '調べられませんでした' : usageSize(st.disk_free) + (st.disk_total ? ' / 全体 ' + usageSize(st.disk_total) : '')]]))));
+      body.appendChild(sec('バックアップ', kv([
+        ['自動バックアップ', bk.auto_enabled ? '設定済み（毎日 3時以降 / ' + bk.auto_files + ' 件 保管、最大 ' + bk.auto_keep + ' 件）' : '設定されていません'],
+        ['　最後に作った日時', bk.auto_enabled ? (bk.auto_last ? usageAgo(bk.auto_last, j.now) : 'まだありません') : '—'],
+        ['手動（ダウンロード）', bk.manual_last ? usageAgo(bk.manual_last, j.now) : 'まだ一度もありません']])));
+      body.appendChild(sec('自動処理（cron）・通知', kv([
+        ['通知用 notify（10分おき）', j.cron.notify ? usageAgo(j.cron.notify, j.now) : 'まだ確認できていません'],
+        ['繰り返し予定 nightly（毎日）', j.cron.nightly ? usageAgo(j.cron.nightly, j.now) : 'まだ確認できていません'],
+        ['Slack通知の送り先', j.slack.configured ? j.slack.name : '未設定']])));
+      body.appendChild(sec('件数・システム', kv([
+        ['予定 / 繰り返し業務 / ToDo / 日報', j.counts.events + ' / ' + j.counts.series + ' / ' + j.counts.todos + ' / ' + j.counts.memos],
+        ['変更履歴', j.counts.audit + ' 件'],
+        ['アプリの版 / PHP / DB', 'v' + j.version + ' / ' + j.php + ' / ' + (j.db.type ? j.db.type + ' ' + j.db.version : '不明')],
+        ['時間帯 / いまの時刻', j.timezone + ' / ' + j.now.slice(0, 16)]])));
+      body.appendChild(el('div', { class: 'actions' }, el('a', { class: 'btn', href: 'guide.php', target: '_blank', rel: 'noopener', text: '運用の手引き' }), el('button', { class: 'btn primary', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    }).catch(function (e) { ov.close(); fail(e); });
   }
 
   /* ---------- 変更履歴（管理者）: 誰が・いつ・何を変えたか ---------- */

@@ -8,6 +8,7 @@ require_once __DIR__ . '/events.php';
 require_once __DIR__ . '/slack.php';
 require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/share.php';
+require_once __DIR__ . '/usage.php';
 
 function api_out($data, int $code = 200): void
 {
@@ -112,7 +113,7 @@ const EXAMPLE_SERIES = [
 
 /** GET（画面を開くだけ）でも使ってよい、読むだけの操作。これ以外は、POST（CSRFトークンの確認つき）だけ受け付ける */
 const API_READ_ACTIONS = ['me', 'rev', 'events', 'todo_list', 'todo_comments', 'todo_file', 'share_list', 'slack_status', 'slack_cfg',
-    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_log_list', 'audit_list', 'holidays_list'];
+    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get'];
 
 function handle_api(): void
 {
@@ -738,6 +739,10 @@ function handle_api(): void
             require_admin($user);
             backup_snooze(7);
             api_out(['ok' => true]);
+
+        case 'usage_get': // 利用状況（管理者）: 最終ログイン・容量・バックアップ・cron・注意点
+            require_admin($user);
+            api_out(usage_report());
 
         case 'audit_list': // 変更履歴（管理者）
             require_admin($user);

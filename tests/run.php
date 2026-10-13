@@ -15,6 +15,7 @@ require_once __DIR__ . '/../src/slack.php';
 require_once __DIR__ . '/../src/updater.php';
 require_once __DIR__ . '/../src/share.php';
 require_once __DIR__ . '/../src/backup.php';
+require_once __DIR__ . '/../src/usage.php';
 
 $fail = 0;
 $pass = 0;
@@ -1292,6 +1293,42 @@ $fid2 = attach_store((int)$cJ['id'], (int)$tdImg['id'], $pngP); $stored2 = row('
 todo_comments_purge('SELECT id FROM todos WHERE id = ?', [(int)$tdImg['id']]);
 check('画像: ToDoを消す処理で、コメントと画像のファイルが消える', [is_file(attach_dir() . '/' . $stored2), (int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [(int)$tdImg['id']])['c']], [false, 0]);
 check('画像: バックアップには含めない（画像のファイルは、サーバーの data/attachments/ にだけある）', isset(backup_collect()['tables']['todo_comment_files']), false);
+
+// ---- 利用状況（管理者向け）----
+q('UPDATE users SET last_login_at = NULL, last_seen_at = NULL');
+$_SESSION = []; login_attempt('a@example.com', 'password1');
+check('利用状況: ログインすると、最後にログインした日時が残る', [row('SELECT last_login_at FROM users WHERE id = ?', [$a['id']])['last_login_at'] !== null, row('SELECT last_login_at FROM users WHERE id = ?', [$b['id']])['last_login_at']], [true, null]);
+$_SESSION = [];
+$secretTodo = save_todo(['title' => '利用状況に出てはいけない私用の件名', 'kind' => 'private', 'tag' => '', 'note' => '', 'family_shared' => 0], $a, null);
+$rep = usage_report();
+$names = array_column($rep['users'], 'name');
+check('利用状況: 社員の一覧に、最後にログインした日時が入る', [count($rep['users']) >= 2, array_key_exists('last_login', $rep['users'][0]), in_array($a['name'], $names, true)], [true, true, true]);
+check('利用状況: 件名・本文などの中身は、含まれない', strpos(json_encode($rep, JSON_UNESCAPED_UNICODE), '利用状況に出てはいけない') === false, true);
+$ws = array_column($rep['warnings'], 'text');
+$has = function (array $w, string $needle): bool { foreach ($w as $x) { if (strpos($x, $needle) !== false) { return true; } } return false; };
+check('利用状況: install.php が残っていると、注意に出る', $has($ws, 'install.php'), is_file(dirname(__DIR__) . '/public/install.php'));
+check('利用状況: 自動バックアップが未設定だと、注意に出る', $has($ws, '自動バックアップが設定されていません'), true);
+check('利用状況: cron の記録が無いと、「まだ記録がない」と知らせる（警告ではない）', [$has($ws, 'notify'), (function () use ($rep) { foreach ($rep['warnings'] as $x) { if (strpos($x['text'], 'notify') !== false) { return $x['level']; } } return null; })()], [true, 'info']);
+usage_cron_mark('notify'); usage_cron_mark('nightly'); usage_cron_mark('bogus');
+$rep2 = usage_report();
+check('利用状況: cron が動いた印が残る（種類以外は無視）', [$rep2['cron']['notify'] !== null, $rep2['cron']['nightly'] !== null, backup_meta('cron_bogus_at')], [true, true, '']);
+check('利用状況: cron が最近動いていれば、cron の注意は出ない', $has(array_column($rep2['warnings'], 'text'), '動いていません'), false);
+$later = usage_report(time() + 7200);
+check('利用状況: notify が1時間以上止まると、注意に出る', $has(array_column($later['warnings'], 'text'), 'notify）が、1時間以上動いていません'), true);
+$much = usage_report(time() + 3 * 86400);
+check('利用状況: nightly が1日半以上止まると、注意に出る', $has(array_column($much['warnings'], 'text'), 'nightly の cron）が、1日半以上'), true);
+check('利用状況: 90日以上使っていない人が、注意に出る', $has(array_column(usage_report(time() + 100 * 86400)['warnings'], 'text'), '90日以上、使っていない'), true);
+check('利用状況: 日数の計算（空・不正は null）', [usage_days_since(null), usage_days_since(''), usage_days_since('x'), usage_days_since('2026-01-01 00:00:00', strtotime('2026-01-04 12:00:00'))], [null, null, null, 3]);
+check('利用状況: 大きさの表示', [usage_size(500), usage_size(5 * 1048576), usage_size(3 * 1073741824)], ['0 KB', '5 MB', '3 GB']);
+backup_meta_set('backup_auto_pass', 'usagepass-1');
+check('利用状況: 自動バックアップを設定すると、未設定の注意は消える', $has(array_column(usage_report()['warnings'], 'text'), '自動バックアップが設定されていません'), false);
+backup_meta_set('backup_auto_err', now_str() . ' 失敗のテスト');
+check('利用状況: 自動バックアップが失敗していると、注意に出る', $has(array_column(usage_report()['warnings'], 'text'), '自動バックアップが失敗しています'), true);
+backup_meta_set('backup_auto_err', ''); backup_meta_set('backup_auto_pass', '');
+q('UPDATE users SET must_change_password = 1 WHERE id = ?', [$b['id']]);
+check('利用状況: 初回パスワード未変更の人が、注意に出る', $has(array_column(usage_report()['warnings'], 'text'), $b['name']), true);
+q('UPDATE users SET must_change_password = 0 WHERE id = ?', [$b['id']]);
+q('DELETE FROM todos WHERE id = ?', [$secretTodo['id']]);
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
