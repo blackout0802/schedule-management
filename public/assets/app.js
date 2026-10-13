@@ -17,7 +17,7 @@
 
   var S = {
     me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], others: { todos: [], done: [] }, drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memoHtml: '', memoLoaded: false,
-    events: [], holidays: {}, loading: false,
+    events: [], holidays: {}, cache: {}, tdCache: {}, loading: false,
     page: !SHARE && location.hash === '#settings' ? 'settings' : 'main' // 'settings' = 設定のページ（URL の #settings）
   };
 
@@ -574,7 +574,19 @@
     navMonth(dx < 0 ? 1 : -1, true);
   }, { passive: true });
   function goToday() { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); }
-  function setView(v) { if (S.view === v) return; S.view = v; store('sched.view', v); renderShell(); load(); }
+  /* 業務版とプライベート版の切り替え。画面を作り直さず、前に読んだ内容（なければ空の枠）をすぐに出して、あとから最新に差し替える */
+  function setView(v) {
+    if (S.view === v) return;
+    S.view = v; store('sched.view', v);
+    if (S.page === 'settings' || SHARE) { renderShell(); load(); return; }
+    document.querySelectorAll('.tabs .tab').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-view') === v ? 'true' : 'false'); });
+    var c = S.cache[evKey(evParams())];
+    if (c) applyEvents(c); else { S.events = []; S.summary = null; }
+    var t = S.tdCache[v];
+    if (t) applyTodos(t); else { S.todos = []; S.done = []; S.others = { todos: [], done: [] }; }
+    renderToolbar(); renderBoard(); renderTodo();
+    load(); loadTodos();
+  }
   function selectWho(val) { S.who = val; store('sched.who', S.who); renderToolbar(); load(); }
 
   function renderToolbar() {
@@ -596,8 +608,7 @@
         [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
         })),
-      SHARE ? null : el('button', { class: 'btn', type: 'button', text: '↻ 繰り返し業務', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }),
-      SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ 予定を追加', onclick: function () { openEventDialog(null, ymd(new Date())); } })
+      SHARE ? null : el('button', { class: 'btn', type: 'button', text: '↻ 繰り返し業務', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } })
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
@@ -614,19 +625,44 @@
     return { start: start, end: end };
   }
 
+  function evParams(view) {
+    var r = gridRange();
+    var p = { from: ymd(r.start), to: ymd(r.end), view: view || S.view };
+    if (p.view === 'team' && !SHARE && whoId()) p.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
+    if (!SHARE) p.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
+    return p;
+  }
+  function evKey(p) { return [p.view, p.from, p.to, p.who || ''].join('|'); }
+  function applyEvents(c) {
+    S.events = c.events; S.holidays = c.holidays; S.summary = c.summary; buildLeaveIdx(); S.revEv = c.rev;
+  }
+
+  var loadSeq = 0;
   function load() {
     if (S.page === 'settings' || !document.getElementById('board')) return; // 設定のページを開いている間は、カレンダーを読み込まない（戻ったときに読み込む）
-    var r = gridRange();
-    var params = { from: ymd(r.start), to: ymd(r.end), view: S.view };
-    if (S.view === 'team' && !SHARE && whoId()) params.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
-    if (!SHARE) params.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
+    var params = evParams();
+    var seq = ++loadSeq; // 切り替えの途中で古い答えが届いても、画面を上書きしない
     S.loading = true;
     // 家族用の共有ページでは、更新履歴も一緒に読む（前回見たときからの更新を目立たせるため）
     Promise.all([api('events', { params: params }), FAMILY ? api('log') : Promise.resolve(null)]).then(function (r) {
+      if (seq !== loadSeq) return;
       var j = r[0];
       if (r[1]) setUpdateLog(r[1]);
-      S.events = FAMILY ? j.events.filter(function (e) { return !(e.deleted && ackIds().indexOf(e.log_id) >= 0); }) : j.events; S.holidays = j.holidays; S.summary = j.summary || null; buildLeaveIdx(); S.loading = false; S.revEv = j.rev; renderBoard();
-    }).catch(fail);
+      var c = { events: FAMILY ? j.events.filter(function (e) { return !(e.deleted && ackIds().indexOf(e.log_id) >= 0); }) : j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev };
+      S.loading = false;
+      applyEvents(c); S.cache[evKey(params)] = c; renderBoard();
+      if (!SHARE) prefetchOtherView(params, seq);
+    }).catch(function (e) { if (seq === loadSeq) S.loading = false; fail(e); });
+  }
+  /* もう一方の版も、裏で読んでおく（切り替えたとき、すぐ出せるように） */
+  function prefetchOtherView(params, seq) {
+    var other = params.view === 'team' ? 'me' : 'team';
+    var p = evParams(other);
+    api('events', { params: p, quiet: true }).then(function (j) {
+      if (seq !== loadSeq) return;
+      S.cache[evKey(p)] = { events: j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev };
+    }).catch(function () { /* 裏の読み込みは、失敗しても何もしない */ });
+    api('todo_list', { params: { view: other }, quiet: true }).then(function (j) { S.tdCache[other] = j; }).catch(function () { });
   }
 
   /* ---------- 家族用: 更新履歴と、前回から更新された予定の目印 ---------- */
@@ -1338,8 +1374,15 @@
   /* ---------- ToDo ---------- */
   function loadTodos() {
     if (S.page === 'settings') return Promise.resolve();
-    return api('todo_list', { params: { view: S.view } }).then(function (j) { S.todos = j.todos; S.done = j.done || []; S.others = j.others || { todos: [], done: [] }; S.revTd = j.rev; renderTodo(); }).catch(fail);
+    var view = S.view, seq = ++todoSeq;
+    return api('todo_list', { params: { view: view } }).then(function (j) {
+      S.tdCache[view] = j;
+      if (seq !== todoSeq || view !== S.view) return; // 切り替えの途中で古い答えが届いたら、使わない
+      applyTodos(j); renderTodo();
+    }).catch(fail);
   }
+  var todoSeq = 0;
+  function applyTodos(j) { S.todos = j.todos; S.done = j.done || []; S.others = j.others || { todos: [], done: [] }; S.revTd = j.rev; }
 
   /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
   function reorderTo(dragId, targetId, after) {
