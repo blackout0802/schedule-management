@@ -76,7 +76,7 @@ function list_events(array $user, string $from, string $to, string $view, array 
         $where = "(e.owner_id = ? AND (e.kind = 'private' OR ($fcond)))";
         $params = array_merge($params, [(int)$user['id']], $fparams);
     }
-    $list = rows("SELECT e.*, u.name AS owner_name, t.done_at AS todo_done_at FROM events e JOIN users u ON u.id = e.owner_id LEFT JOIN todos t ON t.id = e.todo_id
+    $list = rows("SELECT e.*, u.name AS owner_name, t.done_at AS todo_done_at, t.doing AS todo_doing FROM events e JOIN users u ON u.id = e.owner_id LEFT JOIN todos t ON t.id = e.todo_id
                   WHERE e.start_date <= ? AND e.end_date >= ? AND $where ORDER BY e.start_date, e.start_time, e.id", $params);
     $colors = owner_colors_map();
     return array_map(function ($e) use ($user, $colors) {
@@ -126,6 +126,7 @@ function event_for_client(array $e, array $user, ?array $colorsMap = null): arra
         'important' => (int)($e['important'] ?? 0) === 1,
         'todo_id' => ($e['todo_id'] ?? null) !== null ? (int)$e['todo_id'] : null, // ToDoをカレンダーに置いた予定
         'done' => ($e['todo_done_at'] ?? null) !== null, // 元のToDoが完了（カレンダーでは取り消し線）
+        'todo_status' => ($e['todo_id'] ?? null) === null ? null : (($e['todo_done_at'] ?? null) !== null ? 'done' : ((int)($e['todo_doing'] ?? 0) === 1 ? 'doing' : 'todo')), // 元のToDoの状態（予定の詳細で、変えられる）
         'owner_name' => $e['owner_name'] ?? '',
         'recurring' => $e['series_id'] !== null,
         'series_id' => $e['series_id'] !== null ? (int)$e['series_id'] : null,

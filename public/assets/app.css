@@ -699,3 +699,98 @@ kbd { border-radius: 6px; }
 .usage-warn li.info { border-left-color: #4a7bd0; }
 .usage .t tr.off td { color: var(--muted, #667); }
 @media (max-width: 560px) { .usage-kv { grid-template-columns: 1fr; gap: 0; } .usage-kv dd { margin-bottom: 6px; } }
+
+/* v1.46 予定の詳細から、ToDoの状態を変える */
+.td-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.td-state-lbl { font-size: 13px; font-weight: 600; margin-right: 4px; }
+.td-state .btn { min-height: 34px; }
+.td-state .btn.on { font-weight: 700; }
+.td-state .btn.st-doing.on { background: var(--work-soft); border-color: var(--work); color: var(--work); }
+.td-state .btn.st-done.on { background: var(--off-soft); border-color: var(--off); color: var(--off); }
+.td-state .btn.st-todo.on { background: var(--surface); border-color: var(--ink); }
+.td-state .btn:disabled { opacity: .7; cursor: default; }
+
+/* v1.46 スマホ（幅640px以下）: なるべくスクロールしないで済むように、縦の余白と説明を減らす */
+.toolbar .tb-break, .pane-seg { display: none; }
+details.help-sm { margin: 0; }
+details.help-sm > summary { cursor: pointer; font-size: 12.5px; color: var(--work); list-style: none; display: inline-block; padding: 2px 0; }
+details.help-sm > summary::-webkit-details-marker { display: none; }
+details.help-sm[open] > summary { margin-bottom: 2px; }
+@media (max-width: 640px) {
+  /* 上の帯: 1行目にタイトル・設定・ユーザー、2行目に 業務版／プライベート版。画面の上に張り付けない（スクロールで消える） */
+  .topbar { position: static; }
+  .topbar-in { padding: 4px 10px 6px; gap: 4px 8px; }
+  .topbar-in .lbl { display: none; }
+  .brand { width: auto; flex: 1 1 auto; margin: 0; min-width: 0; font-size: 15px; white-space: nowrap; }
+  .brand .ver { font-size: 11px; margin-left: 6px; }
+  .topbar-in .spacer { display: none; }
+  .topbar-in .menu + .menu { margin-left: 0; }
+  .tabs { order: 5; width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+  .tab { padding: 6px 0; text-align: center; }
+  .menu .btn.small { min-height: 32px; }
+  .menu .lbl { display: none; }
+  .uname { max-width: 8.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  main { padding-top: 8px; }
+
+  /* 月の移動と、表示の切り替えを、2行に */
+  .toolbar { gap: 6px; }
+  .toolbar h2 { font-size: 20px; margin: 0 2px; flex: 1 1 auto; text-align: center; }
+  .toolbar > .btn { padding: 4px 11px; min-height: 34px; }
+  .toolbar > .spacer { display: none; }
+  .toolbar .tb-break { display: block; flex-basis: 100%; height: 0; }
+  .toolbar .who .lbl { display: none; }
+  .toolbar .who select { padding: 4px 6px; font-size: 14px; max-width: 6.6em; }
+  .toolbar .seg { gap: 4px; flex: 0 0 auto; }
+  .toolbar .seg label { padding: 5px 8px; font-size: 13px; position: relative; }
+  .toolbar .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; } /* 丸い印は出さない（選んだ方が色で分かる）。キーボードでは、今までどおり操作できる */
+  .toolbar .seg label:has(input:focus-visible) { outline: 2px solid var(--work); outline-offset: 1px; }
+  .toolbar .lbl { display: none; }
+  .toolbar .pane-seg { display: grid; grid-template-columns: 1fr 1fr; order: 9; flex-basis: 100%; }
+  .toolbar .pane-seg label { justify-content: center; padding: 7px 8px; }
+  .toolbar.todo-only h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: 0; }
+  .toolbar > .btn:last-child { margin-left: auto; font-size: 13px; padding: 4px 9px; }
+  .view-banner { display: none; }
+  .toolbar + .view-banner, #toolbar .view-banner { display: none; }
+
+  /* カレンダーの下 */
+  .legend { gap: 4px 10px; font-size: 11px; margin-top: 4px !important; }
+  .legend-help { margin-left: auto; }
+  .month-sum { margin-top: 6px; padding: 6px 8px; }
+
+  /* リスト（ToDo・日報）: ToDo と 日報メモ を切り替えて、どちらか一方だけを出す */
+  .layout.list-mode[data-pane=todo] .side { display: none; }
+  .layout.list-mode[data-pane=memo] #board { display: none; }
+  .todo-mgr { margin-bottom: 8px; }
+  .todo { padding: 10px; }
+  .kb-col { min-height: 90px; }
+  .memo-bar { gap: 4px; }
+  .memo-editor { min-height: 46vh; }
+
+  /* ダイアログ: 余白と間隔を詰める */
+  .overlay { padding: 8px 8px; }
+  .modal { padding: 14px 14px 16px; gap: 10px; border-radius: 16px; }
+  .modal h3 { font-size: 17px; }
+  .form { gap: 8px; }
+  .row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .row > *, .row input, .row select { min-width: 0; }
+  label { font-size: 12px; gap: 3px; }
+  input, select, textarea { padding: 6px 9px; }
+  textarea { min-height: 48px; }
+  .check { font-size: 13px; gap: 6px; }
+  .hint { font-size: 12px; }
+  .seg label { padding: 4px 11px; }
+  .actions { gap: 6px; }
+
+  /* 設定: 項目を畳んで、見出しを押すと開く。上の項目の一覧（ナビ）は要らない */
+  .set-nav { display: none; }
+  .topbar-in .muted { display: none; } /* 設定のページの上の帯: ユーザー名は出さない（1行に収める） */
+  .set-sec > h3 .pill { white-space: nowrap; flex: 0 0 auto; }
+  .settings-page > h2 { margin: 6px 0 8px; }
+  .set-sec { margin-bottom: 8px; padding: 12px 14px; }
+  .set-sec.collapsible > h3 { margin: 0; padding: 0; border: 0; cursor: pointer; justify-content: flex-start; font-size: 15px; }
+  .set-sec.collapsible > h3::after { content: '▾'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+  .set-sec.collapsible.open > h3 { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .set-sec.collapsible.open > h3::after { transform: rotate(180deg); }
+  .set-sec.collapsible > .set-body { display: none; }
+  .set-sec.collapsible.open > .set-body { display: block; }
+}

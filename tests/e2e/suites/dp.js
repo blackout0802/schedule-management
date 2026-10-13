@@ -29,9 +29,10 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('.modal button:has-text("この日に予定を追加")'); await a.waitForSelector('.modal input[name=title]'); ok('「この日に予定を追加」で、新規の登録画面が開く', (await a.inputValue('.modal input[name=title]')) === ''); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
   await a.locator('.cell[data-date="' + `${M}-22` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('.day-list, .modal .muted'); ok('予定のない日は、「予定はありません」', (await a.locator('.modal').innerText()).includes('予定はありません')); await a.click('.modal button:has-text("閉じる")');
   // 画面の色
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-theme .theme-opt');
+  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-theme'); if (await a.locator('#set-theme.collapsible:not(.open)').count()) await a.click('#set-theme > h3'); await a.waitForSelector('#set-theme .theme-opt');
   await a.click('#set-theme .theme-opt:has-text("ライト")'); await a.waitForTimeout(200); const light = await bg(); ok('「ライト」を選ぶと、ダーク端末でも白い背景になる', /rgb\(242, 242, 247\)/.test(light), light);
   await a.reload(); await a.waitForSelector('.settings-page'); ok('開き直しても、ライトのまま（この端末に記憶）', /rgb\(242, 242, 247\)/.test(await bg()));
+  if (await a.locator('#set-theme.collapsible:not(.open)').count()) await a.click('#set-theme > h3'); // スマホ幅では、開き直すと項目が畳まれる
   await a.click('#set-theme .theme-opt:has-text("ダーク")'); await a.waitForTimeout(200); ok('「ダーク」を選ぶと、黒い背景', /rgb\(14, 21, 34\)/.test(await bg()));
   await a.click('#set-theme .theme-opt:has-text("自動")'); await a.waitForTimeout(200); ok('「自動」に戻すと、端末の設定（ダーク）に従う', /rgb\(14, 21, 34\)/.test(await bg()));
   await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal');

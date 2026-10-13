@@ -43,6 +43,6 @@ const BASE = 'http://127.0.0.1:8099/';
   await y3.click('header button:has-text("設定")'); await y3.waitForSelector('.settings-page'); ok('一般の社員の設定には、変更履歴は出ない', (await y3.locator('#set-audit').count()) === 0);
   const forb = await y3.evaluate(async () => (await fetch('api.php?action=audit_list')).status); ok('一般の社員は、変更履歴のAPIを使えない（403）', forb === 403, forb);
   // スマホ幅で、はみ出さない
-  const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.click('header button:has-text("設定")'); await ph.waitForSelector('#set-audit .audit-item'); await ph.waitForTimeout(500);
+  const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.click('header button:has-text("設定")'); await ph.waitForSelector('#set-audit'); if (await ph.locator('#set-audit.collapsible:not(.open)').count()) await ph.click('#set-audit > h3'); await ph.waitForSelector('#set-audit .audit-item'); await ph.waitForTimeout(500);
   ok('スマホ幅でも、横にはみ出さない', await ph.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await ph.locator('#set-audit').scrollIntoViewIfNeeded(); await ph.screenshot({ path: 'audit-phone.png' });
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0); })();

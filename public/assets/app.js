@@ -347,6 +347,15 @@
     renderToolbar();
   }
 
+  /* スマホ幅か（画面を縦に長くしないため、説明文を畳むなどに使う） */
+  function isPhone() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); }
+  /* 長い説明文。パソコンでは、そのまま見せる。スマホでは「ⓘ 使い方」に畳んで、画面を広く使う */
+  function helpText(text) {
+    var p = el('p', { class: 'hint', text: text });
+    if (!isPhone()) return p;
+    return el('details', { class: 'help-sm' }, el('summary', { text: 'ⓘ 使い方' }), p);
+  }
+
   function renderShell() {
     if (SHARE) return renderShareShell();
     flushMemo();
@@ -357,7 +366,7 @@
     function closeAllMenus() { openMenus.slice().forEach(function (m) { m(); }); }
     function makeMenu(label, itemsFn, extraClass) {
       var list = null;
-      var btn = el('button', { class: 'btn small', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', text: label });
+      var btn = el('button', { class: 'btn small uname', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', text: label });
       function close() { if (list) { list.remove(); list = null; btn.setAttribute('aria-expanded', 'false'); openMenus = openMenus.filter(function (f) { return f !== close; }); } }
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -371,7 +380,7 @@
       return el('div', { class: 'menu' + (extraClass ? ' ' + extraClass : '') }, btn);
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
-    var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', text: '⚙ 設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }));
+    var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, '⚙', el('span', { class: 'lbl', text: ' 設定' })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
     });
@@ -427,8 +436,8 @@
         { id: 'slack', title: 'Slack通知の送り先・テスト', admin: true, build: openSlackDialog },
         { id: 'slackcfg', title: 'Slack通知の時間・文面', admin: true, build: openSlackCfgDialog },
         { id: 'audit', title: '変更履歴', admin: true, build: openAuditPanel },
-        { id: 'usage', title: '利用状況（ログイン・容量・バックアップ）', admin: true, build: openUsageDialog },
-        { id: 'guide', title: '運用の手引き（印刷できる1ページ）', admin: true, build: function () {
+        { id: 'usage', title: '利用状況', admin: true, build: openUsageDialog },
+        { id: 'guide', title: '運用の手引き', admin: true, build: function () {
           openModal('運用の手引き', el('div', { class: 'form' },
             el('p', { class: 'hint', text: '社員の追加と停止、パスワードを忘れたとき、システム更新、バックアップと復元、cron、困ったときの対処を、1ページにまとめました。担当者が代わるときにも、そのまま印刷して渡せます。' }),
             el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'guide.php', target: '_blank', rel: 'noopener', text: '運用の手引きを開く' }))));
@@ -574,12 +583,19 @@
     root.textContent = '';
     syncTodoHover(); // 右端のToDoの取っ手は、カレンダーのときだけ
     var secs = settingsSections();
+    var phone = isPhone();
     var nav = el('nav', { class: 'set-nav', 'aria-label': '設定の項目' });
     var content = el('div', { class: 'set-content' });
     secs.forEach(function (sec) {
       var host = el('div', { class: 'set-body' });
-      var card = el('section', { class: 'set-sec' + (sec.admin ? ' admin' : ''), id: 'set-' + sec.id, 'aria-label': sec.title },
-        el('h3', null, sec.title, sec.admin ? el('span', { class: 'pill admin', text: '管理者' }) : null), host);
+      var head = el('h3', null, sec.title, sec.admin ? el('span', { class: 'pill admin', text: '管理者' }) : null);
+      var card = el('section', { class: 'set-sec' + (sec.admin ? ' admin' : '') + (phone ? ' collapsible' : ''), id: 'set-' + sec.id, 'aria-label': sec.title }, head, host);
+      if (phone) { // スマホでは、項目を畳んでおく（長いページを、ずっとスクロールしなくて済むように）。見出しを押すと開く
+        var toggle = function () { var open = card.classList.toggle('open'); head.setAttribute('aria-expanded', open ? 'true' : 'false'); if (open) card.scrollIntoView({ block: 'start' }); };
+        head.setAttribute('role', 'button'); head.setAttribute('tabindex', '0'); head.setAttribute('aria-expanded', 'false');
+        head.addEventListener('click', toggle);
+        head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      }
       var render = function () {
         host.textContent = '';
         sec.t = Date.now();
@@ -592,7 +608,7 @@
     });
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand', text: S.me.app_name }),
-      el('button', { class: 'btn small', type: 'button', text: '← カレンダーに戻る', title: 'カレンダー（c）', onclick: leaveSettings }),
+      el('button', { class: 'btn small', type: 'button', title: 'カレンダー（c）', 'aria-label': 'カレンダーに戻る', onclick: leaveSettings }, '← ', el('span', { class: 'lbl', text: 'カレンダーに' }), '戻る'),
       el('span', { class: 'spacer' }), el('span', { class: 'muted', text: S.me.user.name }),
       el('button', { class: 'btn small', type: 'button', text: 'ログアウト', onclick: doLogout }))));
     root.appendChild(el('main', { class: 'settings-page' }, el('h2', { text: '設定' }), el('div', { class: 'set-layout' }, nav, content)));
@@ -648,13 +664,14 @@
     var tb = document.getElementById('toolbar');
     tb.textContent = '';
     var todoOnly = !SHARE && S.mode === 'list'; // リストは、ToDoだけ（月の移動・表示する人は要らない）
-    tb.appendChild(el('div', { class: 'toolbar' },
+    tb.appendChild(el('div', { class: 'toolbar' + (todoOnly ? ' todo-only' : '') },
       todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', title: '前の月（←）', text: '‹', onclick: function () { navMonth(-1); } }),
       el('h2', { text: todoOnly ? 'ToDo' + (S.view === 'team' ? '（業務）' : '（プライベート）') : S.year + '年' + S.month + '月' }),
       todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { navMonth(1); } }),
       todoOnly ? null : el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
       el('span', { class: 'spacer', style: 'flex:1' }),
-      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' }, '表示する人',
+      el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
+      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' }, el('span', { class: 'lbl', text: '表示する人' }),
         el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { selectWho(this.value); } },
           el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
@@ -663,7 +680,10 @@
         [['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
         })),
-      SHARE ? null : el('button', { class: 'btn', type: 'button', text: '↻ 繰り返し業務', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } })
+      todoOnly && !SHARE ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
+        return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'pane', checked: (S.pane || 'todo') === m[0], onchange: function () { S.pane = m[0]; var lay = document.querySelector('.layout'); if (lay) lay.setAttribute('data-pane', m[0]); } }), m[1]);
+      })) : null,
+      SHARE ? null : el('button', { class: 'btn', type: 'button', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }, '↻ 繰り返し', el('span', { class: 'lbl', text: '業務' }))
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
@@ -973,7 +993,7 @@
     var bb = backupBanner();
     if (bb) board.appendChild(bb);
     var lay = document.querySelector('.layout');
-    if (lay) lay.classList.toggle('list-mode', S.mode === 'list');
+    if (lay) { lay.classList.toggle('list-mode', S.mode === 'list'); lay.setAttribute('data-pane', S.pane || 'todo'); }
     syncTodoHover();
     if (S.mode === 'list') { renderListView(board, mgrKeep); return; }
     var todayStr = ymd(new Date());
@@ -1043,7 +1063,7 @@
 
   function renderWeek(days, todayStr) {
     var pack = weekSegments(days);
-    var L = Math.max(pack.lanes, 3);
+    var L = Math.max(pack.lanes, NARROW() ? 2 : 3); // スマホでは、予定のない週を低くして、1画面に収める
     var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + (NARROW() ? '20px repeat(' + L + ',19px)' : '24px repeat(' + L + ',22px)') + ' minmax(6px,1fr)' });
     days.forEach(function (d, c) {
       var s = ymd(d), hol = S.holidays[s];
@@ -1415,7 +1435,7 @@
       famNote,
       hint,
       repeatHint,
-      ev && ev.todo_id ? el('p', { class: 'hint' }, 'ToDoから置いた予定です。ToDoを完了にすると、カレンダーでは取り消し線になります。') : null,
+      ev && ev.todo_id ? todoStateBox(ev, ev.owner_id === S.me.user.id) : null,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
       err,
       el('div', { class: 'actions' }, del,
@@ -1521,7 +1541,7 @@
 
     box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
     if (full) {
-      box.appendChild(el('p', { class: 'hint', text: (S.view === 'team' ? '業務のToDoです（全員に見えます。変えられるのは持ち主だけです）。' : 'プライベートのToDoは、あなただけに見えます（種類が「業務」のToDoは、全員に見えます）。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。' }));
+      box.appendChild(helpText((S.view === 'team' ? '業務のToDoです（全員に見えます。変えられるのは持ち主だけです）。' : 'プライベートのToDoは、あなただけに見えます（種類が「業務」のToDoは、全員に見えます）。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。'));
       if (S.view === 'team') box.appendChild(todoWhoBar());
       box.appendChild(renderKanban(refocus));
     } else {
@@ -1807,7 +1827,7 @@
   }
   function renderKanban(refocus) {
     var tab = store('sched.kbTab');
-    if (tab !== 'todo' && tab !== 'doing' && tab !== 'done') tab = 'doing';
+    if (tab !== 'todo' && tab !== 'doing' && tab !== 'done') tab = S.todos.some(function (t) { return t.status === 'doing'; }) || !S.todos.length ? 'doing' : 'todo'; // 選んだことがなければ、進行中があれば進行中、なければ未着手
     var wrap = el('div', { class: 'kanban', 'data-tab': tab });
     // スマホ幅では、列を並べず、状態をタブで切り替える（幅が広いときは隠れる）
     var tabs = el('div', { class: 'kb-tabs', role: 'tablist', 'aria-label': 'ToDoの状態' });
@@ -2349,7 +2369,7 @@
     memoEd = null;
     var tool = function (label, title, fn, cls) { return el('button', { class: 'btn small ' + (cls || ''), type: 'button', title: title, onmousedown: function (e) { e.preventDefault(); }, onclick: fn }, label); };
     box.appendChild(el('h2', { text: 'メモ（日報用）' }));
-    box.appendChild(el('p', { class: 'hint', text: '【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。' }));
+    box.appendChild(helpText('【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。'));
     box.appendChild(el('div', { class: 'memo-bar' },
       tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
       tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
@@ -2530,6 +2550,31 @@
         el('button', { class: 'btn', type: 'button', text: 'あとで', onclick: function () { ov.close(); } }))));
     ov.outsideClose = true;
   }
+  /* ToDoから置いた予定の詳細で、元のToDoの状態（未着手・進行中・完了）を見る／変える。変えると、ToDoの一覧・日報・カレンダーの取り消し線にも反映される */
+  var TD_STATE_NAME = { todo: '未着手', doing: '進行中', done: '完了' };
+  function todoStateBox(ev, canChange) {
+    var cur = ev.todo_status || (ev.done ? 'done' : 'todo');
+    var box = el('div', { class: 'td-state', role: 'group', 'aria-label': 'ToDoの状態' });
+    function draw() {
+      box.textContent = '';
+      box.appendChild(el('span', { class: 'td-state-lbl', text: 'ToDoの状態' }));
+      ['todo', 'doing', 'done'].forEach(function (s) {
+        box.appendChild(el('button', { class: 'btn small st-' + s + (cur === s ? ' on' : ''), type: 'button', 'aria-pressed': cur === s ? 'true' : 'false', disabled: canChange ? null : 'disabled', text: TD_STATE_NAME[s],
+          onclick: function () {
+            if (cur === s) return;
+            api('todo_status', { body: { id: ev.todo_id, status: s } }).then(function () {
+              cur = s; ev.todo_status = s; ev.done = s === 'done'; draw();
+              toast(s === 'done' ? '完了にしました（カレンダーでは取り消し線になります）' : s === 'doing' ? '進行中にしました' : '未着手に戻しました');
+              load(); loadTodos(); syncMemoTodos();
+            }).catch(fail);
+          } }));
+      });
+      if (!canChange) box.appendChild(el('span', { class: 'hint', text: '状態を変えられるのは、ToDoの持ち主だけです。' }));
+    }
+    draw();
+    return box;
+  }
+
   function openEventView(ev) {
     if (ev.deleted) return openDeletedView(ev);
     var rows = [['種類', ev.kind === 'off' ? '休み' : ev.kind === 'private' ? 'プライベート' : '業務'], ['件名', eventLabel(ev, true)], ['日付', ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)]];
@@ -2537,6 +2582,7 @@
     if (ev.tag) rows.push(['分類', ev.tag]);
     rows.push(['持ち主', ev.owner_name]);
     if (ev.important) rows.push(['重要', '★ 重要な予定']);
+    if (ev.todo_id && ev.todo_status) rows.push(['ToDoの状態', TD_STATE_NAME[ev.todo_status]]);
     if (ev.note) rows.push(['メモ', ev.note]);
     var dl = el('dl', { class: 'detail' }, rows.map(function (r) { return [el('dt', { text: r[0] }), el('dd', { text: r[1] })]; }));
     var ov = openModal('予定の詳細', el('div', { class: 'form' }, dl,

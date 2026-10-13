@@ -52,7 +52,7 @@ const login = async (b, em, pw, w = 1100) => { const p = await b.newPage({ viewp
   // スマホ幅でも、横にはみ出さない
   const m = await login(b, 'admin@example.com', 'adminpass1', 390); await m.goto(BASE + 'guide.php');
   ok('スマホ幅でも、手引きが横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
-  await m.goto(BASE + 'index.php#settings'); await m.waitForSelector('#set-usage .usage-sec');
+  await m.goto(BASE + 'index.php#settings'); await m.waitForSelector('#set-usage'); if (await m.locator('#set-usage.collapsible:not(.open)').count()) await m.click('#set-usage > h3'); await m.waitForSelector('#set-usage .usage-sec');
   ok('スマホ幅でも、利用状況が横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
   await b.close();
   console.log(fails ? '失敗あり' : 'すべて成功'); process.exit(fails ? 1 : 0);
