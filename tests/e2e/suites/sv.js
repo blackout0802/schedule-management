@@ -13,7 +13,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : (x || 
   ok('右上に「＋ 予定を追加」は無い', await p.locator('text=＋ 予定を追加').count() === 0);
   await p.keyboard.press('n'); await p.waitForSelector('.modal');
   ok('n キーでは追加できる', true);
-  await p.fill('input[name=title]', '切替テスト'); await p.fill('input[name=start]', new Date().toISOString().slice(0, 10)); await p.click('.modal button[type=submit]');
+  await p.fill('input[name=title]', '切替テスト'); await p.fill('input[name=start]', ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date())); await p.click('.modal button[type=submit]');
   await p.waitForSelector('.bar:has-text("切替テスト")');
   await p.waitForTimeout(1500); // 裏の読み込みを待つ
   // 通信を遅くしても、切り替えでカレンダーが消えない

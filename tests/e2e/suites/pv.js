@@ -11,7 +11,7 @@ const ok = (n, c) => { console.log((c ? 'OK  ' : 'NG  ') + n); if (!c) fails++; 
   await p.fill('input[name=email]', 'yamada@example.com'); await p.fill('input[name=password]', 'yamadapass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]);
   await p.waitForSelector('.cal');
-  const ymd = new Date().toISOString().slice(0, 10);
+  const ymd = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date());
   // 業務版で業務の予定を作る（共有なし）
   await p.keyboard.press('n');
   await p.fill('input[name=title]', 'B社 会議'); await p.fill('input[name=start]', ymd);

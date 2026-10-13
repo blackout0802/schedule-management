@@ -794,3 +794,23 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
   .set-sec.collapsible > .set-body { display: none; }
   .set-sec.collapsible.open > .set-body { display: block; }
 }
+
+/* v1.46.1 スマホで、画面より横に広がらない・左右にスワイプしても動かない
+   （iPhone は日本語の文字幅が広く、表などが画面より広がると、ページ全体が横にずれるため） */
+@media (max-width: 640px) {
+  html, body { overflow-x: hidden; max-width: 100%; touch-action: pan-y; } /* 横の移動と、つまんで拡大は、しない（縦のスクロールだけ） */
+  main { grid-template-columns: minmax(0, 1fr); }
+  main > *, .layout > *, .board, .side, #toolbar, .toolbar > * { min-width: 0; }
+  .month-sum { min-width: 0; overflow-x: auto; }
+  .ms-table { font-size: 12px; }
+  .ms-table th, .ms-table td { padding: 2px 4px; }
+  .ms-table td.etc, .ms-table thead th:last-child { white-space: normal; min-width: 0; }
+  .brand { overflow: hidden; text-overflow: ellipsis; }
+  .kanban, .kb-col, .todo, .todo-mgr, .memo-editor, .set-sec, .modal, .form, .usage-kv dd { min-width: 0; max-width: 100%; }
+  .memo-editor { overflow-x: hidden; }
+  table.t { font-size: 13px; }
+}
+/* iPhone: 16px 未満の入力欄に触れると、画面が勝手に拡大されて、戻らなくなる。入力欄だけ 16px にする */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px; } .toolbar .who select { font-size: 16px; } }
+}

@@ -88,7 +88,7 @@ async function login(browser, email, pw) {
   ok('鈴木さんのプライベート版に山田さんのプライベートは出ない', (await s.page.content()).indexOf('歯医者') < 0);
   // APIを直接叩いても返らない
   const raw = await s.page.evaluate(async () => {
-    const f = d => d.toISOString().slice(0, 10);
+    const f = d => ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(d);
     const from = f(new Date(Date.now() - 30 * 864e5)), to = f(new Date(Date.now() + 30 * 864e5));
     const r1 = await fetch(`api.php?action=events&from=${from}&to=${to}&view=team`);
     const r2 = await fetch(`api.php?action=events&from=${from}&to=${to}&view=me&tags=全体会議,打ち合わせ,定例業務,個人作業,その他&off=1`);
@@ -169,7 +169,7 @@ async function login(browser, email, pw) {
   await np.mouse.click(5, 5);
   ok('Esc・外側クリックでも閉じない', await np.locator('.modal').count() === 1);
   const gate = await np.evaluate(async () => {
-    const f = d => d.toISOString().slice(0, 10);
+    const f = d => ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(d);
     const r = await fetch(`api.php?action=events&from=${f(new Date())}&to=${f(new Date(Date.now() + 864e5))}&view=team`);
     return r.status;
   });

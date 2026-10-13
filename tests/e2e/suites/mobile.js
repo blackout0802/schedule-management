@@ -61,6 +61,18 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.tap('#set-usage > h3'); await p.waitForSelector('#set-usage .usage-sec', { state: 'visible' });
   const s3 = await size(); ok('設定の「利用状況」を開いても、横にはみ出さない', s3.w <= s3.vw, s3);
   ok('設定の上の帯が1行（スマホ）', await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 60);
+  // 横にずれない: 文字幅の広い端末（iPhone）を想定して文字間を広げても、画面より広がらない。スワイプ（横の移動）は元に戻る
+  const css = await p.evaluate(() => ({ ox: getComputedStyle(document.documentElement).overflowX, ta: getComputedStyle(document.body).touchAction }));
+  ok('スマホでは、横にずれない設定（overflow-x: hidden・縦のスクロールだけ許す）', css.ox === 'hidden' && css.ta === 'pan-y', css);
+  await p.goto(BASE + 'index.php'); await p.waitForSelector('.cal'); await p.waitForTimeout(400);
+  await p.addStyleTag({ content: '* { letter-spacing: .25em !important; }' });
+  const wide = async (n) => { const r = await p.evaluate(() => { const vw = innerWidth; return { sw: document.documentElement.scrollWidth, vw, n: Array.from(document.querySelectorAll('body *')).filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > vw + 1 && getComputedStyle(e).position !== 'fixed'; }).length }; }); ok(n + ': 文字幅が広くても、画面より横に広がらない', r.sw <= r.vw && r.n === 0, r); };
+  await wide('カレンダー');
+  await p.tap('label:has-text("リスト")'); await p.waitForSelector('.kanban'); await wide('ToDo');
+  await p.tap('.pane-seg label:has-text("日報メモ")'); await p.waitForSelector('#memo .memo-editor', { state: 'visible' }); await wide('日報メモ');
+  await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal');
+  await p.evaluate(() => window.scrollTo(60, 0)); await p.waitForTimeout(300);
+  ok('横にずらされても、すぐ元に戻る', await p.evaluate(() => window.scrollX) === 0);
   ok('画面でエラーが出ていない', errs.length === 0, errs);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

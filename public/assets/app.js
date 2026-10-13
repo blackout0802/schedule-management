@@ -347,6 +347,8 @@
     renderToolbar();
   }
 
+  /* スマホ: 横にずれたら、すぐ元に戻す（左右にスワイプしても、画面が動かないように）。縦は、そのまま */
+  window.addEventListener('scroll', function () { if (window.scrollX && window.matchMedia && window.matchMedia('(max-width: 640px)').matches) window.scrollTo(0, window.scrollY); }, { passive: true });
   /* スマホ幅か（画面を縦に長くしないため、説明文を畳むなどに使う） */
   function isPhone() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); }
   /* 長い説明文。パソコンでは、そのまま見せる。スマホでは「ⓘ 使い方」に畳んで、画面を広く使う */

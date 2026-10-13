@@ -26,7 +26,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   const card = p.locator('.kb-card:has-text("見積書を作る")');
   await card.locator('button:has-text("日付")').click();
   await p.waitForSelector('.modal input[type=date]');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date());
   await p.fill('.modal input[type=date]', today); await p.click('.modal button[type=submit]');
   await p.waitForTimeout(900);
   ok('置いたToDoは「進行中」の列に移る', await p.locator('.kb-col.doing .kb-card:has-text("見積書を作る")').count() === 1 || await p.locator('.kb-col:has(.kb-card:has-text("見積書を作る"))').getAttribute('class').then(c => /doing/.test(c)));

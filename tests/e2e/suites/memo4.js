@@ -65,7 +65,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('コピーすると、挨拶から締めまで、日付の行つきで1つのテキスト', clip.startsWith('お疲れ様です。') && /【\d+\/\d+　予定・To Do】/.test(clip) && clip.includes('以上となります。'), clip.slice(0, 200));
   ok('コピーでは、取り消し線は線の文字になる', clip.includes('基̶本̶契̶約̶書̶'), clip);
   // 日が進む: サーバーが今日が休みと答えるように、有給を登録
-  const today = new Date().toISOString().slice(0, 10);
+  const today = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date());
   console.log('EVSAVE', await p.evaluate(async (d) => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=event_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'off', title: '', tag: '有給', start: d, end: d }) }); return r.status + ' ' + (await r.text()).slice(0, 150); }, today));
   const before = await p.locator('.memo-single div[data-md]').evaluateAll(l => l.map(x => x.getAttribute('data-date')));
   await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal'); await p.waitForTimeout(1500);

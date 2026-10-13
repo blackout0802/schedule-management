@@ -4,7 +4,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
 const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { width: 1200, height: 900 } }); p.on('pageerror', e => console.log('ERR', String(e))); await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', email); await p.fill('input[name=password]', pw); await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); return p; };
 (async () => {
   const b = await chromium.launch(); const y = await login(b, 'yamada@example.com', 'yamadapass1');
-  const M = new Date().toISOString().slice(0, 7);
+  const M = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date()).slice(0, 7);
   const addPriv = async (title, day) => { await y.keyboard.press('n'); await y.waitForSelector('.modal'); await y.click('.modal label:has-text("プライベート")'); await y.fill('.modal input[name=title]', title); await y.fill('.modal input[name=start]', `${M}-${day}`); await y.fill('.modal input[name=end]', `${M}-${day}`); await y.click('.modal button[type=submit]'); await y.waitForSelector('.bar:has-text("' + title + '")'); };
   await y.click('header >> text=プライベート版'); await y.waitForSelector('.view-banner.me');
   await addPriv('履歴その1', '05'); await addPriv('履歴その2', '06'); await addPriv('履歴その3', '07');
