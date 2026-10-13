@@ -587,7 +587,7 @@
     renderToolbar(); renderBoard(); renderTodo();
     load(); loadTodos();
   }
-  function selectWho(val) { S.who = val; store('sched.who', S.who); renderToolbar(); load(); }
+  function selectWho(val) { S.who = val; renderToolbar(); load(); } // 開き直すと、自分に戻る（覚えない）
 
   function renderToolbar() {
     var tb = document.getElementById('toolbar');
@@ -1586,7 +1586,7 @@
   }
 
   /* 業務のToDoは、全員に見える（見るだけ）。業務版のリスト画面で、「自分だけ／全員／○○さん」を選べる */
-  function todoWho() { var w = store('sched.todoWho'); return w === 'me' || (w && S.me.users.some(function (u) { return String(u.id) === String(w) && u.id !== S.me.user.id; })) ? String(w) : 'all'; }
+  function todoWho() { var w = S.todoWho; return w === 'me' || (w && S.me.users.some(function (u) { return String(u.id) === String(w) && u.id !== S.me.user.id; })) ? String(w) : 'all'; }
   function othersIn(status) {
     if (S.view !== 'team') return [];
     var w = todoWho();
@@ -1744,7 +1744,7 @@
   function loadTodosQuiet() { setTimeout(function () { renderTodo(); }, 0); } /* 「新着」の目印を消すため、描き直すだけ */
   function openOthersTodo(t) { openTodoThread(t); }
   function todoWhoBar() {
-    var sel = el('select', { 'aria-label': '表示するToDo', onchange: function () { store('sched.todoWho', sel.value); renderTodo(); } },
+    var sel = el('select', { 'aria-label': '表示するToDo', onchange: function () { S.todoWho = sel.value; renderTodo(); } },
       el('option', { value: 'all', text: '全員のToDo' }), el('option', { value: 'me', text: '自分のToDo' }),
       S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name + 'さん' }); }));
     sel.value = todoWho();
@@ -3061,7 +3061,8 @@
     }
     S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
     S.listWork = store('sched.listWork') === true;
-    S.who = store('sched.who') || 'all';
+    S.who = String(me.user.id); // ログインして開いたときは、まず自分のカレンダー・自分のToDo（「表示する人」「表示」で全員にも切り替えられる。開き直すと自分に戻る）
+    S.todoWho = 'me';
     var start = function () { renderShell(); load(); startAutoRefresh(); };
     if (me.user.must_change_password) {
       root.textContent = '';
