@@ -280,6 +280,24 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE todos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
     }
+    // ToDoをカレンダーに置いた予定は、元のToDoと結びつける（完了にすると、カレンダー上で取り消し線になる）
+    try {
+        db()->query('SELECT todo_id FROM events LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE events ADD COLUMN todo_id INTEGER NULL');
+    }
+    try {
+        if (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $has = db()->query("SHOW INDEX FROM events WHERE Key_name = 'ix_events_todo'")->fetchAll();
+            if (!$has) {
+                db()->exec('ALTER TABLE events ADD KEY ix_events_todo (todo_id)');
+            }
+        } else {
+            db()->exec('CREATE INDEX IF NOT EXISTS ix_events_todo ON events (todo_id)');
+        }
+    } catch (PDOException $e) {
+        error_log('[schedule] events.todo_id の索引を作れませんでした: ' . $e->getMessage());
+    }
     // 家族用の更新履歴に、削除された予定を「取消線」で見せるための、予定の種類と時刻
     foreach (['kind' => 'VARCHAR(10)', 'start_time' => 'VARCHAR(5)', 'end_time' => 'VARCHAR(5)'] as $col => $type) {
         try {

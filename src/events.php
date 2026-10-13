@@ -64,7 +64,7 @@ function list_events(array $user, string $from, string $to, string $view, array 
     $params = [$to, $from];
     if ($view === 'team') {
         // 業務版: プライベート予定は条件にすら含めない
-        $where = "kind IN ('work','off')";
+        $where = "e.kind IN ('work','off')";
         if (!empty($opts['who'])) { // 特定の社員だけ（全社を見ているときは指定なし）
             $where .= ' AND e.owner_id = ?';
             $params[] = (int)$opts['who'];
@@ -73,10 +73,10 @@ function list_events(array $user, string $from, string $to, string $view, array 
         // プライベート版: 自分のプライベート予定と、「家族に共有」にした自分の業務・休み（家族が見るものと同じ）だけ。
         // 他の社員の予定は出さない（業務版で見る）
         [$fcond, $fparams] = family_visible_cond((int)$user['id']);
-        $where = "(e.owner_id = ? AND (kind = 'private' OR ($fcond)))";
+        $where = "(e.owner_id = ? AND (e.kind = 'private' OR ($fcond)))";
         $params = array_merge($params, [(int)$user['id']], $fparams);
     }
-    $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
+    $list = rows("SELECT e.*, u.name AS owner_name, t.done_at AS todo_done_at FROM events e JOIN users u ON u.id = e.owner_id LEFT JOIN todos t ON t.id = e.todo_id
                   WHERE e.start_date <= ? AND e.end_date >= ? AND $where ORDER BY e.start_date, e.start_time, e.id", $params);
     $colors = owner_colors_map();
     return array_map(function ($e) use ($user, $colors) {
@@ -124,6 +124,8 @@ function event_for_client(array $e, array $user, ?array $colorsMap = null): arra
         'owner_id' => (int)$e['owner_id'],
         'family_shared' => (int)$e['family_shared'] === 1,
         'important' => (int)($e['important'] ?? 0) === 1,
+        'todo_id' => ($e['todo_id'] ?? null) !== null ? (int)$e['todo_id'] : null, // ToDoをカレンダーに置いた予定
+        'done' => ($e['todo_done_at'] ?? null) !== null, // 元のToDoが完了（カレンダーでは取り消し線）
         'owner_name' => $e['owner_name'] ?? '',
         'recurring' => $e['series_id'] !== null,
         'series_id' => $e['series_id'] !== null ? (int)$e['series_id'] : null,
@@ -334,6 +336,23 @@ function todo_with_comment_stats(array $todos): array
     }, $todos);
 }
 
+/** ToDo に、カレンダーに置いた日（いちばん早い予定の日。なければ null）を付ける */
+function todo_with_event_dates(array $todos): array
+{
+    if (!$todos) {
+        return $todos;
+    }
+    $ids = array_map(function ($t) { return (int)$t['id']; }, $todos);
+    $d = [];
+    foreach (rows('SELECT todo_id, MIN(start_date) AS d FROM events WHERE todo_id IN (' . implode(',', $ids) . ') GROUP BY todo_id') as $r) {
+        $d[(int)$r['todo_id']] = $r['d'];
+    }
+    return array_map(function ($t) use ($d) {
+        $t['sched'] = $d[(int)$t['id']] ?? null;
+        return $t;
+    }, $todos);
+}
+
 /** コメントを付けたり読んだりできるToDo（持ち主か、業務のToDoで持ち主が利用中の社員のもの）。なければ null */
 function todo_for_comments(int $id, array $user): ?array
 {
@@ -419,14 +438,14 @@ function list_others_todos(array $user, int $doneLimit = 30): array
 function list_todos(array $user, string $view): array
 {
     $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY sort_order, id';
-    return todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']])));
+    return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']]))));
 }
 
 /** 完了したToDo（新しい順）。業務版では業務のToDoだけ */
 function list_done_todos(array $user, string $view, int $limit = 100): array
 {
     $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY done_at DESC, id DESC LIMIT ' . (int)$limit;
-    return todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']])));
+    return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']]))));
 }
 
 /** 完了にする／未完了に戻す。戻したToDoは、リストの末尾に入る */
@@ -463,6 +482,7 @@ function set_todo_status(array $todo, string $status): array
 /** 完了したToDoをまとめて消す。業務版では業務のものだけ */
 function clear_done_todos(array $user, string $view): int
 {
+    todo_detach_events('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
     todo_comments_purge('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
     $st = q('DELETE FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
     return $st->rowCount();
@@ -510,20 +530,36 @@ function save_todo(array $data, array $user, ?array $existing): array
     return row('SELECT * FROM todos WHERE id = ?', [$id]);
 }
 
-/** ToDo を、指定した日の予定にする（ToDo は消える）。業務のToDoは全社員に見える業務の予定になる */
+/**
+ * ToDo を、指定した日のカレンダーの予定として置く。ToDo は消えず、自動で「進行中」になり、リストにも残る。
+ * 完了にすると、カレンダーの予定に取り消し線が引かれる。すでに置いてあるToDoは、新しい日に動く（予定は1つ）。
+ * 業務のToDoは全社員に見える業務の予定になる。
+ */
 function schedule_todo(array $todo, string $date, array $user): array
 {
     if ($todo['done_at'] !== null) {
         throw new RuntimeException('完了したToDoは予定にできません。先に未完了に戻してください。');
     }
-    $event = save_event([
-        'kind' => $todo['kind'], 'title' => $todo['title'], 'tag' => $todo['tag'], 'start' => $date, 'end' => $date,
-        'start_time' => '', 'end_time' => '', 'note' => $todo['note'], 'owner_id' => (int)$user['id'],
-        'family_shared' => (int)$todo['family_shared'],
-    ], $user, null);
-    todo_comments_purge('SELECT id FROM todos WHERE id = ?', [$todo['id']]);
-    q('DELETE FROM todos WHERE id = ?', [$todo['id']]);
+    $linked = row('SELECT * FROM events WHERE todo_id = ? AND owner_id = ? ORDER BY id LIMIT 1', [$todo['id'], $user['id']]);
+    if ($linked) {
+        $event = move_event($linked, $date);
+    } else {
+        $event = save_event([
+            'kind' => $todo['kind'], 'title' => $todo['title'], 'tag' => $todo['tag'], 'start' => $date, 'end' => $date,
+            'start_time' => '', 'end_time' => '', 'note' => $todo['note'], 'owner_id' => (int)$user['id'],
+            'family_shared' => (int)$todo['family_shared'],
+        ], $user, null);
+        q('UPDATE events SET todo_id = ? WHERE id = ?', [$todo['id'], $event['id']]);
+        $event['todo_id'] = (int)$todo['id'];
+    }
+    set_todo_status($todo, 'doing');
     return $event;
+}
+
+/** 消すToDoと結びついた予定は、ふつうの予定として残す（結びつきだけ外す） */
+function todo_detach_events(string $todoIdsSql, array $params): void
+{
+    q("UPDATE events SET todo_id = NULL WHERE todo_id IN ($todoIdsSql)", $params);
 }
 
 /** 自分の予定を、ToDo に戻す（予定は消える）。休み・繰り返し予定は戻せない */
@@ -538,7 +574,10 @@ function event_to_todo(array $e, array $user): array
     if ((int)$e['owner_id'] !== (int)$user['id']) {
         throw new RuntimeException('他の人の予定は、ToDoに戻せません。');
     }
-    $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note'], 'family_shared' => (int)$e['family_shared']], $user, null);
+    $todo = ($e['todo_id'] ?? null) !== null ? find_todo((int)$e['todo_id'], $user) : null; // ToDoから置いた予定は、元のToDoに戻す
+    if (!$todo) {
+        $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['tag'], 'note' => $e['note'], 'family_shared' => (int)$e['family_shared']], $user, null);
+    }
     q('DELETE FROM events WHERE id = ?', [$e['id']]);
     event_changed($e, null);
     return $todo;
@@ -579,13 +618,29 @@ function reorder_todos(array $ids, array $user): void
 
 const MEMO_MAX_CHARS = 12000;
 
-/** メモのHTMLを安全な形にする。許すのは div / br / s（取り消し線）だけ。属性・スクリプトは全て消す */
+/**
+ * メモのHTMLを安全な形にする。許すのは div / br / s（取り消し線）だけ。属性・スクリプトは全て消す。
+ * ただし div の data-todo（元のToDoの番号。数字だけ）と data-st（todo / doing / done）は残す。
+ */
 function sanitize_memo_html(string $html): string
 {
     $html = mb_substr($html, 0, MEMO_MAX_CHARS * 3);
     $html = preg_replace('#<(script|style|iframe|object|embed|template)\b[^>]*>.*?</\1\s*>#is', '', $html);
     $html = strip_tags($html, '<div><p><br><s><strike><del>');
-    $html = preg_replace('#<\s*(/?)\s*([a-z0-9]+)\b[^>]*>#i', '<$1$2>', $html); // 属性を全て取り除く
+    $html = preg_replace_callback('#<\s*(/?)\s*([a-z0-9]+)\b([^>]*)>#i', function ($m) {
+        $tag = strtolower($m[2]);
+        if ($m[1] === '' && $tag === 'div') {
+            $attrs = '';
+            if (preg_match('#data-todo\s*=\s*["\']?(\d{1,10})#i', $m[3], $a)) {
+                $attrs .= ' data-todo="' . (int)$a[1] . '"';
+                if (preg_match('#data-st\s*=\s*["\']?(todo|doing|done)\b#i', $m[3], $b)) {
+                    $attrs .= ' data-st="' . strtolower($b[1]) . '"';
+                }
+            }
+            return '<div' . $attrs . '>';
+        }
+        return '<' . $m[1] . $tag . '>'; // 属性を全て取り除く
+    }, $html);
     $html = preg_replace('#<(/?)(strike|del)>#i', '<$1s>', $html);
     $html = preg_replace('#<(/?)p>#i', '<$1div>', $html);
     $html = preg_replace('#<br\s*/?>#i', '<br>', $html);
@@ -607,23 +662,81 @@ function save_family_share(array $user, bool $off, array $tags): array
     return ['off' => $off, 'tags' => $tags];
 }
 
-function get_memo(array $user): string
+/* ------------------------------------------------------------------
+ * 日報メモは、出勤日ごとに1つ。画面には「当日（今日が出勤日なら今日。休みの日は次の出勤日）」と、その次の出勤日の2つを出す。
+ * 内容は手動で入れる（ToDoのドラッグ&ドロップで、進捗つきの行を足せる）。
+ * 行には、元のToDoの番号（data-todo）と状態（data-st: todo / doing / done）を覚える。
+ * ------------------------------------------------------------------ */
+
+const MEMO_KEEP_DAYS = 120;
+
+/**
+ * 出勤日。平日で、祝日・会社の休業日ではなく、本人の（終日の）休みでもない日。半休の日は出勤日に数える。
+ * @return string[] $from（を含む）以降の出勤日を、$count 日分（見つからなければ、あるだけ）
+ */
+function work_days_from(array $user, string $from, int $count = 2): array
 {
-    $r = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
-    return $r ? sanitize_memo_html($r['body']) : '';
+    $to = date('Y-m-d', strtotime($from . ' +120 day'));
+    $hol = holiday_map($from, $to);
+    $off = [];
+    foreach (rows("SELECT tag, start_date, end_date FROM events WHERE kind = 'off' AND owner_id = ? AND start_date <= ? AND end_date >= ?", [$user['id'], $to, $from]) as $e) {
+        if (mb_strpos((string)$e['tag'], '半休') !== false) {
+            continue;
+        }
+        for ($t = strtotime(max($e['start_date'], $from)), $end = strtotime(min($e['end_date'], $to)); $t <= $end; $t = strtotime('+1 day', $t)) {
+            $off[date('Y-m-d', $t)] = true;
+        }
+    }
+    $days = [];
+    for ($t = strtotime($from), $end = strtotime($to); $t <= $end && count($days) < $count; $t = strtotime('+1 day', $t)) {
+        $d = date('Y-m-d', $t);
+        if ((int)date('N', $t) <= 5 && !isset($hol[$d]) && !isset($off[$d])) {
+            $days[] = $d;
+        }
+    }
+    return $days;
 }
 
-function save_memo(string $html, array $user): string
+/** 画面に出す2つの日（当日・次回出勤日）と、それぞれの日報の内容 */
+function get_memo_days(array $user): array
 {
+    $today = date('Y-m-d');
+    $days = work_days_from($user, $today, 2);
+    while (count($days) < 2) { // 出勤日が見つからない（長期休暇中など）ときも、2つ出す
+        $days[] = date('Y-m-d', strtotime(($days ? end($days) : $today) . ' +1 day'));
+    }
+    // 以前の版の、日付のないメモは、最初に開いたときに「当日」へ引き継ぐ（一度だけ）
+    $legacy = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
+    if ($legacy && trim(strip_tags((string)$legacy['body'])) !== '') {
+        if (!row('SELECT 1 AS x FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $days[0]])) {
+            q('INSERT INTO memo_days (owner_id, day, body, updated_at) VALUES (?,?,?,?)', [$user['id'], $days[0], sanitize_memo_html((string)$legacy['body']), now_str()]);
+        }
+        q('UPDATE memos SET body = ? WHERE owner_id = ?', ['', $user['id']]);
+    }
+    $out = [];
+    foreach ($days as $i => $d) {
+        $r = row('SELECT body FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $d]);
+        $out[] = ['date' => $d, 'html' => $r ? sanitize_memo_html($r['body']) : '', 'today' => $d === $today];
+    }
+    return ['today' => $today, 'days' => $out];
+}
+
+/** その日の日報を保存する。保存できる日は、今日の少し前から、先の1か月まで */
+function save_memo_day(string $day, string $html, array $user): string
+{
+    if (!valid_date($day) || $day < date('Y-m-d', strtotime('-14 day')) || $day > date('Y-m-d', strtotime('+45 day'))) {
+        throw new RuntimeException('この日の日報は、保存できません。');
+    }
     $clean = sanitize_memo_html($html);
     if (mb_strlen(strip_tags($clean)) > MEMO_MAX_CHARS) {
         throw new RuntimeException('メモが長すぎます（' . MEMO_MAX_CHARS . '文字まで）。');
     }
-    if (row('SELECT owner_id FROM memos WHERE owner_id = ?', [$user['id']])) {
-        q('UPDATE memos SET body = ?, updated_at = ? WHERE owner_id = ?', [$clean, now_str(), $user['id']]);
+    if (row('SELECT 1 AS x FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $day])) {
+        q('UPDATE memo_days SET body = ?, updated_at = ? WHERE owner_id = ? AND day = ?', [$clean, now_str(), $user['id'], $day]);
     } else {
-        q('INSERT INTO memos (owner_id, body, updated_at) VALUES (?,?,?)', [$user['id'], $clean, now_str()]);
+        q('INSERT INTO memo_days (owner_id, day, body, updated_at) VALUES (?,?,?,?)', [$user['id'], $day, $clean, now_str()]);
     }
+    q('DELETE FROM memo_days WHERE owner_id = ? AND day < ?', [$user['id'], date('Y-m-d', strtotime('-' . MEMO_KEEP_DAYS . ' day'))]);
     return $clean;
 }
 

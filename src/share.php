@@ -93,7 +93,7 @@ function share_title(array $link): string
 function share_events(array $link, string $from, string $to): array
 {
     if ($link['kind'] === 'company') {
-        $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
+        $list = rows("SELECT e.*, u.name AS owner_name, t.done_at AS todo_done_at FROM events e JOIN users u ON u.id = e.owner_id LEFT JOIN todos t ON t.id = e.todo_id
                       WHERE e.kind IN ('work','off') AND u.active = 1 AND e.start_date <= ? AND e.end_date >= ?
                       ORDER BY e.start_date, e.start_time, e.id", [$to, $from]);
     } else {
@@ -101,7 +101,7 @@ function share_events(array $link, string $from, string $to): array
         // (2) 本人が「休みを全て見せる」にした場合の休み、(3) 本人が選んだ分類の業務、だけ
         [$fcond, $fparams] = family_visible_cond((int)$link['owner_id']);
         $params = array_merge([(int)$link['owner_id'], $to, $from], $fparams);
-        $list = rows("SELECT e.*, u.name AS owner_name FROM events e JOIN users u ON u.id = e.owner_id
+        $list = rows("SELECT e.*, u.name AS owner_name, t.done_at AS todo_done_at FROM events e JOIN users u ON u.id = e.owner_id LEFT JOIN todos t ON t.id = e.todo_id
                       WHERE e.owner_id = ? AND e.start_date <= ? AND e.end_date >= ? AND ($fcond)
                       ORDER BY e.start_date, e.start_time, e.id", $params);
     }
@@ -114,7 +114,7 @@ function share_events(array $link, string $from, string $to): array
             'id' => (int)$e['id'], 'title' => $plainOff ? '休み' : $e['title'], 'kind' => $e['kind'], 'tag' => $plainOff ? '' : $e['tag'],
             'start' => $e['start_date'], 'end' => $e['end_date'], 'start_time' => $e['start_time'], 'end_time' => $e['end_time'],
             'note' => $withNote ? $e['note'] : '', 'owner_id' => (int)$e['owner_id'], 'owner_name' => $e['owner_name'],
-            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'important' => (int)$e['important'] === 1, 'editable' => false, 'colors' => (object)($colors[(int)$e['owner_id']] ?? []),
+            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'important' => (int)$e['important'] === 1, 'done' => ($e['todo_done_at'] ?? null) !== null, 'editable' => false, 'colors' => (object)($colors[(int)$e['owner_id']] ?? []),
         ];
     }, $list);
     if ($withNote) { // 家族用: 削除された予定は、取消線つきで残す（家族が「確認した」と消すまで）

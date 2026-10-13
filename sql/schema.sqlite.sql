@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS events (
   detached INTEGER NOT NULL DEFAULT 0,
   family_shared INTEGER NOT NULL DEFAULT 1,
   important INTEGER NOT NULL DEFAULT 0,
+  todo_id INTEGER NULL,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -91,6 +92,14 @@ CREATE TABLE IF NOT EXISTS memos (
   owner_id INTEGER NOT NULL PRIMARY KEY,
   body TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memo_days (
+  owner_id INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  body TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (owner_id, day)
 );
 
 CREATE TABLE IF NOT EXISTS share_links (

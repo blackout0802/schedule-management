@@ -280,18 +280,36 @@ check('ToDo: 見えていない項目の位置は動かさない', array_column(
 reorder_todos([(int)$todoA['id'], (int)$todoC['id']], $b); // 他人は動かせない
 check('ToDo: 他人の並べ替えは効かない', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
 q('DELETE FROM todos WHERE id = ?', [$todoC['id']]);
-// 日付へドラッグ → 予定になる（ToDoは消える）
+// 日付へドラッグ → カレンダーの予定になる（ToDoは消えず、自動で「進行中」になる）
 $dd = date('Y-m-d', strtotime('+90 day'));
 $ev = schedule_todo($todoA, $dd, $a);
 check('ToDo→予定: 業務の予定として作られる', [$ev['kind'], $ev['title'], $ev['tag'], $ev['start_date'], $ev['end_date'], (int)$ev['owner_id']], ['work', '見積書を作る', '個人作業', $dd, $dd, (int)$a['id']]);
-check('ToDo→予定: ToDoは消える', find_todo((int)$todoA['id'], $a), null);
+check('ToDo→予定: ToDoは残り、自動で進行中になる', todo_status_of(find_todo((int)$todoA['id'], $a)), 'doing');
+check('ToDo→予定: 予定はToDoと結びつく', (int)row('SELECT todo_id FROM events WHERE id = ?', [$ev['id']])['todo_id'], (int)$todoA['id']);
+check('ToDo→予定: リストのToDoに、置いた日が付く', array_column(array_filter(list_todos($a, 'me'), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched'), [$dd]);
 check('ToDo→予定: 全社員に見える', in_array('見積書を作る', $titles(list_events($b, $dd, $dd, 'team')), true), true);
+check('ToDo→予定: 予定は、完了していないので取り消し線なし', array_column(array_filter(list_events($a, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [false]);
+set_todo_status(find_todo((int)$todoA['id'], $a), 'done');
+check('ToDo完了: カレンダーの予定が「完了」（取り消し線）になる', array_column(array_filter(list_events($b, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [true]);
+check('ToDo完了: 家族用・会社用リンクにも「完了」が出る', [array_column(share_events(['kind' => 'company', 'owner_id' => 0], $dd, $dd), 'done')], [[true]]);
+set_todo_status(find_todo((int)$todoA['id'], $a), 'doing');
+check('ToDo完了を戻すと、取り消し線も外れる', array_column(array_filter(list_events($a, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [false]);
+$dd2 = date('Y-m-d', strtotime('+91 day'));
+$ev2 = schedule_todo(find_todo((int)$todoA['id'], $a), $dd2, $a);
+check('ToDo→予定: もう一度置くと、予定は増えず、新しい日へ動く', [(int)$ev2['id'] === (int)$ev['id'], $ev2['start_date'], (int)row('SELECT COUNT(*) AS c FROM events WHERE todo_id = ?', [$todoA['id']])['c']], [true, $dd2, 1]);
+$ev = $ev2;
 $evP = schedule_todo($todoP, $dd, $a);
 check('ToDo→予定: プライベートのToDoはプライベートの予定になり、他人に見えない', [$evP['kind'], in_array('歯医者の予約', $titles(list_events($b, $dd, $dd, 'team')), true)], ['private', false]);
-// 予定をToDoに戻す
+// 予定をToDoに戻す（ToDoから置いた予定は、元のToDoに戻る）
 $back = event_to_todo($ev, $a);
-check('予定→ToDo: 内容が引き継がれる', [$back['title'], $back['kind'], $back['tag']], ['見積書を作る', 'work', '個人作業']);
+check('予定→ToDo: ToDoから置いた予定は、元のToDoに戻る（増えない）', [(int)$back['id'], $back['title'], $back['kind'], $back['tag']], [(int)$todoA['id'], '見積書を作る', 'work', '個人作業']);
 check('予定→ToDo: 予定は消える', row('SELECT id FROM events WHERE id = ?', [$ev['id']]), null);
+$sd1 = schedule_todo(find_todo((int)$todoA['id'], $a), $dd, $a);
+q('DELETE FROM todos WHERE id = ?', [$todoA['id']]); todo_detach_events('SELECT ' . (int)$todoA['id'], []);
+check('ToDoを消すと、結びついた予定は、ふつうの予定として残る', [row('SELECT todo_id FROM events WHERE id = ?', [$sd1['id']])['todo_id'], row('SELECT id FROM events WHERE id = ?', [$sd1['id']]) !== null], [null, true]);
+q('DELETE FROM events WHERE id = ?', [$sd1['id']]);
+$back = save_todo(['kind' => 'work', 'title' => '見積書を作る', 'tag' => '個人作業', 'note' => '', 'family_shared' => 0], $a, null);
+$todoA = $back;
 $thrown = function (callable $f) { try { $f(); return false; } catch (RuntimeException $x) { return true; } };
 check('予定→ToDo: 休みは戻せない', $thrown(function () use ($a, $mk, $today) { event_to_todo($mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => date('Y-m-d', strtotime('+95 day'))]), $a); }), true);
 $rec2 = row('SELECT * FROM events WHERE series_id IS NOT NULL LIMIT 1');
@@ -339,7 +357,7 @@ reorder_todos([(int)$kbC['id'], (int)$kbB['id']], $a);
 $doingOrder = array_column(array_filter(list_todos($a, 'me'), function ($t) { return $t['status'] === 'doing'; }), 'title');
 check('カンバン: 進行中の列の並べ替え', array_values($doingOrder), ['カンバンC', 'カンバンB']);
 check('カンバン: 業務版は業務の進行中だけ', array_column(array_filter(list_todos($a, 'team'), function ($t) { return $t['status'] === 'doing'; }), 'title'), ['カンバンB']);
-check('カンバン: 進行中のToDoも予定にできる（ToDoは消える）', (function () use ($kbB, $a) { schedule_todo(find_todo((int)$kbB['id'], $a), '2026-12-02', $a); return find_todo((int)$kbB['id'], $a); })(), null);
+check('カンバン: 進行中のToDoも予定にできる（ToDoは残り、進行中のまま）', (function () use ($kbB, $a) { schedule_todo(find_todo((int)$kbB['id'], $a), '2026-12-02', $a); return todo_status_of(find_todo((int)$kbB['id'], $a)); })(), 'doing');
 check('カンバン: 他の人のToDoは見えない・操作できない', [find_todo((int)$kbC['id'], $b), array_column(list_todos($b, 'me'), 'title')], [null, []]);
 foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
 q("DELETE FROM events WHERE title = 'カンバンB'");
@@ -680,12 +698,45 @@ check('メモ: 属性は全て消える', sanitize_memo_html('<div onclick="aler
 check('メモ: script・style は中身ごと消える', sanitize_memo_html('a<script>alert(1)</script>b<style>*{}</style>c'), 'abc');
 check('メモ: 許可外のタグ(a/img/iframe)は消え、文字は残る', sanitize_memo_html('<a href="javascript:x">link</a><img src=x onerror=y>z<iframe src=x></iframe>'), 'linkz');
 check('メモ: 文字としての < は無害のまま', strpos(sanitize_memo_html('1 &lt; 2 &lt;script&gt;'), '<script') === false, true);
-save_memo('<div><s>終わった業務</s></div><div>これから</div>', $a);
-check('メモ: 保存して読み出せる', get_memo($a), '<div><s>終わった業務</s></div><div>これから</div>');
-check('メモ: 他の人のメモは空（本人だけ）', [get_memo($b), get_memo($admin)], ['', '']);
-save_memo('<div>上書き</div>', $a);
-check('メモ: 上書き保存', get_memo($a), '<div>上書き</div>');
-check('メモ: 長すぎると拒否', $thrown(function () use ($a) { save_memo(str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);
+check('メモ: ToDoの印（data-todo / data-st）は残り、他の属性は消える', sanitize_memo_html('<div data-todo="12" data-st="done" onclick="x()" style="a:b"><s>終わった</s></div>'), '<div data-todo="12" data-st="done"><s>終わった</s></div>');
+check('メモ: ToDoの印は数字と決まった状態だけ（それ以外は捨てる）', sanitize_memo_html('<div data-todo="1;alert(1)" data-st="x"><s>t</s></div><div data-todo="abc">u</div><div data-todo="5" data-st="evil">v</div>'), '<div data-todo="1"><s>t</s></div><div>u</div><div data-todo="5">v</div>');
+check('メモ: div 以外には、ToDoの印は付かない', sanitize_memo_html('<s data-todo="3">t</s>'), '<s>t</s>');
+$tdz = date('Y-m-d');
+$md = get_memo_days($a);
+check('日報: 当日と次回出勤日の2つが出る', [count($md['days']), $md['days'][0]['date'] < $md['days'][1]['date']], [2, true]);
+check('日報: 出勤日は平日', array_map(function ($d) { return (int)date('N', strtotime($d['date'])) <= 5; }, $md['days']), [true, true]);
+check('日報: 内容は最初は空（未実施の予定を自動で入れない）', [$md['days'][0]['html'], $md['days'][1]['html']], ['', '']);
+$d0 = $md['days'][0]['date']; $d1 = $md['days'][1]['date'];
+save_memo_day($d0, '<div><s>終わった業務</s></div><div>これから</div>', $a);
+save_memo_day($d1, '<div>明日の予定</div>', $a);
+$md = get_memo_days($a);
+check('日報: 日ごとに保存して読み出せる', [$md['days'][0]['html'], $md['days'][1]['html']], ['<div><s>終わった業務</s></div><div>これから</div>', '<div>明日の予定</div>']);
+check('日報: 他の人の日報は空（本人だけ）', [get_memo_days($b)['days'][0]['html'], get_memo_days($admin)['days'][0]['html']], ['', '']);
+save_memo_day($d0, '<div>上書き</div>', $a);
+check('日報: 上書き保存', get_memo_days($a)['days'][0]['html'], '<div>上書き</div>');
+check('日報: 長すぎると拒否', $thrown(function () use ($a, $d0) { save_memo_day($d0, str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);
+check('日報: 離れすぎた日・不正な日付は保存できない', [$thrown(function () use ($a) { save_memo_day(date('Y-m-d', strtotime('+200 day')), 'x', $a); }), $thrown(function () use ($a) { save_memo_day('2026-13-45', 'x', $a); })], [true, true]);
+// 出勤日: 土日祝・本人の終日の休みは飛ばす。半休は出勤日
+$wd0 = date('Y-m-d', strtotime('next monday +400 day'));
+$wl = work_days_from($a, date('Y-m-d'), 60); $hm = holiday_map(date('Y-m-d'), date('Y-m-d', strtotime('+130 day')));
+check('出勤日: 60日分、全て平日で、祝日・会社の休業日ではない', [count($wl), count(array_filter($wl, function ($d) use ($hm) { return (int)date('N', strtotime($d)) > 5 || isset($hm[$d]); }))], [60, 0]);
+$sat = date('Y-m-d', strtotime('next saturday +300 day'));
+check('出勤日: 土曜に見ると、次の出勤日は平日', (int)date('N', strtotime(work_days_from($a, $sat, 1)[0])) <= 5, true);
+$mon = date('Y-m-d', strtotime('next monday +300 day'));
+$firstWd = work_days_from($a, $mon, 3);
+$offEv = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $firstWd[0]]);
+check('出勤日: 本人の終日の休みの日は、出勤日にならない', work_days_from($a, $mon, 2), array_slice($firstWd, 1, 2));
+check('出勤日: 他の人の休みは影響しない', work_days_from($b, $mon, 3), $firstWd);
+q('DELETE FROM events WHERE id = ?', [$offEv['id']]);
+$half = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '午前半休', 'start' => $firstWd[0]]);
+check('出勤日: 半休の日は、出勤日のまま', work_days_from($a, $mon, 3), $firstWd);
+q('DELETE FROM events WHERE id = ?', [$half['id']]);
+// 以前の版の日付なしメモは、最初に開いたとき「当日」へ引き継ぐ
+q("DELETE FROM memo_days WHERE owner_id = ?", [$b['id']]);
+q('INSERT INTO memos (owner_id, body, updated_at) VALUES (?,?,?)', [$b['id'], '<div>旧版のメモ</div>', now_str()]);
+$mb = get_memo_days($b);
+check('日報: 旧版のメモは「当日」に引き継がれ、元は空になる', [$mb['days'][0]['html'], (string)row('SELECT body FROM memos WHERE owner_id = ?', [$b['id']])['body']], ['<div>旧版のメモ</div>', '']);
+check('日報: 引き継ぎは一度だけ', get_memo_days($b)['days'][0]['html'], '<div>旧版のメモ</div>');
 
 // ---- 共有リンク（家族用・会社用） ----
 $sd = date('Y-m-d', strtotime('+120 day'));
@@ -851,7 +902,7 @@ check('更新番号: ToDoを削除すると増える', $rv7 > $rv6, true);
 q("INSERT INTO company_holidays (hdate, name) VALUES ('2030-01-02', '更新番号の確認')"); $rv8 = data_rev();
 check('更新番号: 会社の休業日を足すと増える', $rv8 > $rv7, true);
 q("DELETE FROM company_holidays WHERE hdate = '2030-01-02'");
-$rv9 = data_rev(); save_memo('<div>メモは画面の予定に関係しない</div>', $a);
+$rv9 = data_rev(); save_memo_day(date('Y-m-d'), '<div>メモは画面の予定に関係しない</div>', $a);
 check('更新番号: メモの保存では増えない（自分のメモを書くたびに、他の人の画面を更新させない）', data_rev(), $rv9);
 $rv10 = data_rev(); share_link_create('family', $a);
 check('更新番号: 共有リンクの作成では増えない', data_rev(), $rv10);

@@ -474,11 +474,11 @@ function handle_api(): void
             api_out(['ok' => true]);
 
         case 'memo_get':
-            api_out(['html' => get_memo($user)]);
+            api_out(get_memo_days($user));
 
         case 'memo_save':
             try {
-                save_memo((string)($in['html'] ?? ''), $user);
+                save_memo_day((string)($in['date'] ?? ''), (string)($in['html'] ?? ''), $user);
             } catch (RuntimeException $x) {
                 api_fail($x->getMessage());
             }
@@ -493,6 +493,7 @@ function handle_api(): void
             if (!$t) {
                 api_fail('ToDoが見つかりません。', 404);
             }
+            todo_detach_events('SELECT id FROM todos WHERE id = ?', [$t['id']]);
             todo_comments_purge('SELECT id FROM todos WHERE id = ?', [$t['id']]);
             q('DELETE FROM todos WHERE id = ?', [$t['id']]);
             api_out(['ok' => true]);

@@ -666,3 +666,16 @@ kbd { border-radius: 6px; }
 .tc-pend img { height: 64px; border-radius: 8px; border: .5px solid var(--line); display: block; }
 .tc-x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--ink); color: var(--bg); font-size: 13px; line-height: 20px; padding: 0; cursor: pointer; }
 .tc-dialog.tc-drop { outline: 2px dashed var(--work); outline-offset: 4px; border-radius: 8px; }
+
+/* v1.41 バージョン表示 / ToDoと予定の連動（完了は取り消し線）/ 日報（出勤日ごと） */
+.brand .ver { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.bar.done, .day-item.done .di-title { text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: .6; }
+.pill.sched { background: var(--work-soft); color: var(--work); }
+.memo-day { display: grid; gap: 4px; padding: 6px; border-radius: 10px; border: .5px solid transparent; }
+.memo-day + .memo-day { margin-top: 6px; border-top: .5px solid var(--line); padding-top: 12px; }
+.memo-day.drop { border-color: var(--work); background: var(--work-soft); }
+.memo-dh { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.memo-dh b { font-size: 13px; }
+.memo-day .memo-editor { min-height: 110px; }
+.memo-day.first .memo-dh b { color: var(--work); }
+.memo-editor div[data-todo] { border-left: 2px solid var(--line); padding-left: 6px; margin-left: -2px; }
