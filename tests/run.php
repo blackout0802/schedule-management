@@ -327,12 +327,12 @@ q('DELETE FROM events WHERE id = ?', [$tkEv['id']]); q('DELETE FROM todos WHERE 
 // パスワードを変えたら、ほかの端末のログインは終わる
 $pwOld = row('SELECT password_hash FROM users WHERE id = ?', [$a['id']])['password_hash'];
 $_SESSION = []; login_attempt('a@example.com', 'password1');
-check('セッション: ログインした端末は、使える', (current_user() ?: [])['id'] ?? null, (int)$a['id']);
+check('セッション: ログインした端末は、使える', (int)((current_user() ?: [])['id'] ?? 0), (int)$a['id']);
 q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash('newpass-xyz-1', PASSWORD_DEFAULT), $a['id']]);
 check('セッション: パスワードが変わると、前のログインは使えない', current_user(), null);
 q('UPDATE users SET password_hash = ? WHERE id = ?', [$pwOld, $a['id']]);
 $_SESSION = ['uid' => (int)$a['id']]; // この版より前のログイン（印が無い）は、そのまま使える
-check('セッション: 印のない古いログインは、そのまま使えて、印が付く', [(current_user() ?: [])['id'] ?? null, isset($_SESSION['pwv'])], [(int)$a['id'], true]);
+check('セッション: 印のない古いログインは、そのまま使えて、印が付く', [(int)((current_user() ?: [])['id'] ?? 0), isset($_SESSION['pwv'])], [(int)$a['id'], true]);
 $_SESSION = [];
 // 予定をToDoに戻す（ToDoから置いた予定は、元のToDoに戻る）
 $back = event_to_todo($ev, $a);
