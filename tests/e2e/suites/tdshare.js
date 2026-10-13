@@ -23,7 +23,7 @@ const addTodo = async (p, text) => { if (!(await p.locator('#todo-mgr .todo-add 
   ok('他の人のToDoは、ドラッグできない・操作ボタンが無い', await s.locator('#todo-mgr .kb-card.other[draggable=true]').count() === 0 && await s.locator('#todo-mgr .kb-card.other .t-actions').count() === 0);
   await s.screenshot({ path: 'tdshare-list.png' });
   for (let i = 0; i < 3 && !(await s.locator('.modal').count()); i++) { await s.click('#todo-mgr .kb-card.other:has-text("山田の共有ToDo")'); await s.waitForSelector('.modal', { timeout: 3000 }).catch(() => {}); } /* 一覧の自動更新と重なったときは、押し直す */
-  await s.waitForSelector('.modal'); ok('押すと、内容が見られる（見るだけ）', (await s.locator('.modal').innerText()).includes('山田の共有ToDo') && !(await s.locator('.modal button:has-text("削除")').count()));
+  await s.waitForSelector('.modal'); await s.waitForFunction(() => (document.querySelector('.modal') || {}).innerText && document.querySelector('.modal').innerText.includes('山田の共有ToDo'), null, { timeout: 8000 }).catch(() => {}); await s.waitForTimeout(400); ok('押すと、内容が見られる（見るだけ）', (await s.locator('.modal').innerText()).includes('山田の共有ToDo') && !(await s.locator('.modal button:has-text("削除")').count()), (await s.locator('.modal').innerText()).slice(0, 200));
   await s.keyboard.press('Escape'); await s.waitForFunction(() => !document.querySelector('.modal'));
   // 絞り込み
   await s.selectOption('#todo-mgr .todo-who select', 'me'); await s.waitForTimeout(300); ok('「自分のToDo」にすると、他の人のToDoは出ない', !(await txt()).includes('山田の共有ToDo'));
