@@ -126,6 +126,21 @@ $lk2 = null; $res2 = login_attempt('lock@example.com', 'rightpass1', $lk2);
 check('ログイン制限: 15分たつと、また試せて、成功すると失敗の記録が消える', [$res2 !== null, $lk2, (int)row('SELECT COUNT(*) AS c FROM login_fails WHERE email = ?', ['lock@example.com'])['c']], [true, false, 0]);
 check('ログイン制限: 存在しないメールアドレスも数える（有無を探れない）', (function () { for ($i = 0; $i < LOGIN_MAX_PER_EMAIL; $i++) { login_attempt('nobody@example.com', 'x'); } $l = null; login_attempt('nobody@example.com', 'x', $l); return $l; })(), true);
 db()->exec('DELETE FROM login_fails');
+// 他人が、わざと間違えて、本人を締め出せない（8回は、その接続元だけに効く）
+$_SERVER['REMOTE_ADDR'] = '203.0.113.9';
+for ($i = 0; $i < LOGIN_MAX_PER_EMAIL; $i++) { login_attempt('a@example.com', 'wrong' . $i); }
+$lkAtk = null; login_attempt('a@example.com', 'password1', $lkAtk);
+$_SERVER['REMOTE_ADDR'] = '198.51.100.7';
+$lkMe = null; $okMe = login_attempt('a@example.com', 'password1', $lkMe);
+check('ログイン制限: 攻撃者の接続元だけが止まり、本人は、別の接続元から入れる', [$lkAtk, $lkMe, $okMe !== null], [true, false, true]);
+db()->exec('DELETE FROM login_fails');
+for ($k = 0; $k < LOGIN_MAX_PER_EMAIL_ANY; $k++) { q('INSERT INTO login_fails (email, ip, failed_at) VALUES (?,?,?)', ['a@example.com', '192.0.2.' . ($k % 250), now_str()]); }
+$lkAny = null; login_attempt('a@example.com', 'password1', $lkAny);
+check('ログイン制限: 多数の接続元から攻撃されたときは、そのメールアドレスを止める', $lkAny, true);
+db()->exec('DELETE FROM login_fails'); unset($_SERVER['REMOTE_ADDR']);
+$_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.20, 10.0.0.1';
+check('ログイン制限: X-Forwarded-For は、設定で許したときだけ使う（既定は使わない）', client_ip() === '' || client_ip() !== '198.51.100.20', true);
+unset($_SERVER['HTTP_X_FORWARDED_FOR']);
 
 $today = date('Y-m-d');
 $ym = date('Y-m');
@@ -208,7 +223,7 @@ check('他の回はルール変更が反映される', row('SELECT COUNT(*) AS c
 $ev2 = row('SELECT * FROM events WHERE series_id = ? AND detached = 0 ORDER BY start_date LIMIT 1 OFFSET 1', [$sid]);
 delete_event($ev2);
 materialize_series($sid);
-check('削除した回は復活しない', row('SELECT COUNT(*) AS c FROM events WHERE id = ? OR (series_id = ? AND ym = ?)', [$ev2['id'], $sid, $ev2['ym']])['c'], 0);
+check('削除した回は復活しない', (int)row('SELECT COUNT(*) AS c FROM events WHERE id = ? OR (series_id = ? AND ym = ?)', [$ev2['id'], $sid, $ev2['ym']])['c'], 0);
 
 // ルール削除: 今日以降の未編集分が消え、編集済みは通常の予定として残る
 delete_series($sid);
@@ -300,6 +315,25 @@ check('ToDo→予定: もう一度置くと、予定は増えず、新しい日�
 $ev = $ev2;
 $evP = schedule_todo($todoP, $dd, $a);
 check('ToDo→予定: プライベートのToDoはプライベートの予定になり、他人に見えない', [$evP['kind'], in_array('歯医者の予約', $titles(list_events($b, $dd, $dd, 'team')), true)], ['private', false]);
+// ToDoの種類を、業務 → プライベートに変えたら、置いた予定も、プライベートになる（他の人・共有リンクに、見えたままにならない）
+$tkSrc = save_todo(['kind' => 'work', 'title' => '種類を変えるToDo', 'tag' => '打ち合わせ', 'note' => 'メモ', 'family_shared' => 0], $a, null);
+$tkEv = schedule_todo($tkSrc, $dd, $a);
+check('ToDo種類変更: 業務の間は、他の人に予定が見える', in_array('種類を変えるToDo', $titles(list_events($b, $dd, $dd, 'team')), true), true);
+save_todo(['kind' => 'private', 'title' => '種類を変えるToDo', 'tag' => '', 'note' => 'メモ', 'family_shared' => 1], $a, find_todo((int)$tkSrc['id'], $a));
+check('ToDo種類変更: プライベートにすると、置いた予定も、プライベートになり、他の人に見えない', [row('SELECT kind FROM events WHERE id = ?', [$tkEv['id']])['kind'], in_array('種類を変えるToDo', $titles(list_events($b, $dd, $dd, 'team')), true), in_array('種類を変えるToDo', array_column(share_events(['kind' => 'company', 'owner_id' => 0], $dd, $dd), 'title'), true)], ['private', false, false]);
+save_todo(['kind' => 'work', 'title' => '種類を変えるToDo', 'tag' => '打ち合わせ', 'note' => 'メモ', 'family_shared' => 0], $a, find_todo((int)$tkSrc['id'], $a));
+check('ToDo種類変更: 業務に戻すと、予定も業務に戻る（分類つき）', [row('SELECT kind FROM events WHERE id = ?', [$tkEv['id']])['kind'], row('SELECT tag FROM events WHERE id = ?', [$tkEv['id']])['tag']], ['work', '打ち合わせ']);
+q('DELETE FROM events WHERE id = ?', [$tkEv['id']]); q('DELETE FROM todos WHERE id = ?', [$tkSrc['id']]);
+// パスワードを変えたら、ほかの端末のログインは終わる
+$pwOld = row('SELECT password_hash FROM users WHERE id = ?', [$a['id']])['password_hash'];
+$_SESSION = []; login_attempt('a@example.com', 'password1');
+check('セッション: ログインした端末は、使える', (current_user() ?: [])['id'] ?? null, (int)$a['id']);
+q('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash('newpass-xyz-1', PASSWORD_DEFAULT), $a['id']]);
+check('セッション: パスワードが変わると、前のログインは使えない', current_user(), null);
+q('UPDATE users SET password_hash = ? WHERE id = ?', [$pwOld, $a['id']]);
+$_SESSION = ['uid' => (int)$a['id']]; // この版より前のログイン（印が無い）は、そのまま使える
+check('セッション: 印のない古いログインは、そのまま使えて、印が付く', [(current_user() ?: [])['id'] ?? null, isset($_SESSION['pwv'])], [(int)$a['id'], true]);
+$_SESSION = [];
 // 予定をToDoに戻す（ToDoから置いた予定は、元のToDoに戻る）
 $back = event_to_todo($ev, $a);
 check('予定→ToDo: ToDoから置いた予定は、元のToDoに戻る（増えない）', [(int)$back['id'], $back['title'], $back['kind'], $back['tag']], [(int)$todoA['id'], '見積書を作る', 'work', '個人作業']);
@@ -698,6 +732,8 @@ check('メモ: 属性は全て消える', sanitize_memo_html('<div onclick="aler
 check('メモ: script・style は中身ごと消える', sanitize_memo_html('a<script>alert(1)</script>b<style>*{}</style>c'), 'abc');
 check('メモ: 許可外のタグ(a/img/iframe)は消え、文字は残る', sanitize_memo_html('<a href="javascript:x">link</a><img src=x onerror=y>z<iframe src=x></iframe>'), 'linkz');
 check('メモ: 文字としての < は無害のまま', strpos(sanitize_memo_html('1 &lt; 2 &lt;script&gt;'), '<script') === false, true);
+check('メモ: 空白をはさんだ「< script>」は、タグにならない（文字になる）', [strpos(sanitize_memo_html('< script>alert(1)< /script>'), '<script') === false, strpos(sanitize_memo_html('< img src=x onerror=y>z'), '<img') === false], [true, true]);
+check('メモ: 出力に残る「<」は、許した目印だけ', preg_match_all('#<(?!/?(?:div|br|s)(?:\s[^>]*)?>)#', sanitize_memo_html('a<b>c< i>d<IMG src=x><script>e</script>< div>f<s>g</s><br/>')), 0);
 check('メモ: ToDoの印（data-todo / data-st）は残り、他の属性は消える', sanitize_memo_html('<div data-todo="12" data-st="done" onclick="x()" style="a:b"><s>終わった</s></div>'), '<div data-todo="12" data-st="done"><s>終わった</s></div>');
 check('メモ: ToDoの印は数字と決まった状態だけ（それ以外は捨てる）', sanitize_memo_html('<div data-todo="1;alert(1)" data-st="x"><s>t</s></div><div data-todo="abc">u</div><div data-todo="5" data-st="evil">v</div>'), '<div data-todo="1"><s>t</s></div><div>u</div><div data-todo="5">v</div>');
 check('メモ: div 以外には、ToDoの印は付かない', sanitize_memo_html('<s data-todo="3">t</s>'), '<s>t</s>');
@@ -879,7 +915,7 @@ check('データ移行: 2回目以降は何もしない（あとから選んだ�
 [$dup] = duplicate_event($pubHidden, [date('Y-m-d', strtotime($sd . ' +9 day'))], $a);
 check('共有設定: 複製しても「共有しない」を引き継ぐ', (int)$dup[0]['family_shared'], 0);
 $tdBack = event_to_todo($pubHidden, $a);
-check('共有設定: ToDoに戻しても「共有しない」を引き継ぐ', $tdBack['family_shared'], 0);
+check('共有設定: ToDoに戻しても「共有しない」を引き継ぐ', (int)$tdBack['family_shared'], 0);
 $evBack = schedule_todo(find_todo((int)$tdBack['id'], $a), $sd, $a);
 check('共有設定: ToDoから予定にしても「共有しない」のまま', (int)$evBack['family_shared'], 0);
 [$tdN] = validate_todo_input(['kind' => 'private', 'title' => '共有ToDo']);
@@ -999,6 +1035,10 @@ $n = updater_restore($r['backup'], "$U/web", "$U/app");
 check('復元: 更新前の内容に戻る', [file_get_contents("$U/app/src/a.php"), is_file("$U/app/src/b.php"), is_file("$U/web/assets/app.js")], ["<?php // OLD\n", false, false]);
 // 危険な zip は全体を拒否し、何も書かない
 $before = file_get_contents("$U/app/src/a.php");
+check('拒否: いまより古い版の zip（古い版の弱点を戻されない）', ($thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/version.php' => "<?php\nconst APP_VERSION = '0.0.1';\n", 'src/old.php' => '<?php // OLD'], 'older.zip'), "$U/web", "$U/app"); }) ?? '') !== '' && !is_file("$U/app/src/old.php"), true);
+updater_apply($mkzip(['public/INSTALL.php' => '<?php // 入れてはいけない', 'src/caps_ok.php' => '<?php // OK'], 'caps.zip'), "$U/web", "$U/app");
+check('更新: INSTALL.php（大文字）でも、install.php は、すり替えられない', [is_file("$U/web/INSTALL.php"), is_file("$U/web/install.php"), is_file("$U/app/src/caps_ok.php")], [false, false, true]);
+@unlink("$U/app/src/caps_ok.php");
 check('拒否: ../ を含む zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/x.php' => '<?php', '../evil.php' => '<?php'], 'bad1.zip'), "$U/web", "$U/app"); }) !== null, true);
 check('拒否: 絶対パスを含む zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['/etc/evil.php' => '<?php'], 'bad2.zip'), "$U/web", "$U/app"); }) !== null, true);
 check('拒否: 文法が壊れた PHP を含む zip(全体を中止)', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/a.php' => "<?php echo 'x'", 'src/fine.php' => '<?php echo 1;'], 'bad3.zip'), "$U/web", "$U/app"); }) !== null, true);
@@ -1043,6 +1083,15 @@ check('復元: 社員（パスワードのハッシュも）がそのまま戻�
 check('復元: スキーマ版は、いまのまま', row('SELECT meta_value FROM app_meta WHERE meta_key = ?', ['schema_version'])['meta_value'], $verBefore);
 $newerData = $bkData; $newerData['schema_version'] = SCHEMA_VERSION + 1;
 check('復元: いまより新しい版のバックアップは、拒否', $thB(function () use ($newerData) { backup_inspect(json_encode($newerData)); }) !== null, true);
+$noAdmin = $bkData; $noAdmin['tables']['users'] = array_map(function ($u) { $u['role'] = 'member'; return $u; }, $bkData['tables']['users']);
+check('復元: 利用中の管理者がいないバックアップは、拒否（誰もログインできなくなるため）', $thB(function () use ($noAdmin) { backup_inspect(json_encode($noAdmin)); }) !== null, true);
+$noUsers = $bkData; unset($noUsers['tables']['users']);
+check('復元: 社員の表が入っていないバックアップは、管理者の確認の対象外', $thB(function () use ($noUsers) { backup_inspect(json_encode($noUsers)); }) === null, true);
+// 画像の記録は、バックアップに入らない。復元で、別のコメントに結びつかないよう、記録とファイルを消す
+@mkdir(attach_dir(), 0700, true); file_put_contents(attach_dir() . '/restoretest.png', 'x');
+q("INSERT INTO todo_comment_files (comment_id, todo_id, name, mime, size, width, height, stored, created_at) VALUES (999999, 999999, 'x.png', 'image/png', 1, 1, 1, 'restoretest.png', ?)", [now_str()]);
+backup_restore_data($bkData);
+check('復元: コメントの画像の記録とファイルは、消える', [(int)row('SELECT COUNT(*) AS c FROM todo_comment_files')['c'], is_file(attach_dir() . '/restoretest.png')], [0, false]);
 $evCount = (int)row('SELECT COUNT(*) AS c FROM events')['c'];
 $brokenData = $bkData; $brokenData['tables']['users'][0]['email'] = null; // NOT NULL に違反させて、途中で失敗させる
 check('復元: 途中で失敗したら、データは元のまま', $thB(function () use ($brokenData) { backup_restore_data($brokenData); }) !== null && (int)row('SELECT COUNT(*) AS c FROM events')['c'] === $evCount, true);

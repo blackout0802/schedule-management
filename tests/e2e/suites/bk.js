@@ -23,7 +23,7 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   // ダウンロード
   await a.fill('form:has(input[value=download]) input[name=pass]', 'backup-pass-1'); await a.fill('form:has(input[value=download]) input[name=pass2]', 'backup-pass-1');
   const [dl] = await Promise.all([a.waitForEvent('download'), a.click('button:has-text("バックアップをダウンロード")')]);
-  const path = '/tmp/claude-0/bk-test.enc'; await dl.saveAs(path); const blob = fs.readFileSync(path);
+  const path = require('../lib/env').TMP + '/bk-test.enc'; await dl.saveAs(path); const blob = fs.readFileSync(path);
   ok('ファイル名は schedule-backup-日時.enc', /^schedule-backup-\d{8}-\d{6}\.enc$/.test(dl.suggestedFilename()), dl.suggestedFilename());
   ok('中身は暗号化されている（プライベートの件名が、そのまま入っていない）', blob.length > 200 && !blob.includes(Buffer.from('こっそり通院')) && blob.slice(0, 8).toString() === 'SCHEDBK1');
   // データを変える（プライベートの予定を消す／別の予定を足す）

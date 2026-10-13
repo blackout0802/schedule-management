@@ -15,6 +15,10 @@ if (!is_admin($user)) {
     http_response_code(403);
     exit('このページは管理者だけが使えます。');
 }
+if ((int)$user['must_change_password'] === 1) { // 一時パスワードのままでは、使えない（先にパスワードを変更する）
+    header('Location: index.php');
+    exit;
+}
 audit_set_actor($user);
 $csrf = csrf_token();
 $err = '';
@@ -92,6 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $restored = backup_restore_data($d);
                 audit_log('security', 'restore', 'バックアップから復元', '', ((string)($d['created_at'] ?? '')) . ' 作成のバックアップ（' . array_sum($restored) . '件）');
                 $msg = '復元しました。（バックアップの作成日時: ' . h((string)($d['created_at'] ?? '不明')) . '）';
+                logout(); // 社員の表が入れ替わるので、いまのログインは終える（同じ番号の別の人として操作してしまわないように）
             }
         } catch (BackupException $e) {
             $err = $e->getMessage();

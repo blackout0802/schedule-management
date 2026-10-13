@@ -10,7 +10,7 @@ bash tests/e2e/run.sh who sum      # 名前を指定して、それだけ
 bash tests/e2e/run.sh --list       # テストの一覧
 ```
 
-- 必要なもの: php 7.4以上（PDO・GD）、node、Playwright（`npm i -g playwright`。`npx playwright install chromium` で Chromium も）。
+- 必要なもの: php 7.4以上（PDO・GD）、node、Playwright（`npm i -g playwright@1.56.1`。CIも同じ版。`npx playwright install chromium` で Chromium も。版が古いと、CSPの制限で、`waitForFunction` が動かないことがあります）。
 - データベースは、既定で **SQLite**（用意は不要）。MySQL / MariaDB で動かすときは、先に空のデータベースを作って:
 
   ```bash

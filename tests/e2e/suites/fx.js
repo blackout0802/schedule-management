@@ -39,6 +39,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('.modal button:has-text("伝えた")'); await a.waitForFunction(() => !document.querySelector('.modal'));
   const y2 = await mk(); await login(y2, 'yamada@example.com', 'yamadapass1'); await y2.waitForTimeout(800); ok('リセット後は、古いパスワードではログインできない', y2.url().includes('login.php'));
   await y2.fill('input[name=email]', 'yamada@example.com'); await y2.fill('input[name=password]', tmp); await y2.click('button[type=submit]'); await y2.waitForSelector('.notice'); ok('一時パスワードでログインすると、パスワードの変更を求められる', (await y2.locator('.notice').innerText()).includes('はじめにパスワードを変更'));
-  const forb = await y.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=user_reset_password', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ id: 1 }) }); return r.status; }); ok('一般の社員は、リセットできない（403）', forb === 403, forb);
+  const y3 = await mk(); await login(y3, 'suzuki@example.com', 'suzukipass1'); // 山田さんは、リセットされて、前のログインは終わっているので、別の一般社員で確かめる
+  const forb = await y3.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=user_reset_password', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ id: 1 }) }); return r.status; }); ok('一般の社員は、リセットできない（403）', forb === 403, forb);
   const self = await post(a, 'user_reset_password', { id: 1 }); ok('自分自身のリセットは、できない（案内が出る）', self[0] === 400 && /パスワードの変更/.test(self[1].error || ''), self);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0); })();

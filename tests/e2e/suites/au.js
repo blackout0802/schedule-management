@@ -39,8 +39,9 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('50件ずつ表示され、「さらに読み込む」が出る', (await a.locator('#set-audit button:has-text("さらに読み込む")').isVisible()));
   await a.click('#set-audit button:has-text("さらに読み込む")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length > 50); ok('押すと、続きが読み込まれる', (await a.locator('#set-audit .audit-item').count()) > 50);
   // 権限
-  await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page'); ok('一般の社員の設定には、変更履歴は出ない', (await y.locator('#set-audit').count()) === 0);
-  const forb = await y.evaluate(async () => (await fetch('api.php?action=audit_list')).status); ok('一般の社員は、変更履歴のAPIを使えない（403）', forb === 403, forb);
+  const y3 = await mk(); await login(y3, 'suzuki@example.com', 'suzukipass1'); // 山田さんは、パスワードをリセットされて、前のログインは終わっているので、別の一般社員で確かめる
+  await y3.click('header button:has-text("設定")'); await y3.waitForSelector('.settings-page'); ok('一般の社員の設定には、変更履歴は出ない', (await y3.locator('#set-audit').count()) === 0);
+  const forb = await y3.evaluate(async () => (await fetch('api.php?action=audit_list')).status); ok('一般の社員は、変更履歴のAPIを使えない（403）', forb === 403, forb);
   // スマホ幅で、はみ出さない
   const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.click('header button:has-text("設定")'); await ph.waitForSelector('#set-audit .audit-item'); await ph.waitForTimeout(500);
   ok('スマホ幅でも、横にはみ出さない', await ph.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await ph.locator('#set-audit').scrollIntoViewIfNeeded(); await ph.screenshot({ path: 'audit-phone.png' });

@@ -15,6 +15,10 @@ if (!is_admin($user)) {
     http_response_code(403);
     exit('このページは管理者だけが使えます。');
 }
+if ((int)$user['must_change_password'] === 1) { // 一時パスワードのままでは、使えない（先にパスワードを変更する）
+    header('Location: index.php');
+    exit;
+}
 $csrf = csrf_token();
 $msg = '';
 $err = '';

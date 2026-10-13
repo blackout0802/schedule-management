@@ -8,6 +8,7 @@
 //   ファイルの先頭部分は改ざん検知（認証）の対象になっている
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/attachments.php';
 
 class BackupException extends RuntimeException
 {
@@ -132,6 +133,19 @@ function backup_inspect(string $json): array
     if ((int)($d['schema_version'] ?? 0) > SCHEMA_VERSION) {
         throw new BackupException('このバックアップは、いまより新しい版（v' . h((string)($d['app_version'] ?? '?')) . '）で作られています。先にシステム更新で、最新の版にしてください。');
     }
+    // 社員の表が入っているのに、利用中の管理者が1人もいないバックアップは、復元しない（誰もログインできなくなり、初期設定の画面が開いてしまうため）
+    if (isset($d['tables']['users'])) {
+        $hasAdmin = false;
+        foreach ((array)$d['tables']['users'] as $u) {
+            if (is_array($u) && ($u['role'] ?? '') === 'admin' && (int)($u['active'] ?? 0) === 1) {
+                $hasAdmin = true;
+                break;
+            }
+        }
+        if (!$hasAdmin) {
+            throw new BackupException('このバックアップには、利用中の管理者がいないため、復元できません。');
+        }
+    }
     return $d;
 }
 
@@ -144,6 +158,7 @@ function backup_restore_data(array $d): array
     ensure_schema(); // 足りない列・表があれば、先に作る（古い版のデータベースでも復元できるように）
     $pdo = db();
     $done = [];
+    $clearFiles = false;
     $pdo->beginTransaction();
     try {
         foreach (array_reverse(BACKUP_TABLES) as $t) {
@@ -156,6 +171,11 @@ function backup_restore_data(array $d): array
             } else {
                 $pdo->exec("DELETE FROM $t");
             }
+        }
+        // コメントの画像の記録は、バックアップに入らない。復元後に、別のコメントへ結びつかないよう、記録と画像のファイルを消す
+        if (isset($d['tables']['todo_comments']) || isset($d['tables']['todos'])) {
+            $pdo->exec('DELETE FROM todo_comment_files');
+            $clearFiles = true;
         }
         foreach (BACKUP_TABLES as $t) {
             if (!isset($d['tables'][$t]) || !is_array($d['tables'][$t])) {
@@ -186,6 +206,13 @@ function backup_restore_data(array $d): array
             $pdo->rollBack();
         }
         throw new BackupException('復元に失敗したため、データは元のままです。（' . $e->getMessage() . '）');
+    }
+    if (!empty($clearFiles)) {
+        foreach (glob(attach_dir() . '/*') ?: [] as $f) {
+            if (is_file($f) && basename($f)[0] !== '.') {
+                @unlink($f);
+            }
+        }
     }
     bump_rev();
     return $done;

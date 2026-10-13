@@ -30,12 +30,20 @@ function db_error_hint(Throwable $e): string
 
 // 初期設定が済んでいる（ユーザーが1人以上いる）ときは、この画面からデータベースの設定を書き換えさせない。
 // install.php をサーバーに残したままでも、第三者に接続先をすり替えられないようにするため
+// データベースに接続できない・設定が壊れているなど、「ユーザーがいない」と確かめられないときも、閉じたままにする
+// （開くのは、ユーザーの表がまだ無い = 本当の初回のときだけ）。DBが止まっている間に、接続先をすり替えられないようにするため
 $locked = false;
+$lockedByError = false;
 if (is_file($cfgPath)) {
     try {
         $locked = (int)(row('SELECT COUNT(*) AS c FROM users')['c']) > 0;
     } catch (Throwable $e) {
-        $locked = false;
+        $m = strtolower($e->getMessage());
+        $tableMissing = strpos($m, 'no such table') !== false || strpos($m, "doesn't exist") !== false || strpos($m, '42s02') !== false;
+        if (!$tableMissing) {
+            $locked = true;
+            $lockedByError = true;
+        }
     }
 }
 
@@ -96,9 +104,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'db' && 
 // ---- 現在の状態を調べる ----
 $state = 'need_db';
 $count = -1;
-if ($fallbackCode === null && is_file($cfgPath)) {
+if ($lockedByError) {
+    $err = 'データベースに接続できませんでした。設定は、この画面からは変えられません（config.php を直接確認してください）。';
+} elseif ($fallbackCode === null && is_file($cfgPath)) {
     try {
-        run_schema();
+        if (!$locked) {
+            run_schema(); // 初回だけ（設定が済んだあとは、見に来るたびに表の変更をしない）
+        }
         $count = (int)(row('SELECT COUNT(*) AS c FROM users')['c']);
         $state = $count === 0 ? 'need_admin' : 'finished';
     } catch (Throwable $e) {

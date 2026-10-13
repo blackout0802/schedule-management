@@ -110,6 +110,10 @@ const EXAMPLE_SERIES = [
     ['title' => '支払請求書のスキャン', 'rule_type' => 'day', 'p_day' => 25, 'shift' => 'prev'],
 ];
 
+/** GET（画面を開くだけ）でも使ってよい、読むだけの操作。これ以外は、POST（CSRFトークンの確認つき）だけ受け付ける */
+const API_READ_ACTIONS = ['me', 'rev', 'events', 'todo_list', 'todo_comments', 'todo_file', 'share_list', 'slack_status', 'slack_cfg',
+    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_log_list', 'audit_list', 'holidays_list'];
+
 function handle_api(): void
 {
     $user = current_user();
@@ -119,6 +123,10 @@ function handle_api(): void
     audit_set_actor($user); // 変更履歴に残す「操作した人」
     $action = (string)($_GET['action'] ?? '');
     $isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+    if (!$isPost && !in_array($action, API_READ_ACTIONS, true)) {
+        // 外のサイトのリンクを踏ませる（GET）だけで、書き換えられないようにする（CSRFの確認は POST だけにある）
+        api_fail('この操作は、画面から行ってください。', 405);
+    }
     $in = [];
     if ($isPost) {
         if (!csrf_valid($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)) {
@@ -322,7 +330,7 @@ function handle_api(): void
             header('Content-Type: ' . $f['mime']);
             header('Content-Length: ' . (int)filesize(attach_dir() . '/' . $f['stored']));
             header('Content-Disposition: inline; filename="image-' . (int)$f['id'] . '.' . (preg_replace('/^.*\./', '', $f['stored'])) . '"');
-            header('Cache-Control: private, max-age=3600');
+            header('Cache-Control: private, no-store'); // ToDoを非公開にした・消したあとも、見えたまま残らないように
             readfile(attach_dir() . '/' . $f['stored']);
             exit;
 
@@ -477,8 +485,11 @@ function handle_api(): void
             api_out(get_memo_state($user));
 
         case 'memo_save':
+            if (!isset($in['html']) || !is_string($in['html'])) {
+                api_fail('日報の内容がありません。');
+            }
             try {
-                save_memo((string)($in['html'] ?? ''), $user);
+                save_memo($in['html'], $user);
             } catch (RuntimeException $x) {
                 api_fail($x->getMessage());
             }
@@ -632,6 +643,7 @@ function handle_api(): void
                 api_fail('現在のパスワードとは別のパスワードにしてください。');
             }
             q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+            $_SESSION['pwv'] = substr((string)row('SELECT password_hash FROM users WHERE id = ?', [$user['id']])['password_hash'], 7, 22); // この端末は、そのまま使い続けられる
             audit_log('security', 'update', '自分のパスワードを変更', $user['name']);
             api_out(['ok' => true]);
 

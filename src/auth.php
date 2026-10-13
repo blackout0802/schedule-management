@@ -27,8 +27,16 @@ function current_user(): ?array
     if (!$id) {
         return null;
     }
-    $u = row('SELECT id,name,email,role,slack_id,active,must_change_password FROM users WHERE id = ?', [$id]);
-    return ($u && (int)$u['active'] === 1) ? $u : null;
+    $u = row('SELECT id,name,email,role,slack_id,active,must_change_password, SUBSTR(password_hash, 8, 22) AS pwv FROM users WHERE id = ?', [$id]);
+    if (!$u || (int)$u['active'] !== 1) {
+        return null;
+    }
+    // パスワードを変えた・リセットされたら、ほかの端末のログインは終わる（この版より前のログインには、印が無いので、そのまま使えて、印を付ける）
+    if (isset($_SESSION['pwv']) && !hash_equals((string)$_SESSION['pwv'], (string)$u['pwv'])) {
+        return null;
+    }
+    $_SESSION['pwv'] = (string)$u['pwv'];
+    return $u;
 }
 
 function is_admin(array $u): bool
@@ -36,13 +44,25 @@ function is_admin(array $u): bool
     return $u['role'] === 'admin';
 }
 
-/* ログイン失敗の回数制限: 同じメールアドレスで8回、同じ接続元で30回失敗したら、15分間は試せない */
+/* ログイン失敗の回数制限（15分のあいだに）:
+     同じメールアドレス・同じ接続元で、8回失敗 → その接続元は、そのメールアドレスを試せない
+     同じ接続元で、30回失敗 → その接続元は、どのメールアドレスも試せない
+     同じメールアドレスで、接続元を問わず、60回失敗 → 誰も試せない（複数の接続元から攻撃されたとき）
+   他人が、わざと間違えて、本人を締め出せないように、「8回」は、その接続元だけに効かせる */
 const LOGIN_MAX_PER_EMAIL = 8;
+const LOGIN_MAX_PER_EMAIL_ANY = 60;
 const LOGIN_MAX_PER_IP = 30;
 const LOGIN_WINDOW_SEC = 900;
 
 function client_ip(): string
 {
+    // リバースプロキシの内側にある（接続元が全員、同じ番号に見える）ときだけ、config.php の trust_forwarded_for を true にする
+    if (cfg('trust_forwarded_for', false) && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ip = trim(explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
+        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+            return substr($ip, 0, 45);
+        }
+    }
     return substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
 }
 
@@ -50,9 +70,11 @@ function login_locked(string $email): bool
 {
     try {
         $since = date('Y-m-d H:i:s', time() - LOGIN_WINDOW_SEC);
-        $e = row('SELECT COUNT(*) AS c FROM login_fails WHERE email = ? AND failed_at >= ?', [$email, $since]);
-        $i = row('SELECT COUNT(*) AS c FROM login_fails WHERE ip = ? AND failed_at >= ?', [client_ip(), $since]);
-        return (int)$e['c'] >= LOGIN_MAX_PER_EMAIL || (int)$i['c'] >= LOGIN_MAX_PER_IP;
+        $ip = client_ip();
+        $e = row('SELECT COUNT(*) AS c FROM login_fails WHERE email = ? AND ip = ? AND failed_at >= ?', [$email, $ip, $since]);
+        $a = row('SELECT COUNT(*) AS c FROM login_fails WHERE email = ? AND failed_at >= ?', [$email, $since]);
+        $i = row('SELECT COUNT(*) AS c FROM login_fails WHERE ip = ? AND failed_at >= ?', [$ip, $since]);
+        return (int)$e['c'] >= LOGIN_MAX_PER_EMAIL || (int)$a['c'] >= LOGIN_MAX_PER_EMAIL_ANY || (int)$i['c'] >= LOGIN_MAX_PER_IP;
     } catch (Throwable $t) {
         return false; // 記録用のテーブルがまだ無い（更新直後）ときは、制限なしで続ける
     }
@@ -92,6 +114,7 @@ function login_attempt(string $email, string $password, ?bool &$locked = null): 
     session_boot();
     session_regenerate_id(true);
     $_SESSION['uid'] = (int)$u['id'];
+    $_SESSION['pwv'] = substr((string)$u['password_hash'], 7, 22);
     $_SESSION['csrf'] = bin2hex(random_bytes(24));
     return $u;
 }

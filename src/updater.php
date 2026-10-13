@@ -80,7 +80,7 @@ function updater_plan(ZipArchive $zip, string $publicDir, string $appDir): array
         $rel = implode('/', array_slice($parts, 1));
         $base = basename($n);
         $ext = strtolower(pathinfo($base, PATHINFO_EXTENSION));
-        $excluded = $base === 'config.php' || ($root === 'public' && in_array($rel, ['install.php', 'app_path.php'], true));
+        $excluded = $base === 'config.php' || ($root === 'public' && in_array(strtolower($rel), ['install.php', 'app_path.php'], true)); // 大文字・小文字のちがう名前（INSTALL.php など）でも、すり替えさせない
         if (!isset($bases[$root]) || $rel === '' || !in_array($ext, UPDATER_EXT, true) || $excluded || $base[0] === '.') {
             $skipped++;
             continue;
@@ -159,6 +159,11 @@ function updater_apply(string $zipPath, string $publicDir, string $appDir): arra
     }
     if (!$plan['files']) {
         throw new UpdaterException('更新できるファイルが見つかりませんでした。更新用の zip を選んでください。');
+    }
+    // いまより古い版には、更新できない（古い版の弱点を、わざと戻されないように。戻したいときは「更新前に戻す」を使う）
+    if (isset($plan['files']['src/version.php']) && preg_match("/const APP_VERSION = '([0-9.]+)'/", $plan['files']['src/version.php']['code'], $vm)
+        && version_compare($vm[1], APP_VERSION, '<')) {
+        throw new UpdaterException('この zip は、いまの版（v' . APP_VERSION . '）より古い版（v' . $vm[1] . '）です。古い版への更新はできません。元に戻したいときは、下の「更新前に戻す」を使ってください。');
     }
     // 変わるファイルだけを対象にする
     $todo = [];

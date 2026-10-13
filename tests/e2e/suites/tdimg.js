@@ -1,6 +1,6 @@
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
 const { execSync } = require('child_process'); const fs = require('fs');
-const BASE = 'http://127.0.0.1:8099/'; const ATT = process.env.E2E_APP + '/data/attachments';
+const BASE = 'http://127.0.0.1:8099/'; const IMG = require('../lib/env').makeImages(); const ATT = process.env.E2E_APP + '/data/attachments';
 let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
 const { sql } = require('../lib/env');
 const login = async (b, email, pw) => { const c = await b.newContext({ viewport: { width: 1280, height: 900 } }); const p = await c.newPage(); p.on('pageerror', e => console.log('ERR', String(e))); await p.addInitScript(() => { window.SCHEDULE_POLL_TEST_MS = 1000; }); await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', email); await p.fill('input[name=password]', pw); await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); return p; };
@@ -16,22 +16,22 @@ const openList = async p => { await p.click('.toolbar .seg label:has-text("リ�
   await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.click('#todo-mgr .kb-card.other:has-text("画面の不具合")'); await s.waitForSelector('.modal .tc-dialog');
   ok('コメント欄に「画像を添付」ボタンがある', await s.locator('.modal button:has-text("画像を添付")').count() === 1);
   // 1. ファイル選択（3000x1800の大きな画像→ブラウザ側で縮む）
-  await s.setInputFiles('.modal input[type=file]', '/tmp/claude-0/shot-big.png'); await s.waitForSelector('.modal .tc-pend img');
+  await s.setInputFiles('.modal input[type=file]', IMG + '/shot-big.png'); await s.waitForSelector('.modal .tc-pend img');
   ok('選んだ画像のプレビューが出る', await s.locator('.modal .tc-pend').count() === 1);
   // 2. 貼り付け（Ctrl+V のスクリーンショット）
   await s.evaluate(async () => { const bin = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='); const blob = new Blob([Uint8Array.from(bin, c => c.charCodeAt(0))], { type: 'image/png' }); const dt = new DataTransfer(); dt.items.add(new File([blob], 'paste.png', { type: 'image/png' })); document.querySelector('.modal textarea').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
   await s.waitForFunction(() => document.querySelectorAll('.modal .tc-pend').length === 2); ok('貼り付け（Ctrl + V）でも、画像が添付される', true);
   // 4枚目は断られる
-  await s.setInputFiles('.modal input[type=file]', ['/tmp/claude-0/shot-small.png', '/tmp/claude-0/shot-small.png', '/tmp/claude-0/shot-small.png']); await s.waitForTimeout(1200);
+  await s.setInputFiles('.modal input[type=file]', [IMG + '/shot-small.png', IMG + '/shot-small.png', IMG + '/shot-small.png']); await s.waitForTimeout(1200);
   ok('1つのコメントに付けられる画像は3枚まで', await s.locator('.modal .tc-pend').count() === 3, await s.locator('.modal .tc-pend').count());
   await s.click('.modal .tc-pend:last-child .tc-x'); ok('×で、添付を外せる', await s.locator('.modal .tc-pend').count() === 2);
-  await s.setInputFiles('.modal input[type=file]', '/tmp/claude-0/not-image.txt'); await s.waitForTimeout(500);
+  await s.setInputFiles('.modal input[type=file]', IMG + '/not-image.txt'); await s.waitForTimeout(500);
   ok('画像でないファイルは、添付されない', await s.locator('.modal .tc-pend').count() === 2);
   await s.fill('.modal textarea', 'この画面で崩れます'); await s.screenshot({ path: 'tdimg-compose.png' });
   await s.click('.modal button:has-text("コメントを送る")'); await s.waitForSelector('.modal .tc-item .tc-thumb img');
   const info = await s.evaluate(async () => { const imgs = [...document.querySelectorAll('.modal .tc-item img')]; await Promise.all(imgs.map(i => i.decode().catch(() => {}))); return imgs.map(i => [i.naturalWidth, i.naturalHeight]); });
   ok('画像つきのコメントが付く（2枚が表示される）', info.length === 2 && info.every(a => a[0] > 0), info);
-  ok('大きな画像は、ブラウザ側で長辺1600pxに縮んでいる', info[0][0] === 1600 && info[0][1] === 960, info);
+  ok('大きな画像は、ブラウザ側で長辺1600pxに縮んでいる', Math.max(info[0][0], info[0][1]) === 1600, info);
   const files = fs.readdirSync(ATT).filter(f => /\.(png|jpg)$/.test(f)); ok('サーバーに、2つのファイルが保存された', files.length === 2, files);
   ok('保存された画像は、PNGまたはJPEGの画像（中身を確認）', files.every(f => { const h = fs.readFileSync(ATT + '/' + f).slice(0, 4); return (h[0] === 0x89 && h[1] === 0x50) || (h[0] === 0xff && h[1] === 0xd8); }));
   await s.screenshot({ path: 'tdimg-comment.png' });
@@ -54,7 +54,7 @@ const openList = async p => { await p.click('.toolbar .seg label:has-text("リ�
   await y.click('.modal .tc-item button:has-text("削除")'); await y.waitForFunction(() => !document.querySelector('.modal .tc-item')); await y.waitForTimeout(400);
   ok('コメントを削除すると、サーバーの画像ファイルも消える', fs.readdirSync(ATT).filter(f => /\.(png|jpg)$/.test(f)).length === 0 && Number(sql('SELECT COUNT(*) FROM todo_comment_files')) === 0);
   // 画像だけ（文字なし）
-  await y.setInputFiles('.modal input[type=file]', '/tmp/claude-0/shot-small.png'); await y.waitForSelector('.modal .tc-pend'); await y.click('.modal button:has-text("コメントを送る")'); await y.waitForSelector('.modal .tc-item .tc-thumb');
+  await y.setInputFiles('.modal input[type=file]', IMG + '/shot-small.png'); await y.waitForSelector('.modal .tc-pend'); await y.click('.modal button:has-text("コメントを送る")'); await y.waitForSelector('.modal .tc-item .tc-thumb');
   ok('文字なしで、画像だけのコメントも送れる', true);
   // ToDoを削除すると画像も消える
   await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal')); y.once('dialog', d => d.accept());

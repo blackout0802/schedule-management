@@ -30,10 +30,10 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   ok('パスワードを設定すると、有効になる', (await a.locator('#auto').innerText()).includes('有効') && !(await a.locator('#auto').innerText()).includes('無効'));
   await a.click('#auto button:has-text("いま作成する")'); await a.waitForSelector('.notice:has-text("自動バックアップを作成しました")');
   ok('「いま作成する」で、保存済みの一覧に1件出る', await a.locator('#auto table.t tbody tr').count() === 1);
-  const [dl] = await Promise.all([a.waitForEvent('download'), a.click('#auto table.t button:has-text("ダウンロード")')]); await dl.saveAs('/tmp/claude-0/auto-dl.enc');
-  const bl = fs.readFileSync('/tmp/claude-0/auto-dl.enc'); ok('保存済みのバックアップを、画面からダウンロードできる（暗号化されている）', bl.slice(0, 8).toString() === 'SCHEDBK1' && bl.length > 200);
+  const [dl] = await Promise.all([a.waitForEvent('download'), a.click('#auto table.t button:has-text("ダウンロード")')]); await dl.saveAs(require('../lib/env').TMP + '/auto-dl.enc');
+  const bl = fs.readFileSync(require('../lib/env').TMP + '/auto-dl.enc'); ok('保存済みのバックアップを、画面からダウンロードできる（暗号化されている）', bl.slice(0, 8).toString() === 'SCHEDBK1' && bl.length > 200);
   ok('サーバーの保存先にファイルがある（権限 600）', execSync(`ls -l ${ROOT}/data/backups/auto-*.enc`).toString().includes('-rw-------'));
-  const dec = execSync(`php -r 'require "${ROOT}/src/bootstrap.php"; require "${ROOT}/src/backup.php"; $d = backup_inspect(backup_decrypt(file_get_contents("/tmp/claude-0/auto-dl.enc"), "auto-pass-xyz")); echo count($d["tables"]["users"]);'`, { env: ENV, encoding: 'utf8' });
+  const dec = execSync(`php -r 'require "${ROOT}/src/bootstrap.php"; require "${ROOT}/src/backup.php"; $d = backup_inspect(backup_decrypt(file_get_contents("${require('../lib/env').TMP}/auto-dl.enc"), "auto-pass-xyz")); echo count($d["tables"]["users"]);'`, { env: ENV, encoding: 'utf8' });
   ok('設定したパスワードで復元できる（社員3人）', dec.trim() === '3', dec);
   // cron: 今日は作成済みなので、作らない
   const c1 = cron('notify'); ok('cron notify: 今日は作成済みなので、自動バックアップは作らない', !c1.includes('自動バックアップを作成'), c1);

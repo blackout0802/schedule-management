@@ -1,9 +1,15 @@
 // 画面テスト（suites/*.js）の共通部分。run.sh が、環境変数を用意してから、各テストを動かす。
 const { execFileSync } = require('child_process');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'sched-e2e-'));
 
 const pad = n => String(n).padStart(2, '0');
 module.exports = {
+  TMP,                                    // このテストだけの、一時フォルダ
+  /** 添付のテスト用の画像（shot-big.png / shot-small.png / not-image.txt）を、TMP に作って、そのフォルダを返す */
+  makeImages() { execFileSync('php', [path.join(__dirname, 'images.php'), TMP]); return TMP; },
   BASE: 'http://127.0.0.1:8099/',
   APP: process.env.E2E_APP,               // テスト用に複製したアプリ（本物のフォルダは触らない）
   SLACK_LOG: process.env.E2E_SLACK_LOG,   // Slack の代わりのサーバーが受け取った内容

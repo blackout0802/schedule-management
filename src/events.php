@@ -522,6 +522,9 @@ function save_todo(array $data, array $user, ?array $existing): array
     if ($existing) {
         q('UPDATE todos SET title = ?, kind = ?, tag = ?, note = ?, family_shared = ? WHERE id = ?', [$data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], $existing['id']]);
         $id = (int)$existing['id'];
+        if ($existing['kind'] !== $data['kind']) {
+            todo_sync_events($id, $data); // 種類（業務・プライベート）を変えたら、カレンダーに置いた予定も同じ種類にする（プライベートにしたのに、予定が全員に見えたままにならないように）
+        }
     } else {
         $max = row('SELECT MAX(sort_order) AS m FROM todos WHERE owner_id = ?', [$user['id']]);
         q('INSERT INTO todos (owner_id, title, kind, tag, note, family_shared, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?)', [$user['id'], $data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], (int)($max['m'] ?? 0) + 1, now_str()]);
@@ -554,6 +557,15 @@ function schedule_todo(array $todo, string $date, array $user): array
     }
     set_todo_status($todo, 'doing');
     return $event;
+}
+
+/** ToDoの種類を変えたとき、結びついた予定の種類・分類・共有を、ToDoに合わせる（家族用の更新履歴にも、変更として残す） */
+function todo_sync_events(int $todoId, array $data): void
+{
+    foreach (rows('SELECT * FROM events WHERE todo_id = ?', [$todoId]) as $before) {
+        q('UPDATE events SET kind = ?, tag = ?, family_shared = ?, updated_at = ? WHERE id = ?', [$data['kind'], $data['kind'] === 'work' ? $data['tag'] : '', $data['family_shared'], now_str(), $before['id']]);
+        event_changed($before, row('SELECT * FROM events WHERE id = ?', [$before['id']]));
+    }
 }
 
 /** 消すToDoと結びついた予定は、ふつうの予定として残す（結びつきだけ外す） */
@@ -628,7 +640,8 @@ function sanitize_memo_html(string $html): string
     $html = mb_substr($html, 0, MEMO_MAX_CHARS * 3);
     $html = preg_replace('#<(script|style|iframe|object|embed|template)\b[^>]*>.*?</\1\s*>#is', '', $html);
     $html = strip_tags($html, '<div><p><br><s><strike><del>');
-    $html = preg_replace_callback('#<\s*(/?)\s*([a-z0-9]+)\b([^>]*)>#i', function ($m) {
+    // 許す形の目印だけを残し、それ以外の「<」は、文字（&lt;）にする（「< script>」のような、空白をはさんだ形も、タグにならない）
+    $html = preg_replace_callback('#<(/?)(div|p|br|s|strike|del)\b([^>]*)>#i', function ($m) {
         $tag = strtolower($m[2]);
         if ($m[1] === '' && $tag === 'div') {
             $attrs = '';
@@ -651,7 +664,7 @@ function sanitize_memo_html(string $html): string
     $html = preg_replace('#<(/?)(strike|del)>#i', '<$1s>', $html);
     $html = preg_replace('#<(/?)p>#i', '<$1div>', $html);
     $html = preg_replace('#<br\s*/?>#i', '<br>', $html);
-    return $html;
+    return preg_replace('#<(?!/?(?:div|br|s)(?:\s[^>]*)?>)#i', '&lt;', $html);
 }
 
 /** 本人が決める「家族に見せる範囲」: 休みを全て見せるか / 見せる業務の分類 */
