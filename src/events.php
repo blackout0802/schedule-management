@@ -620,7 +620,8 @@ const MEMO_MAX_CHARS = 12000;
 
 /**
  * メモのHTMLを安全な形にする。許すのは div / br / s（取り消し線）だけ。属性・スクリプトは全て消す。
- * ただし div の data-todo（元のToDoの番号。数字だけ）と data-st（todo / doing / done）は残す。
+ * ただし div の印は残す: data-todo（元のToDoの番号。数字だけ）・data-st（todo / doing / done）・data-tr（転記された行）、
+ * 日付の行の data-md（cur / next）と data-date（YYYY-MM-DD）。
  */
 function sanitize_memo_html(string $html): string
 {
@@ -631,11 +632,17 @@ function sanitize_memo_html(string $html): string
         $tag = strtolower($m[2]);
         if ($m[1] === '' && $tag === 'div') {
             $attrs = '';
-            if (preg_match('#data-todo\s*=\s*["\']?(\d{1,10})#i', $m[3], $a)) {
+            if (preg_match('#data-md\\s*=\\s*["\']?(cur|next)\\b#i', $m[3], $a) && preg_match('#data-date\\s*=\\s*["\']?(\\d{4}-\\d{2}-\\d{2})#', $m[3], $d)) {
+                return '<div data-md="' . strtolower($a[1]) . '" data-date="' . $d[1] . '">'; // 日付の行
+            }
+            if (preg_match('#data-todo\\s*=\\s*["\']?(\\d{1,10})#i', $m[3], $a)) {
                 $attrs .= ' data-todo="' . (int)$a[1] . '"';
-                if (preg_match('#data-st\s*=\s*["\']?(todo|doing|done)\b#i', $m[3], $b)) {
+                if (preg_match('#data-st\\s*=\\s*["\']?(todo|doing|done)\\b#i', $m[3], $b)) {
                     $attrs .= ' data-st="' . strtolower($b[1]) . '"';
                 }
+            }
+            if (preg_match('#data-tr\\s*=\\s*["\']?1#', $m[3])) {
+                $attrs .= ' data-tr="1"'; // 次回出勤日に転記された行
             }
             return '<div' . $attrs . '>';
         }
@@ -663,9 +670,11 @@ function save_family_share(array $user, bool $off, array $tags): array
 }
 
 /* ------------------------------------------------------------------
- * 日報メモは、出勤日ごとに1つ。画面には「当日（今日が出勤日なら今日。休みの日は次の出勤日）」と、その次の出勤日の2つを出す。
- * 内容は手動で入れる（ToDoのドラッグ&ドロップで、進捗つきの行を足せる）。
- * 行には、元のToDoの番号（data-todo）と状態（data-st: todo / doing / done）を覚える。
+ * 日報メモは、1つの入力欄（本人だけ）。文章の中の、「【10/13　予定・To Do】」の行（当日）と、
+ * 「【10/14　予定・To Do】」の行（次回出勤日）の日付は、出勤日に合わせて自動で入れ替わる（画面側で書き換える）。
+ * 当日の項目のうち、取り消し線のないものは、次回出勤日に転記される。日が進むと、次回出勤日の項目が、当日の項目になる。
+ * 行の印（div の data-*）: data-md=cur/next と data-date = 日付の行 / data-tr = 転記された行 / data-todo, data-st = ToDoから入れた行。
+ * 日が進んだときの前日の日報は、memo_days に、日ごとの控えとして残す（取り戻せるように）。
  * ------------------------------------------------------------------ */
 
 const MEMO_KEEP_DAYS = 120;
@@ -697,47 +706,78 @@ function work_days_from(array $user, string $from, int $count = 2): array
     return $days;
 }
 
-/** 画面に出す2つの日（当日・次回出勤日）と、それぞれの日報の内容 */
-function get_memo_days(array $user): array
+/** 日報の本文から、「当日」の行の日付（なければ null） */
+function memo_cur_date(string $html): ?string
+{
+    return preg_match('#<div data-md="cur" data-date="(\d{4}-\d{2}-\d{2})"#', $html, $m) ? $m[1] : null;
+}
+
+/**
+ * 日報の状態。cur = 当日の日付 / next = 次回出勤日 / html = 本文（まだ無ければ空）。
+ * seed = 本文がまだ構造化されていないとき（以前の版からの更新）の、引き継ぎ元。
+ */
+function get_memo_state(array $user): array
 {
     $today = date('Y-m-d');
     $days = work_days_from($user, $today, 2);
     while (count($days) < 2) { // 出勤日が見つからない（長期休暇中など）ときも、2つ出す
         $days[] = date('Y-m-d', strtotime(($days ? end($days) : $today) . ' +1 day'));
     }
-    // 以前の版の、日付のないメモは、最初に開いたときに「当日」へ引き継ぐ（一度だけ）
-    $legacy = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
-    if ($legacy && trim(strip_tags((string)$legacy['body'])) !== '') {
-        if (!row('SELECT 1 AS x FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $days[0]])) {
-            q('INSERT INTO memo_days (owner_id, day, body, updated_at) VALUES (?,?,?,?)', [$user['id'], $days[0], sanitize_memo_html((string)$legacy['body']), now_str()]);
+    $r = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
+    $html = $r ? sanitize_memo_html((string)$r['body']) : '';
+    $out = ['today' => $today, 'cur' => $days[0], 'next' => $days[1], 'html' => $html, 'history' => memo_history_days($user)];
+    if (strpos($html, 'data-md="cur"') === false) {
+        $seed = ['cur' => '', 'next' => '', 'old' => $html];
+        foreach (['cur', 'next'] as $k) {
+            $d = row('SELECT body FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $out[$k]]);
+            $seed[$k] = $d ? sanitize_memo_html((string)$d['body']) : '';
         }
-        q('UPDATE memos SET body = ? WHERE owner_id = ?', ['', $user['id']]);
+        $out['html'] = '';
+        $out['seed'] = $seed;
     }
-    $out = [];
-    foreach ($days as $i => $d) {
-        $r = row('SELECT body FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $d]);
-        $out[] = ['date' => $d, 'html' => $r ? sanitize_memo_html($r['body']) : '', 'today' => $d === $today];
-    }
-    return ['today' => $today, 'days' => $out];
+    return $out;
 }
 
-/** その日の日報を保存する。保存できる日は、今日の少し前から、先の1か月まで */
-function save_memo_day(string $day, string $html, array $user): string
+/** 日報を保存する。日が進んでいたら（当日の日付が変わったら）、前の日報を、その日の控えとして残す */
+function save_memo(string $html, array $user): string
 {
-    if (!valid_date($day) || $day < date('Y-m-d', strtotime('-14 day')) || $day > date('Y-m-d', strtotime('+45 day'))) {
-        throw new RuntimeException('この日の日報は、保存できません。');
-    }
     $clean = sanitize_memo_html($html);
     if (mb_strlen(strip_tags($clean)) > MEMO_MAX_CHARS) {
         throw new RuntimeException('メモが長すぎます（' . MEMO_MAX_CHARS . '文字まで）。');
     }
-    if (row('SELECT 1 AS x FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $day])) {
-        q('UPDATE memo_days SET body = ?, updated_at = ? WHERE owner_id = ? AND day = ?', [$clean, now_str(), $user['id'], $day]);
+    $r = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
+    if ($r) {
+        $oldDay = memo_cur_date((string)$r['body']);
+        $newDay = memo_cur_date($clean);
+        if ($oldDay !== null && $newDay !== null && $newDay > $oldDay) {
+            if (row('SELECT 1 AS x FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $oldDay])) {
+                q('UPDATE memo_days SET body = ?, updated_at = ? WHERE owner_id = ? AND day = ?', [$r['body'], now_str(), $user['id'], $oldDay]);
+            } else {
+                q('INSERT INTO memo_days (owner_id, day, body, updated_at) VALUES (?,?,?,?)', [$user['id'], $oldDay, $r['body'], now_str()]);
+            }
+            q('DELETE FROM memo_days WHERE owner_id = ? AND day < ?', [$user['id'], date('Y-m-d', strtotime('-' . MEMO_KEEP_DAYS . ' day'))]);
+        }
+        q('UPDATE memos SET body = ?, updated_at = ? WHERE owner_id = ?', [$clean, now_str(), $user['id']]);
     } else {
-        q('INSERT INTO memo_days (owner_id, day, body, updated_at) VALUES (?,?,?,?)', [$user['id'], $day, $clean, now_str()]);
+        q('INSERT INTO memos (owner_id, body, updated_at) VALUES (?,?,?)', [$user['id'], $clean, now_str()]);
     }
-    q('DELETE FROM memo_days WHERE owner_id = ? AND day < ?', [$user['id'], date('Y-m-d', strtotime('-' . MEMO_KEEP_DAYS . ' day'))]);
     return $clean;
+}
+
+/** 過去の日報（日が進んだときの控え）の日付。新しい順 */
+function memo_history_days(array $user, int $limit = 60): array
+{
+    return array_map(function ($r) { return substr((string)$r['day'], 0, 10); },
+        rows('SELECT day FROM memo_days WHERE owner_id = ? ORDER BY day DESC LIMIT ' . (int)$limit, [$user['id']]));
+}
+
+function memo_history_get(string $day, array $user): ?string
+{
+    if (!valid_date($day)) {
+        return null;
+    }
+    $r = row('SELECT body FROM memo_days WHERE owner_id = ? AND day = ?', [$user['id'], $day]);
+    return $r ? sanitize_memo_html((string)$r['body']) : null;
 }
 
 

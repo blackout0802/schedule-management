@@ -308,6 +308,12 @@ function migrate_schema(): void
     }
     // app_meta の値の欄が 100 文字だった版（Slack の送り先を複数登録するには足りない）。MySQL/MariaDB だけ広げる（SQLite の TEXT は制限なし）
     if (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+        try { // 日報は、日付・転記の印がつくので、TEXT(64KB)では足りなくなることがある
+            db()->exec('ALTER TABLE memos MODIFY body MEDIUMTEXT NOT NULL');
+            db()->exec('ALTER TABLE memo_days MODIFY body MEDIUMTEXT NOT NULL');
+        } catch (PDOException $e) {
+            error_log('[schedule] 日報の欄の拡張に失敗しました: ' . $e->getMessage());
+        }
         try {
             db()->exec('ALTER TABLE app_meta MODIFY meta_value VARCHAR(2000) NOT NULL');
         } catch (PDOException $e) {

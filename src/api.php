@@ -474,15 +474,22 @@ function handle_api(): void
             api_out(['ok' => true]);
 
         case 'memo_get':
-            api_out(get_memo_days($user));
+            api_out(get_memo_state($user));
 
         case 'memo_save':
             try {
-                save_memo_day((string)($in['date'] ?? ''), (string)($in['html'] ?? ''), $user);
+                save_memo((string)($in['html'] ?? ''), $user);
             } catch (RuntimeException $x) {
                 api_fail($x->getMessage());
             }
             api_out(['ok' => true, 'saved_at' => date('H:i')]);
+
+        case 'memo_history':
+            $h = memo_history_get((string)($_GET['day'] ?? ''), $user);
+            if ($h === null) {
+                api_fail('その日の日報はありません。', 404);
+            }
+            api_out(['html' => $h]);
 
         case 'todo_reorder':
             reorder_todos(is_array($in['ids'] ?? null) ? $in['ids'] : [], $user);

@@ -701,21 +701,24 @@ check('メモ: 文字としての < は無害のまま', strpos(sanitize_memo_ht
 check('メモ: ToDoの印（data-todo / data-st）は残り、他の属性は消える', sanitize_memo_html('<div data-todo="12" data-st="done" onclick="x()" style="a:b"><s>終わった</s></div>'), '<div data-todo="12" data-st="done"><s>終わった</s></div>');
 check('メモ: ToDoの印は数字と決まった状態だけ（それ以外は捨てる）', sanitize_memo_html('<div data-todo="1;alert(1)" data-st="x"><s>t</s></div><div data-todo="abc">u</div><div data-todo="5" data-st="evil">v</div>'), '<div data-todo="1"><s>t</s></div><div>u</div><div data-todo="5">v</div>');
 check('メモ: div 以外には、ToDoの印は付かない', sanitize_memo_html('<s data-todo="3">t</s>'), '<s>t</s>');
-$tdz = date('Y-m-d');
-$md = get_memo_days($a);
-check('日報: 当日と次回出勤日の2つが出る', [count($md['days']), $md['days'][0]['date'] < $md['days'][1]['date']], [2, true]);
-check('日報: 出勤日は平日', array_map(function ($d) { return (int)date('N', strtotime($d['date'])) <= 5; }, $md['days']), [true, true]);
-check('日報: 内容は最初は空（未実施の予定を自動で入れない）', [$md['days'][0]['html'], $md['days'][1]['html']], ['', '']);
-$d0 = $md['days'][0]['date']; $d1 = $md['days'][1]['date'];
-save_memo_day($d0, '<div><s>終わった業務</s></div><div>これから</div>', $a);
-save_memo_day($d1, '<div>明日の予定</div>', $a);
-$md = get_memo_days($a);
-check('日報: 日ごとに保存して読み出せる', [$md['days'][0]['html'], $md['days'][1]['html']], ['<div><s>終わった業務</s></div><div>これから</div>', '<div>明日の予定</div>']);
-check('日報: 他の人の日報は空（本人だけ）', [get_memo_days($b)['days'][0]['html'], get_memo_days($admin)['days'][0]['html']], ['', '']);
-save_memo_day($d0, '<div>上書き</div>', $a);
-check('日報: 上書き保存', get_memo_days($a)['days'][0]['html'], '<div>上書き</div>');
-check('日報: 長すぎると拒否', $thrown(function () use ($a, $d0) { save_memo_day($d0, str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);
-check('日報: 離れすぎた日・不正な日付は保存できない', [$thrown(function () use ($a) { save_memo_day(date('Y-m-d', strtotime('+200 day')), 'x', $a); }), $thrown(function () use ($a) { save_memo_day('2026-13-45', 'x', $a); })], [true, true]);
+$ms = get_memo_state($a);
+check('日報: 当日と次回出勤日の日付が返る（どちらも平日で、当日の方が前）', [$ms['cur'] < $ms['next'], (int)date('N', strtotime($ms['cur'])) <= 5, (int)date('N', strtotime($ms['next'])) <= 5], [true, true, true]);
+check('日報: 最初は本文が空（予定やToDoを自動で入れない）', [$ms['html'], isset($ms['seed']) ? $ms['seed']['old'] : null], ['', '']);
+$doc = '<div>お疲れ様です。</div><div data-md="cur" data-date="' . $ms['cur'] . '">【x】</div><div><br></div><div><s>終わった業務</s></div><div>これから</div><div><br></div><div data-md="next" data-date="' . $ms['next'] . '">【y】</div><div data-todo="7" data-st="doing" data-tr="1">これから</div>';
+save_memo($doc, $a);
+check('日報: 1つの入力欄に保存して読み出せる（日付の行・転記の印・ToDoの印が残る）', get_memo_state($a)['html'], $doc);
+check('日報: 構造化されていれば、引き継ぎ元（seed）は付かない', isset(get_memo_state($a)['seed']), false);
+check('日報: 他の人の日報は空（本人だけ）', [get_memo_state($b)['html'], get_memo_state($admin)['html']], ['', '']);
+check('日報: 不正な印は捨てる（日付・種類・転記）', sanitize_memo_html('<div data-md="evil" data-date="2026-01-01">a</div><div data-md="cur" data-date="x">b</div><div data-tr="2">c</div>'), '<div>a</div><div>b</div><div>c</div>');
+check('日報: s や br には印が付かない', sanitize_memo_html('<s data-md="cur" data-date="2026-01-01">t</s>'), '<s>t</s>');
+check('日報: 長すぎると拒否', $thrown(function () use ($a) { save_memo(str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);
+check('日報: 日が進んでいない保存では、控えは増えない', count(memo_history_days($a)), 0);
+$nd = date('Y-m-d', strtotime($ms['next'] . ' +1 day')); // 日が進んだ（当日の日付が変わった）ときの保存
+save_memo('<div data-md="cur" data-date="' . $ms['next'] . '">【z】</div><div>次の日の内容</div>', $a);
+check('日報: 日が進むと、前の日報が、その日の控えとして残る', [memo_history_days($a), memo_history_get($ms['cur'], $a)], [[$ms['cur']], $doc]);
+check('日報: 控えは本人だけ・不正な日付は無し', [memo_history_get($ms['cur'], $b), memo_history_get('2026-13-45', $a)], [null, null]);
+save_memo('<div data-md="cur" data-date="' . $ms['cur'] . '">【過去に戻った】</div>', $a);
+check('日報: 日付が戻る保存では、控えを作らない（上書きしない）', memo_history_get($ms['cur'], $a), $doc);
 // 出勤日: 土日祝・本人の終日の休みは飛ばす。半休は出勤日
 $wd0 = date('Y-m-d', strtotime('next monday +400 day'));
 $wl = work_days_from($a, date('Y-m-d'), 60); $hm = holiday_map(date('Y-m-d'), date('Y-m-d', strtotime('+130 day')));
@@ -731,12 +734,13 @@ q('DELETE FROM events WHERE id = ?', [$offEv['id']]);
 $half = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '午前半休', 'start' => $firstWd[0]]);
 check('出勤日: 半休の日は、出勤日のまま', work_days_from($a, $mon, 3), $firstWd);
 q('DELETE FROM events WHERE id = ?', [$half['id']]);
-// 以前の版の日付なしメモは、最初に開いたとき「当日」へ引き継ぐ
-q("DELETE FROM memo_days WHERE owner_id = ?", [$b['id']]);
+// 以前の版のメモ・日ごとのメモは、引き継ぎ元（seed）として返る（本文が構造化されるまで）
+q('DELETE FROM memos WHERE owner_id = ?', [$b['id']]);
 q('INSERT INTO memos (owner_id, body, updated_at) VALUES (?,?,?)', [$b['id'], '<div>旧版のメモ</div>', now_str()]);
-$mb = get_memo_days($b);
-check('日報: 旧版のメモは「当日」に引き継がれ、元は空になる', [$mb['days'][0]['html'], (string)row('SELECT body FROM memos WHERE owner_id = ?', [$b['id']])['body']], ['<div>旧版のメモ</div>', '']);
-check('日報: 引き継ぎは一度だけ', get_memo_days($b)['days'][0]['html'], '<div>旧版のメモ</div>');
+$mst = get_memo_state($b);
+q('INSERT INTO memo_days (owner_id, day, body, updated_at) VALUES (?,?,?,?)', [$b['id'], $mst['cur'], '<div>1.41の当日</div>', now_str()]);
+$mst = get_memo_state($b);
+check('日報: 旧版のメモ・日ごとのメモは、引き継ぎ元として返る', [$mst['html'], $mst['seed']['old'], $mst['seed']['cur'], $mst['seed']['next']], ['', '<div>旧版のメモ</div>', '<div>1.41の当日</div>', '']);
 
 // ---- 共有リンク（家族用・会社用） ----
 $sd = date('Y-m-d', strtotime('+120 day'));
@@ -902,7 +906,7 @@ check('更新番号: ToDoを削除すると増える', $rv7 > $rv6, true);
 q("INSERT INTO company_holidays (hdate, name) VALUES ('2030-01-02', '更新番号の確認')"); $rv8 = data_rev();
 check('更新番号: 会社の休業日を足すと増える', $rv8 > $rv7, true);
 q("DELETE FROM company_holidays WHERE hdate = '2030-01-02'");
-$rv9 = data_rev(); save_memo_day(date('Y-m-d'), '<div>メモは画面の予定に関係しない</div>', $a);
+$rv9 = data_rev(); save_memo('<div>メモは画面の予定に関係しない</div>', $a);
 check('更新番号: メモの保存では増えない（自分のメモを書くたびに、他の人の画面を更新させない）', data_rev(), $rv9);
 $rv10 = data_rev(); share_link_create('family', $a);
 check('更新番号: 共有リンクの作成では増えない', data_rev(), $rv10);
