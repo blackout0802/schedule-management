@@ -111,7 +111,7 @@ config.sample.php  設定ファイルの見本
 
 ## 動作環境
 
-PHP 7.4 以上（PDO と pdo_mysql、curl があれば可）／ MySQL または MariaDB。
+PHP 7.4 以上／ MySQL または MariaDB。必要なPHPの拡張: **pdo_mysql**（SQLiteで試すなら pdo_sqlite）、**mbstring**、**zip**（システム更新）、**gd**（コメントの画像）、**openssl**・**zlib**（バックアップの暗号化と圧縮）、**curl**（Slack通知）。PHP 7.4 / 8.1 / 8.3 で、自動テストを流しています（`.github/workflows/test.yml`）。
 
 ## 手元で試す
 
