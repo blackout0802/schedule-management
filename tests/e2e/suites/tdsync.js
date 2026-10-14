@@ -28,7 +28,8 @@ const L = (x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0
   ok('ToDo側で期限日（3日前）を付けると、「期限切れ 3日」が出る', (await p.locator('.kb-card:has-text("ToDo側で直した件名") .pill.due.over').innerText()).includes('期限切れ 3日'));
   ok('ToDoの見出しに、期限切れの数が出る', (await p.locator('#todo-mgr h2 .pill.due.over').innerText()).includes('期限切れ 1'));
   await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal');
-  ok('ToDo側で件名を直すと、カレンダーの予定の件名も変わる', await p.locator('.bar:has-text("ToDo側で直した件名")').count() >= 1);
+  await p.waitForSelector('.bar:has-text("ToDo側で直した件名")', { timeout: 8000 }).catch(() => {}); // カレンダーの描き直しを待つ
+  ok('ToDo側で件名を直すと、カレンダーの予定の件名も変わる', await p.locator('.bar:has-text("ToDo側で直した件名")').count() >= 1, await p.locator('.bar').allInnerTexts());
   // 3) 期限日つきで追加（今日・明日・先）
   await p.click('.seg label:has-text("リスト")'); await p.waitForSelector('.kanban');
   const add = async (title, due) => { if (await p.locator('#todo-mgr .todo-add-btn').count()) await p.click('#todo-mgr .todo-add-btn'); await p.waitForSelector('#todo-mgr .todo-add input[type=text]'); await p.fill('#todo-mgr .todo-add input[type=text]', title); if (due) await p.fill('#todo-mgr .todo-add .todo-due-in', due); await p.click('#todo-mgr .todo-add button[type=submit]'); await p.waitForSelector(`#todo-mgr .kb-card:has-text("${title}")`); };
