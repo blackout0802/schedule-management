@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS todos (
   family_shared TINYINT NOT NULL DEFAULT 1,
   done_at DATETIME NULL,
   doing TINYINT NOT NULL DEFAULT 0,
+  due_date DATE NULL,
   created_at DATETIME NOT NULL,
   KEY ix_todos_owner (owner_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

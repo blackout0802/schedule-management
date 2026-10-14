@@ -798,7 +798,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 /* v1.46.1 スマホで、画面より横に広がらない・左右にスワイプしても動かない
    （iPhone は日本語の文字幅が広く、表などが画面より広がると、ページ全体が横にずれるため） */
 @media (max-width: 640px) {
-  html, body { overflow-x: hidden; max-width: 100%; touch-action: pan-y; } /* 横の移動と、つまんで拡大は、しない（縦のスクロールだけ） */
+  html, body { overflow-x: hidden; max-width: 100%; touch-action: manipulation; } /* ダブルタップでの拡大は、しない（つまんで拡大・縮小は、できる） */
   main { grid-template-columns: minmax(0, 1fr); }
   main > *, .layout > *, .board, .side, #toolbar, .toolbar > * { min-width: 0; }
   .month-sum { min-width: 0; overflow-x: auto; }
@@ -810,7 +810,17 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
   .memo-editor { overflow-x: hidden; }
   table.t { font-size: 13px; }
 }
-/* iPhone: 16px 未満の入力欄に触れると、画面が勝手に拡大されて、戻らなくなる。入力欄だけ 16px にする */
-@supports (-webkit-touch-callout: none) {
-  @media (max-width: 640px) { input, select, textarea { font-size: 16px; } .toolbar .who select { font-size: 16px; } }
+/* iPhone: 16px 未満の入力欄（日報の入力欄も）に触れると、画面が勝手に拡大されて、戻らなくなる（右端が切れて見える）。スマホ幅では、すべて 16px にする */
+@media (max-width: 640px) {
+  input, select, textarea, [contenteditable=true], .memo-editor, .toolbar .who select { font-size: 16px !important; }
 }
+
+/* v1.48 ToDoの期限日 */
+.pill.due { background: var(--surface-2); color: var(--muted); }
+.pill.due.soon { background: #fff1dc; color: #a35a00; }
+.pill.due.over { background: #fde4e4; color: #b3261e; font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.due.soon { background: #3a2a14; color: #ffc274; } :root:not([data-theme="light"]) .pill.due.over { background: #3d1a1a; color: #ff9d96; } }
+:root[data-theme="dark"] .pill.due.soon { background: #3a2a14; color: #ffc274; } :root[data-theme="dark"] .pill.due.over { background: #3d1a1a; color: #ff9d96; }
+.row-inline { display: flex; gap: 8px; align-items: center; }
+.row-inline input { flex: 1 1 auto; min-width: 0; }
+.todo-add-row .todo-due-in { width: auto; max-width: 9.5em; padding: 4px 6px; font-size: 13px; }

@@ -347,8 +347,6 @@
     renderToolbar();
   }
 
-  /* スマホ: 横にずれたら、すぐ元に戻す（左右にスワイプしても、画面が動かないように）。縦は、そのまま */
-  window.addEventListener('scroll', function () { if (window.scrollX && window.matchMedia && window.matchMedia('(max-width: 640px)').matches) window.scrollTo(0, window.scrollY); }, { passive: true });
   /* スマホ幅か（画面を縦に長くしないため、説明文を畳むなどに使う） */
   function isPhone() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); }
   /* 長い説明文。パソコンでは、そのまま見せる。スマホでは「ⓘ 使い方」に畳んで、画面を広く使う */
@@ -1521,7 +1519,8 @@
       return el('button', { class: 'todo-add-btn', type: 'button', text: '＋ 追加', title: 'ToDoを追加する',
         onclick: function () { S.addIn = owner; S.addFocus = owner; renderTodo(); var i = document.querySelector('[data-add-owner="' + owner + '"] input[type=text]'); if (i) { S.addFocus = null; i.focus(); } } });
     }
-    var drafts = S.addDrafts || (S.addDrafts = {}), d = drafts[owner] || (drafts[owner] = { v: '', k: '' });
+    var drafts = S.addDrafts || (S.addDrafts = {}), d = drafts[owner] || (drafts[owner] = { v: '', k: '', due: '' });
+    var dueIn = el('input', { type: 'date', class: 'todo-due-in', 'aria-label': '期限日（任意）', title: '期限日（任意）', value: d.due || '', onchange: function () { d.due = dueIn.value; } });
     var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容', value: d.v,
       oninput: function () { d.v = input.value; },
       onkeydown: function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeTodoAdd(); } } });
@@ -1530,9 +1529,9 @@
     var form = el('form', { class: 'todo-add', 'data-add-owner': owner, onsubmit: function (e) {
       e.preventDefault();
       if (!input.value.trim()) return;
-      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work' } }).then(function () { d.v = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
+      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work', due: dueIn.value } }).then(function () { d.v = ''; d.due = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
     } }, input,
-      el('div', { class: 'todo-add-row' }, kindSel, el('span', { class: 'spacer' }),
+      el('div', { class: 'todo-add-row' }, kindSel, dueIn, el('span', { class: 'spacer' }),
         el('button', { class: 'btn small ghost', type: 'button', text: 'キャンセル', onclick: closeTodoAdd }),
         el('button', { class: 'btn primary small', type: 'submit', text: '追加' })));
     if (refocus || S.addFocus === owner) { S.addFocus = null; setTimeout(function () { input.focus(); }, 0); }
@@ -1549,7 +1548,8 @@
     if (!S.todos.length) list.appendChild(el('p', { class: 'todo-empty', text: '未完了のToDoはありません。' }));
     if (!full) list.appendChild(todoAddControl(owner, refocus));
 
-    box.appendChild(el('h2', { text: 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : '') }));
+    var over = overdueCount(S.todos);
+    box.appendChild(el('h2', null, 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : ''), over ? el('span', { class: 'pill due over', style: 'margin-left:8px;font-size:12px', text: '期限切れ ' + over, title: '期限日を過ぎた ToDo の数' }) : null));
     if (full) {
       box.appendChild(helpText((S.view === 'team' ? '業務のToDoです（全員に見えます。変えられるのは持ち主だけです）。' : 'プライベートのToDoは、あなただけに見えます（種類が「業務」のToDoは、全員に見えます）。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。'));
       if (S.view === 'team') box.appendChild(todoWhoBar());
@@ -1646,7 +1646,7 @@
         el('div', { class: 't-title', text: t.title }),
         el('div', { class: 't-main' },
           t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null),
-          status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null, schedBadge(t), tcBadge(t)),
+          status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null, dueBadge(t), schedBadge(t), tcBadge(t)),
         el('div', { class: 't-actions' }, acts)));
     card.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
     card.addEventListener('dragend', endDrag);
@@ -1684,13 +1684,24 @@
       onclick: function () { openOthersTodo(t); }, onkeydown: function (e) { if (e.key === 'Enter') openOthersTodo(t); } },
       el('div', { class: 't-body' },
         el('div', { class: 't-title', text: t.title }),
-        el('div', { class: 't-main' }, el('span', { class: 'pill owner', text: t.owner_name }), t.tag ? el('span', { class: 'pill', text: t.tag }) : null, tcBadge(t),
+        el('div', { class: 't-main' }, el('span', { class: 'pill owner', text: t.owner_name }), t.tag ? el('span', { class: 'pill', text: t.tag }) : null, dueBadge(t), tcBadge(t),
           t.status === 'done' && t.done_at ? el('span', { class: 'pill', text: mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' }) : null)));
     return card;
   }
   /* ToDoのコメント。業務のToDoは全員に見えるので、持ち主以外もコメントを付けられる（編集・完了はできない） */
   function tcSeenKey(t) { return 'sched.tcseen.' + t.id; }
   function tcNew(t) { return !!t.comments && (t.last_comment_id || 0) > (Number(store(tcSeenKey(t))) || 0); }
+  /* ToDoの期限日。期限切れは赤、今日・明日までは橙、それ以外は灰色。完了したものは、日付だけ（急かさない） */
+  function dueDays(t) { var a = t.due.split('-'); return Math.round((new Date(+a[0], +a[1] - 1, +a[2]) - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000); }
+  function dueBadge(t) {
+    if (!t.due) return null;
+    var md = (+t.due.slice(5, 7)) + '/' + (+t.due.slice(8, 10));
+    if (t.status === 'done') return el('span', { class: 'pill due', text: '期限 ' + md, title: '期限日 ' + t.due });
+    var d = dueDays(t);
+    var text = d < 0 ? '期限切れ ' + (-d) + '日' : d === 0 ? '今日まで' : d === 1 ? '明日まで' : '期限 ' + md;
+    return el('span', { class: 'pill due' + (d < 0 ? ' over' : d <= 1 ? ' soon' : ''), text: text, title: '期限日 ' + t.due });
+  }
+  function overdueCount(list) { return (list || []).filter(function (t) { return t.due && t.status !== 'done' && dueDays(t) < 0; }).length; }
   /* カレンダーに置いたToDoの、置いた日 */
   function schedBadge(t) { return t.sched ? el('span', { class: 'pill sched', text: '📅 ' + mdw(t.sched).replace(/（.*）/, ''), title: 'カレンダーの ' + mdw(t.sched) + ' に置いてあります' }) : null; }
   function tcBadge(t) {
@@ -1912,7 +1923,7 @@
       el('div', { class: 't-body' },
         el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
           t.status === 'doing' ? el('span', { class: 'pill doing', text: '進行中' }) : null,
-          t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null)),
+          t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null), dueBadge(t)),
         el('div', { class: 't-actions' },
           btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),
           btn('編集', 'ToDoを編集', function () { openTodoDialog(t); }),
@@ -1947,6 +1958,8 @@
     var tag = el('select', { name: 'tag' }, S.me.work_tags.map(function (x) { return el('option', { value: x, text: x, selected: x === t.tag }); }));
     var tagLabel = el('label', null, '分類（予定にしたときの分類）', tag);
     var note = el('textarea', { maxlength: '500' }); note.value = t.note || '';
+    var due = el('input', { type: 'date', name: 'due', value: t.due || '' });
+    var dueLabel = el('label', null, '期限日（任意）', el('div', { class: 'row-inline' }, due, el('button', { class: 'btn small ghost', type: 'button', text: '消す', onclick: function () { due.value = ''; } })));
     var famCb = el('input', { type: 'checkbox', checked: t.family_shared !== false, style: 'width:auto' });
     var famTouched = false; famCb.addEventListener('change', function () { famTouched = true; });
     var famText = el('span');
@@ -1961,10 +1974,10 @@
     }
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      api('todo_save', { body: { id: t.id, title: title.value, kind: kindNow(), tag: tag.value, note: note.value, family_shared: famCb.checked } })
+      api('todo_save', { body: { id: t.id, title: title.value, kind: kindNow(), tag: tag.value, note: note.value, due: due.value, family_shared: famCb.checked } })
         .then(function () { ov.close(); toast('ToDoを更新しました'); loadTodos(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
-      el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), el('label', null, '内容', title), tagLabel, el('label', null, 'メモ（任意）', note), famLabel, err,
+      el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), el('label', null, '内容', title), tagLabel, dueLabel, el('label', null, 'メモ（任意）', note), famLabel, err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal('ToDoを編集', form);
     sync();

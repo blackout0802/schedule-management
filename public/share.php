@@ -13,7 +13,7 @@ $link = share_link_find($token);
 if (!$link) {
     usleep(300000);
     http_response_code(404);
-    ?><!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>無効なリンク</title><link rel="stylesheet" href="assets/app.css"></head>
+    ?><!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta name="robots" content="noindex"><title>無効なリンク</title><link rel="stylesheet" href="assets/app.css"></head>
     <body class="login-page"><main class="login-card"><h1>このリンクは無効です</h1><p class="muted">リンクが停止されたか、URLが正しくありません。共有してくれた方に確認してください。</p></main></body></html><?php
     exit;
 }
@@ -23,7 +23,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1;
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <title><?= h(share_title($link)) ?></title>

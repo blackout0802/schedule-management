@@ -1359,6 +1359,39 @@ q('UPDATE events SET todo_id = NULL WHERE owner_id IN (?, ?)', [$a['id'], $b['id
 q('DELETE FROM events WHERE title IN (?,?,?,?,?,?,?,?)', ['カレンダーで作った予定', '完了で入れる予定', '未着手で入れる予定', '私用の予定', '他の人の予定', '繰り返しの回', 'x1', 'x2']);
 q('DELETE FROM todos WHERE title IN (?,?,?,?)', ['カレンダーで作った予定', '完了で入れる予定', '未着手で入れる予定', '私用の予定']);
 
+// ---- 予定とToDoの件名の同期・ToDoの期限日 ----
+$sy = $mkEv(['title' => '同期の元の予定', 'note' => '元のメモ'], $a);
+$syTodo = event_attach_todo($sy, $a, 'doing');
+$sy2 = row('SELECT * FROM events WHERE id = ?', [$sy['id']]);
+[$dd, $de] = validate_event_input(['id' => $sy['id'], 'kind' => 'work', 'title' => '直した件名', 'tag' => '個人作業', 'start' => '2026-11-10', 'end' => '2026-11-10', 'note' => '直したメモ'], $a);
+$syNew = save_event($dd, $a, $sy2);
+check('同期: 予定を編集しても、ToDoとの結びつきは残る', (int)($syNew['todo_id'] ?? 0), (int)$syTodo['id']);
+event_sync_todo($syNew);
+$t1 = row('SELECT * FROM todos WHERE id = ?', [$syTodo['id']]);
+check('同期: 予定の件名・メモを直すと、ToDoの件名・メモも変わる（状態は変わらない）', [$t1['title'], $t1['note'], (int)$t1['doing']], ['直した件名', '直したメモ', 1]);
+[$td2, $te2] = validate_todo_input(['kind' => 'work', 'title' => 'ToDo側で直した件名', 'tag' => '個人作業', 'note' => 'ToDo側のメモ', 'due' => '2026-12-01']);
+save_todo($td2, $a, $t1);
+$e1 = row('SELECT * FROM events WHERE id = ?', [$sy['id']]);
+check('同期: ToDoの件名・メモを直すと、予定の件名・メモも変わる', [$e1['title'], $e1['note']], ['ToDo側で直した件名', 'ToDo側のメモ']);
+check('期限日: 保存できて、一覧に出る', [row('SELECT due_date FROM todos WHERE id = ?', [$syTodo['id']])['due_date'], todo_for_client(row('SELECT * FROM todos WHERE id = ?', [$syTodo['id']]))['due']], ['2026-12-01', '2026-12-01']);
+[$td3] = validate_todo_input(['kind' => 'work', 'title' => 'ToDo側で直した件名', 'tag' => '個人作業', 'note' => 'ToDo側のメモ']);
+save_todo($td3, $a, row('SELECT * FROM todos WHERE id = ?', [$syTodo['id']]));
+check('期限日: 送られてこなければ、いまの期限日を変えない', row('SELECT due_date FROM todos WHERE id = ?', [$syTodo['id']])['due_date'], '2026-12-01');
+[$td4] = validate_todo_input(['kind' => 'work', 'title' => 'ToDo側で直した件名', 'tag' => '個人作業', 'note' => 'ToDo側のメモ', 'due' => '']);
+save_todo($td4, $a, row('SELECT * FROM todos WHERE id = ?', [$syTodo['id']]));
+check('期限日: 空で送ると、期限なしにできる', row('SELECT due_date FROM todos WHERE id = ?', [$syTodo['id']])['due_date'], null);
+check('期限日: 日付でない値は、断る', validate_todo_input(['kind' => 'work', 'title' => 'x', 'due' => '2026-13-45'])[1], '期限日を正しく入力してください。');
+$newTd = save_todo(validate_todo_input(['kind' => 'work', 'title' => '期限つきで作る', 'tag' => '個人作業', 'due' => '2026-11-30'])[0], $a, null);
+check('期限日: 新しく作るときにも付けられる', row('SELECT due_date FROM todos WHERE id = ?', [$newTd['id']])['due_date'], '2026-11-30');
+// 予定を「休み」に変えると、結びつきが外れる
+$offSrc = row('SELECT * FROM events WHERE id = ?', [$sy['id']]);
+q('UPDATE events SET kind = ?, tag = ? WHERE id = ?', ['off', '有給', $sy['id']]);
+event_sync_todo(row('SELECT * FROM events WHERE id = ?', [$sy['id']]));
+check('同期: 予定を休みに変えると、ToDoとの結びつきが外れる（ToDoは残る）', [row('SELECT todo_id FROM events WHERE id = ?', [$sy['id']])['todo_id'], (int)row('SELECT COUNT(*) AS c FROM todos WHERE id = ?', [$syTodo['id']])['c']], [null, 1]);
+q('UPDATE events SET todo_id = NULL WHERE owner_id = ?', [$a['id']]);
+q('DELETE FROM events WHERE id = ?', [$sy['id']]);
+q('DELETE FROM todos WHERE id IN (?, ?)', [$syTodo['id'], $newTd['id']]);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

@@ -61,7 +61,7 @@ $hasZip = class_exists('ZipArchive');
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="robots" content="noindex">
 <title>システム更新｜<?= h(cfg('app_name')) ?></title>
 <link rel="stylesheet" href="assets/app.css">

@@ -252,6 +252,11 @@ function migrate_schema(): void
             db()->exec("ALTER TABLE users ADD COLUMN $col $def");
         }
     }
+    try { // ToDoの期限日
+        db()->query('SELECT due_date FROM todos LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE todos ADD COLUMN due_date ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'DATE' : 'TEXT') . ' NULL');
+    }
     foreach (['events', 'todos'] as $t) {
         try {
             db()->query("SELECT family_shared FROM $t LIMIT 1")->fetchAll();

@@ -221,6 +221,12 @@ function handle_api(): void
                 api_fail($err);
             }
             $saved = save_event($data, $user, $existing);
+            if ($existing && ($saved['todo_id'] ?? null) !== null) {
+                event_sync_todo($saved); // ToDoから置いた予定を編集したら、元のToDoの件名・メモなども同じにする
+                if ($saved['kind'] === 'off') {
+                    $saved['todo_id'] = null;
+                }
+            }
             $todoMade = event_attach_todo($saved, $user, (string)($in['todo_status'] ?? '')); // 「ToDoリストにも入れる」が選ばれていたら、ToDoも作る
             if ($todoMade) {
                 $saved['todo_id'] = (int)$todoMade['id'];

@@ -63,16 +63,18 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('設定の上の帯が1行（スマホ）', await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 60);
   // 横にずれない: 文字幅の広い端末（iPhone）を想定して文字間を広げても、画面より広がらない。スワイプ（横の移動）は元に戻る
   const css = await p.evaluate(() => ({ ox: getComputedStyle(document.documentElement).overflowX, ta: getComputedStyle(document.body).touchAction }));
-  ok('スマホでは、横にずれない設定（overflow-x: hidden・縦のスクロールだけ許す）', css.ox === 'hidden' && css.ta === 'pan-y', css);
+  ok('スマホでは、横にずれない設定（overflow-x: hidden）と、ダブルタップで拡大しない設定（touch-action: manipulation）', css.ox === 'hidden' && css.ta === 'manipulation', css);
   await p.goto(BASE + 'index.php'); await p.waitForSelector('.cal'); await p.waitForTimeout(400);
   await p.addStyleTag({ content: '* { letter-spacing: .25em !important; }' });
   const wide = async (n) => { const r = await p.evaluate(() => { const vw = innerWidth; return { sw: document.documentElement.scrollWidth, vw, n: Array.from(document.querySelectorAll('body *')).filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > vw + 1 && getComputedStyle(e).position !== 'fixed'; }).length }; }); ok(n + ': 文字幅が広くても、画面より横に広がらない', r.sw <= r.vw && r.n === 0, r); };
   await wide('カレンダー');
   await p.tap('label:has-text("リスト")'); await p.waitForSelector('.kanban'); await wide('ToDo');
   await p.tap('.pane-seg label:has-text("日報メモ")'); await p.waitForSelector('#memo .memo-editor', { state: 'visible' }); await wide('日報メモ');
-  await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal');
-  await p.evaluate(() => window.scrollTo(60, 0)); await p.waitForTimeout(300);
-  ok('横にずらされても、すぐ元に戻る', await p.evaluate(() => window.scrollX) === 0);
+  const small = async (n) => { const r = await p.evaluate(() => Array.from(document.querySelectorAll('input:not([type=radio]):not([type=checkbox]):not([type=hidden]), select, textarea, [contenteditable=true]')).filter(e => e.getBoundingClientRect().width > 0 && parseFloat(getComputedStyle(e).fontSize) < 16).map(e => e.tagName + '.' + (e.className || e.name || ''))); ok(n + ': 入力欄の文字は、すべて16px以上（iPhone が勝手に拡大しない）', r.length === 0, r); };
+  await small('日報メモ（日報の入力欄を含む）');
+  await p.tap('.pane-seg label:has-text("ToDo")'); await p.waitForSelector('#todo-mgr', { state: 'visible' }); await small('ToDo');
+  await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal'); await small('カレンダー（表示する人）');
+  await p.locator('.cell:not(.other)').nth(10).tap(); await p.waitForSelector('.modal'); if (!(await p.locator('.modal input[name=title]').count())) await p.tap('.modal button:has-text("予定を追加")'); await p.waitForSelector('.modal input[name=title]'); await small('予定の追加ダイアログ'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   ok('画面でエラーが出ていない', errs.length === 0, errs);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

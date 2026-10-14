@@ -35,7 +35,7 @@ $nWarn = count(array_filter($warns, function ($w) { return $w['level'] === 'warn
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="robots" content="noindex">
 <title>運用の手引き｜<?= h($appName) ?></title>
 <style>

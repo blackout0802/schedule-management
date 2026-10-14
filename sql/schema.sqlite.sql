@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS todos (
   family_shared INTEGER NOT NULL DEFAULT 1,
   done_at TEXT NULL,
   doing INTEGER NOT NULL DEFAULT 0,
+  due_date TEXT NULL,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_todos_owner ON todos (owner_id);

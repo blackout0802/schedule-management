@@ -115,7 +115,7 @@ $names = ['users' => '社員', 'events' => '予定', 'series' => '繰り返し�
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="robots" content="noindex">
 <title>バックアップ｜<?= h(cfg('app_name')) ?></title>
 <script nonce="<?= csp_nonce() ?>">try{var t=localStorage.getItem('sched.theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>

@@ -307,7 +307,7 @@ function todo_status_of(array $t): string
 function todo_for_client(array $t): array
 {
     return ['id' => (int)$t['id'], 'title' => $t['title'], 'kind' => $t['kind'], 'tag' => $t['tag'], 'note' => $t['note'], 'family_shared' => (int)$t['family_shared'] === 1,
-        'done_at' => $t['done_at'] ?? null, 'status' => todo_status_of($t)];
+        'done_at' => $t['done_at'] ?? null, 'status' => todo_status_of($t), 'due' => ($t['due_date'] ?? null) ?: null];
 }
 
 /* ------------------------------------------------------------------
@@ -515,20 +515,32 @@ function validate_todo_input(array $in): array
         $tag = in_array((string)($in['tag'] ?? ''), $tags, true) ? (string)$in['tag'] : $tags[count($tags) - 1];
     }
     $fam = family_flag($kind, $in);
-    return [['kind' => $kind, 'title' => $title, 'tag' => $tag, 'note' => $note, 'family_shared' => $fam], null];
+    $data = ['kind' => $kind, 'title' => $title, 'tag' => $tag, 'note' => $note, 'family_shared' => $fam];
+    if (array_key_exists('due', $in)) { // 期限日（空なら、期限なし）。送られてこなければ、いまの期限日を変えない
+        $due = trim((string)$in['due']);
+        if ($due !== '' && !valid_date($due)) {
+            return [null, '期限日を正しく入力してください。'];
+        }
+        $data['due_date'] = $due !== '' ? $due : null;
+    }
+    return [$data, null];
 }
 
 function save_todo(array $data, array $user, ?array $existing): array
 {
     if ($existing) {
         q('UPDATE todos SET title = ?, kind = ?, tag = ?, note = ?, family_shared = ? WHERE id = ?', [$data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], $existing['id']]);
+        if (array_key_exists('due_date', $data)) {
+            q('UPDATE todos SET due_date = ? WHERE id = ?', [$data['due_date'], $existing['id']]);
+        }
         $id = (int)$existing['id'];
-        if ($existing['kind'] !== $data['kind']) {
-            todo_sync_events($id, $data); // 種類（業務・プライベート）を変えたら、カレンダーに置いた予定も同じ種類にする（プライベートにしたのに、予定が全員に見えたままにならないように）
+        if ($existing['kind'] !== $data['kind'] || $existing['title'] !== $data['title'] || $existing['note'] !== $data['note']
+            || ($data['kind'] === 'work' && $existing['tag'] !== $data['tag']) || (int)$existing['family_shared'] !== (int)$data['family_shared']) {
+            todo_sync_events($id, $data); // 件名・メモ・種類・分類・共有を変えたら、カレンダーに置いた予定も同じにする（プライベートにしたのに、予定が全員に見えたままにならないように。件名も揃える）
         }
     } else {
         $max = row('SELECT MAX(sort_order) AS m FROM todos WHERE owner_id = ?', [$user['id']]);
-        q('INSERT INTO todos (owner_id, title, kind, tag, note, family_shared, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?)', [$user['id'], $data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], (int)($max['m'] ?? 0) + 1, now_str()]);
+        q('INSERT INTO todos (owner_id, title, kind, tag, note, family_shared, due_date, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?,?)', [$user['id'], $data['title'], $data['kind'], $data['tag'], $data['note'], $data['family_shared'], $data['due_date'] ?? null, (int)($max['m'] ?? 0) + 1, now_str()]);
         $id = (int)db()->lastInsertId();
     }
     return row('SELECT * FROM todos WHERE id = ?', [$id]);
@@ -575,11 +587,28 @@ function event_attach_todo(array $e, array $user, string $status): ?array
     return set_todo_status($todo, $status);
 }
 
+/**
+ * 結びついた予定を編集したとき、元のToDoの件名・メモ・種類・分類・共有を、予定に合わせる（ToDoリスト・日報に、古い名前が残らないように）。
+ * 予定を「休み」に変えたときは、結びつきを外す（休みはToDoにならない）。ToDoの状態（未着手・進行中・完了）と期限日は、変えない
+ */
+function event_sync_todo(array $e): void
+{
+    if (($e['todo_id'] ?? null) === null) {
+        return;
+    }
+    if ($e['kind'] === 'off') {
+        q('UPDATE events SET todo_id = NULL WHERE id = ?', [$e['id']]);
+        return;
+    }
+    q('UPDATE todos SET title = ?, kind = ?, tag = ?, note = ?, family_shared = ? WHERE id = ? AND owner_id = ?',
+        [$e['title'], $e['kind'], $e['kind'] === 'work' ? $e['tag'] : '', $e['note'], (int)$e['family_shared'], $e['todo_id'], $e['owner_id']]);
+}
+
 /** ToDoの種類を変えたとき、結びついた予定の種類・分類・共有を、ToDoに合わせる（家族用の更新履歴にも、変更として残す） */
 function todo_sync_events(int $todoId, array $data): void
 {
     foreach (rows('SELECT * FROM events WHERE todo_id = ?', [$todoId]) as $before) {
-        q('UPDATE events SET kind = ?, tag = ?, family_shared = ?, updated_at = ? WHERE id = ?', [$data['kind'], $data['kind'] === 'work' ? $data['tag'] : '', $data['family_shared'], now_str(), $before['id']]);
+        q('UPDATE events SET kind = ?, tag = ?, family_shared = ?, title = ?, note = ?, updated_at = ? WHERE id = ?', [$data['kind'], $data['kind'] === 'work' ? $data['tag'] : '', $data['family_shared'], $data['title'], $data['note'], now_str(), $before['id']]);
         event_changed($before, row('SELECT * FROM events WHERE id = ?', [$before['id']]));
     }
 }
