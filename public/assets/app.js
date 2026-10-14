@@ -12,7 +12,8 @@
     weekday_nth: '毎月 第○○曜日',
     first_bizdays: '月初の○営業日',
     range: '毎月○日〜○日の期間',
-    last_bizday: '毎月の最終営業日'
+    last_bizday: '毎月の最終営業日',
+    weekly: '毎週・隔週 ○曜日'
   };
 
   var S = {
@@ -2890,6 +2891,13 @@
         fields.appendChild(num('p_day', '日', v('p_day', 25), 1, 31));
         fields.appendChild(el('label', null, '土日祝に当たる場合', el('select', { name: 'shift' },
           [['prev', '前の営業日にずらす'], ['next', '次の営業日にずらす'], ['none', 'ずらさない']].map(function (o) { return el('option', { value: o[0], text: o[1], selected: v('shift', 'prev') === o[0] }); }))));
+      } else if (t === 'weekly') {
+        fields.appendChild(el('label', null, '曜日', el('select', { name: 'p_weekday' }, DOW.map(function (w, i) { return el('option', { value: String(i), text: w + '曜日', selected: v('p_weekday', 1) === i }); }))));
+        fields.appendChild(el('label', null, 'くり返し', el('select', { name: 'p_interval' }, [[1, '毎週'], [2, '隔週（2週ごと）'], [3, '3週ごと'], [4, '4週ごと']].map(function (o) { return el('option', { value: String(o[0]), text: o[1], selected: v('p_interval', 1) === o[0] }); }))));
+        fields.appendChild(el('label', null, '数え始める日（2週ごと以上のとき、この日を含む週から数えます）', el('input', { type: 'date', name: 'p_anchor', value: v('p_anchor', ymd(new Date())) })));
+        fields.appendChild(el('label', null, '祝日・会社の休業日に当たる場合', el('select', { name: 'shift' },
+          [['none', 'ずらさない（そのまま）'], ['prev', '前の営業日にずらす'], ['next', '次の営業日にずらす']].map(function (o) { return el('option', { value: o[0], text: o[1], selected: v('shift', 'none') === o[0] }); }))));
+        fields.appendChild(el('p', { class: 'hint', text: '自分が休みの日の回は、作られません（別の日へは動きません）。' }));
       } else if (t === 'weekday_nth') {
         fields.appendChild(el('label', null, '第何週', el('select', { name: 'p_nth' }, [[1, '第1'], [2, '第2'], [3, '第3'], [4, '第4'], [-1, '最終']].map(function (o) { return el('option', { value: String(o[0]), text: o[1], selected: v('p_nth', 1) === o[0] }); }))));
         fields.appendChild(el('label', null, '曜日', el('select', { name: 'p_weekday' }, DOW.map(function (w, i) { return el('option', { value: String(i), text: w + '曜日', selected: v('p_weekday', 1) === i }); }))));
@@ -2917,9 +2925,15 @@
       api('series_preview', { body: b }).then(function (j) {
         err.hidden = true;
         preview.textContent = '';
+        var months = [], byMonth = {}; // 毎週・隔週は、1か月に何回もあるので、月ごとにまとめる
+        j.preview.forEach(function (p) {
+          var m = p.start ? p.start.slice(0, 7) : p.ym.slice(0, 7);
+          if (!byMonth[m]) { byMonth[m] = []; months.push(m); }
+          if (p.start) byMonth[m].push(p.start === p.end ? mdw(p.start) : mdw(p.start) + ' 〜 ' + mdw(p.end));
+        });
         preview.appendChild(el('table', { class: 't' }, el('thead', null, el('tr', null, el('th', { text: '月' }), el('th', { text: '作られる日付' }))),
-          el('tbody', null, j.preview.map(function (p) {
-            return el('tr', null, el('td', { text: p.ym.replace('-', '年') + '月' }), el('td', { text: p.start ? (p.start === p.end ? mdw(p.start) : mdw(p.start) + ' 〜 ' + mdw(p.end)) : 'この月はなし' }));
+          el('tbody', null, months.map(function (m) {
+            return el('tr', null, el('td', { text: m.replace('-', '年') + '月' }), el('td', { text: byMonth[m].length ? byMonth[m].join('　') : 'この月はなし' }));
           }))));
       }).catch(function (x) { preview.textContent = ''; err.textContent = x.message; err.hidden = false; });
     }

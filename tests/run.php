@@ -18,6 +18,7 @@ require_once __DIR__ . '/../src/backup.php';
 require_once __DIR__ . '/../src/usage.php';
 require_once __DIR__ . '/../src/undo.php';
 require_once __DIR__ . '/../src/ical.php';
+require_once __DIR__ . '/../src/api.php';
 
 $fail = 0;
 $pass = 0;
@@ -1512,6 +1513,57 @@ check('ICS: 止めると、そのURLでは取り込めない', ical_link_find($i
 check('ICS: 一覧（画面用）に、自分用・家族用が出る（管理者は会社用も）', [count(ical_links_for($a)), count(ical_links_for($admin))], [2, 3]);
 share_link_revoke('family', $a); ical_link_revoke('family', $a); ical_link_revoke('company', $admin);
 q('DELETE FROM events WHERE title IN (?,?,?,?,?) OR title LIKE ?', ['購読のひみつ予定', '購読の業務,会議;大事', '', '家族に見せる業務', str_repeat('長い件名あいうえお', 8), '%長い件名%']);
+
+// ---- 毎週・隔週の繰り返し ----
+$calW = BizCalendar::fromDb();
+$wk = ['rule_type' => 'weekly', 'title' => '週次定例', 'tag' => '全体会議', 'p_weekday' => 1, 'p_interval' => 1, 'p_anchor' => date('Y-m-01'), 'shift' => 'none', 'start_time' => '10:00', 'end_time' => '11:00', 'p_day' => null, 'p_day2' => null, 'p_nth' => null, 'p_count' => null, 'bizonly' => 0];
+$pv = series_preview($wk, 2, $calW);
+$allMon = true; foreach ($pv as $x) { if ((int)date('w', strtotime($x['start'])) !== 1) { $allMon = false; } }
+check('毎週: 毎週月曜（今月の初めから2か月先の月末まで）。全部月曜で、7日おき', [$allMon, count($pv) >= 8, (strtotime($pv[1]['start']) - strtotime($pv[0]['start'])) / 86400], [true, true, 7]);
+check('毎週: 印（ym）は日付', preg_match('/^\d{4}-\d{2}-\d{2}$/', $pv[0]['ym']) === 1, true);
+$bi = series_preview($wk + [], 2, $calW); $wk2 = $wk; $wk2['p_interval'] = 2; $pv2 = series_preview($wk2, 2, $calW);
+check('隔週: 14日おき', (strtotime($pv2[1]['start']) - strtotime($pv2[0]['start'])) / 86400, 14);
+$wk3 = $wk2; $wk3['p_anchor'] = date('Y-m-d', strtotime($pv2[0]['start'] . ' +7 days')); $pv3 = series_preview($wk3, 2, $calW);
+check('隔週: 数え始める週をずらすと、1週間ずれる', (strtotime($pv3[0]['start']) - strtotime($pv2[0]['start'])) / 86400 % 14, 7);
+$wk4 = $wk; $wk4['p_anchor'] = date('Y-m-d', strtotime('+40 days')); $pv4 = series_preview($wk4, 2, $calW);
+check('毎週: 数え始める日が先なら、その日以降だけ', $pv4[0]['start'] >= $wk4['p_anchor'], true);
+check('毎週: ラベル', [rule_label($wk), rule_label(array_merge($wk2, ['p_anchor' => '2026-11-02']))], ['毎週 月曜日', '隔週 月曜日（11/2 の週から）']);
+// 休日ずらし（会社の休業日を月曜に置く）
+$monDay = $pv[count($pv) - 1]['start']; q('INSERT INTO company_holidays (hdate, name) VALUES (?, ?)', [$monDay, '会社休業']);
+$calH = BizCalendar::fromDb();
+$wkP = $wk; $wkP['shift'] = 'next'; $pvP = series_preview($wkP, 2, $calH); $lastP = $pvP[count($pvP) - 1];
+$wkN = $wk; $pvN = series_preview($wk, 2, $calH);
+check('毎週: 休業日の月曜は、「翌営業日」でずらせる（印は元の日付のまま）。「ずらさない」ならそのまま', [$lastP['ym'], $lastP['start'] > $monDay, $pvN[count($pvN) - 1]['start']], [$monDay, true, $monDay]);
+q('DELETE FROM company_holidays WHERE hdate = ?', [$monDay]);
+// 展開
+q('INSERT INTO series (owner_id,title,tag,rule_type,p_weekday,p_interval,p_anchor,shift,start_time,end_time,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [$a['id'], '週次の展開テスト', '全体会議', 'weekly', 3, 1, date('Y-m-01'), 'none', '', '', now_str()]);
+$wsid = (int)db()->lastInsertId();
+$made = materialize_series($wsid);
+$evs = rows('SELECT * FROM events WHERE series_id = ? ORDER BY start_date', [$wsid]);
+check('毎週: 展開すると、毎週水曜の予定が、たくさんできる（12か月分）', [count($evs) >= 50, (int)date('w', strtotime($evs[0]['start_date']))], [true, 3]);
+check('毎週: 何度展開しても、増えない', [materialize_series($wsid), count(rows('SELECT 1 FROM events WHERE series_id = ?', [$wsid]))], [0, count($evs)]);
+// 1回分を消す → 復活しない。元に戻す → 戻る
+$one = $evs[5]; $tokW = undo_stash('event', $one); delete_event($one);
+check('毎週: 1回分を消しても、次の展開で復活しない（日付の印で記録）', [materialize_series($wsid), (int)row('SELECT COUNT(*) AS c FROM events WHERE id = ?', [$one['id']])['c'], (int)row('SELECT COUNT(*) AS c FROM series_skips WHERE series_id = ? AND ym = ?', [$wsid, $one['ym']])['c']], [0, 0, 1]);
+undo_event_restore(undo_take($tokW, 'event'), $a);
+check('毎週: 「元に戻す」で、その回が戻り、消した記録も外れる', [(int)row('SELECT COUNT(*) AS c FROM events WHERE id = ?', [$one['id']])['c'], (int)row('SELECT COUNT(*) AS c FROM series_skips WHERE series_id = ? AND ym = ?', [$wsid, $one['ym']])['c']], [1, 0]);
+// 自分が休みの日の回は作らない
+$leaveDay = $evs[8]['start_date'];
+$offId = (int)$mkEv(['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => $leaveDay, 'end' => $leaveDay], $a)['id'];
+rematerialize_owner((int)$a['id']);
+check('毎週: 自分が休みの日の回は、作られない（別の日へも動かない）', (int)row('SELECT COUNT(*) AS c FROM events WHERE series_id = ? AND start_date = ?', [$wsid, $leaveDay])['c'], 0);
+q('DELETE FROM events WHERE id = ?', [$offId]); rematerialize_owner((int)$a['id']);
+check('毎週: 休みを消すと、その回が戻る', (int)row('SELECT COUNT(*) AS c FROM events WHERE series_id = ? AND start_date = ?', [$wsid, $leaveDay])['c'], 1);
+// 曜日を変えると、今日以降の回は新しい曜日に（古い曜日の回は消える）
+q('UPDATE series SET p_weekday = 5 WHERE id = ?', [$wsid]); materialize_series($wsid);
+$today = date('Y-m-d'); $wrong = (int)row("SELECT COUNT(*) AS c FROM events WHERE series_id = ? AND start_date >= ? AND start_date IS NOT NULL", [$wsid, $today])['c'];
+$fridays = true; foreach (rows('SELECT start_date FROM events WHERE series_id = ? AND start_date >= ?', [$wsid, $today]) as $r) { if ((int)date('w', strtotime($r['start_date'])) !== 5) { $fridays = false; } }
+check('毎週: 曜日を変えると、今日以降の回は、全部新しい曜日になる（古い曜日は残らない）', [$fridays, $wrong >= 40], [true, true]);
+// 毎回ToDoにも入れる（毎週）
+q('UPDATE series SET todo_auto = 1 WHERE id = ?', [$wsid]); series_make_todos($wsid);
+check('毎週 × ToDo連動: 2週間以内の回だけ ToDo ができる（1〜3件）', (int)row('SELECT COUNT(*) AS c FROM events WHERE series_id = ? AND todo_id IS NOT NULL', [$wsid])['c'] >= 1 && (int)row('SELECT COUNT(*) AS c FROM events WHERE series_id = ? AND todo_id IS NOT NULL', [$wsid])['c'] <= 3, true);
+delete_series($wsid); q('DELETE FROM todos WHERE title = ?', ['週次の展開テスト']); q('DELETE FROM events WHERE title = ?', ['週次の展開テスト']);
+check('毎週: 入力の検証（曜日が無い・数え始める日が不正は断る）', [validate_series_input(['rule_type' => 'weekly', 'title' => 'x'])[1], validate_series_input(['rule_type' => 'weekly', 'title' => 'x', 'p_weekday' => 1, 'p_anchor' => '2026-13-40'])[1], validate_series_input(['rule_type' => 'weekly', 'title' => 'x', 'p_weekday' => 2, 'p_interval' => 9])[0]['p_interval']], ['曜日を選んでください。', '数え始める日を正しく入力してください。', 1]);
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け

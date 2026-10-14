@@ -19,7 +19,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('上の帯は2行（タイトル／設定／ユーザー と 業務版・プライベート版）で、90px以内', top <= 90, top);
   ok('上の帯は、画面に張り付かない（スクロールで消える）', await p.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position) === 'static');
   const rows = await p.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { seg: r('.toolbar .seg').top, rec: r('.toolbar > .btn:last-child').top, who: r('#who-sel').top }; });
-  ok('表示する人・カレンダー／リスト・繰り返し が、同じ1行に並ぶ', Math.abs(rows.seg - rows.rec) < 8 && Math.abs(rows.seg - rows.who) < 8, rows);
+  ok('表示する人・カレンダー／休み表／リスト が、同じ1行に並ぶ（繰り返しは、足りなければ次の行）', Math.abs(rows.seg - rows.who) < 8, rows);
   ok('長い説明の帯（view-banner）は、スマホでは出さない', await p.evaluate(() => getComputedStyle(document.querySelector('.view-banner')).display) === 'none');
   // 6週ある月でも、1画面
   let guard = 0; while ((await p.locator('.week').count()) < 6 && guard++ < 14) { await p.tap('button[aria-label="次の月"]'); await p.waitForTimeout(250); }

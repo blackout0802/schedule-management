@@ -33,7 +33,7 @@ function series_for_client(array $s, array $user, BizCalendar $cal): array
         'id' => (int)$s['id'], 'title' => $s['title'], 'tag' => $s['tag'], 'rule_type' => $s['rule_type'],
         'p_day' => $s['p_day'] === null ? null : (int)$s['p_day'], 'p_day2' => $s['p_day2'] === null ? null : (int)$s['p_day2'],
         'p_nth' => $s['p_nth'] === null ? null : (int)$s['p_nth'], 'p_weekday' => $s['p_weekday'] === null ? null : (int)$s['p_weekday'],
-        'p_count' => $s['p_count'] === null ? null : (int)$s['p_count'],
+        'p_count' => $s['p_count'] === null ? null : (int)$s['p_count'], 'p_interval' => (int)($s['p_interval'] ?? 1), 'p_anchor' => ($s['p_anchor'] ?? null) ?: null,
         'shift' => $s['shift'], 'bizonly' => (int)$s['bizonly'], 'start_time' => $s['start_time'], 'end_time' => $s['end_time'], 'todo_auto' => (int)($s['todo_auto'] ?? 0) === 1,
         'owner_name' => $s['owner_name'] ?? '', 'label' => rule_label($s),
         'editable' => (int)$s['owner_id'] === (int)$user['id'] || is_admin($user),
@@ -65,7 +65,7 @@ function validate_series_input(array $in): array
     $s = [
         'rule_type' => $type, 'title' => $title, 'tag' => $tag, 'start_time' => $st, 'end_time' => $et,
         'p_day' => null, 'p_day2' => null, 'p_nth' => null, 'p_weekday' => null, 'p_count' => null,
-        'shift' => 'none', 'bizonly' => 0, 'todo_auto' => !empty($in['todo_auto']) ? 1 : 0,
+        'shift' => 'none', 'bizonly' => 0, 'todo_auto' => !empty($in['todo_auto']) ? 1 : 0, 'p_interval' => 1, 'p_anchor' => null,
     ];
     $int = function ($k, $min, $max) use ($in) {
         $v = $in[$k] ?? null;
@@ -77,6 +77,20 @@ function validate_series_input(array $in): array
             $s['shift'] = in_array($in['shift'] ?? 'none', ['none', 'prev', 'next'], true) ? $in['shift'] : 'none';
             if ($s['p_day'] === null) {
                 return [null, '日（1〜31）を入力してください。'];
+            }
+            break;
+        case 'weekly':
+            $s['p_weekday'] = $int('p_weekday', 0, 6);
+            $s['p_interval'] = $int('p_interval', 1, 4) ?? 1;
+            $anchor = trim((string)($in['p_anchor'] ?? ''));
+            if ($anchor !== '' && !valid_date($anchor)) {
+                return [null, '数え始める日を正しく入力してください。'];
+            }
+            $s['p_anchor'] = $anchor !== '' ? $anchor : date('Y-m-d');
+            $sh = (string)($in['shift'] ?? 'none');
+            $s['shift'] = in_array($sh, ['none', 'prev', 'next'], true) ? $sh : 'none';
+            if ($s['p_weekday'] === null) {
+                return [null, '曜日を選んでください。'];
             }
             break;
         case 'weekday_nth':
@@ -648,15 +662,15 @@ function handle_api(): void
                 if ((int)$cur['owner_id'] !== (int)$user['id'] && !is_admin($user)) {
                     api_fail('このルールは編集できません。', 403);
                 }
-                q('UPDATE series SET title=?, tag=?, rule_type=?, p_day=?, p_day2=?, p_nth=?, p_weekday=?, p_count=?, shift=?, bizonly=?, start_time=?, end_time=?, todo_auto=? WHERE id=?', [
+                q('UPDATE series SET title=?, tag=?, rule_type=?, p_day=?, p_day2=?, p_nth=?, p_weekday=?, p_count=?, shift=?, bizonly=?, start_time=?, end_time=?, todo_auto=?, p_interval=?, p_anchor=? WHERE id=?', [
                     $s['title'], $s['tag'], $s['rule_type'], $s['p_day'], $s['p_day2'], $s['p_nth'], $s['p_weekday'], $s['p_count'], $s['shift'], $s['bizonly'],
-                    $s['start_time'], $s['end_time'], $s['todo_auto'], $cur['id'],
+                    $s['start_time'], $s['end_time'], $s['todo_auto'], $s['p_interval'], $s['p_anchor'], $cur['id'],
                 ]);
                 $sid = (int)$cur['id'];
             } else {
-                q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,todo_auto,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
+                q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,todo_auto,p_interval,p_anchor,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
                     $user['id'], $s['title'], $s['tag'], $s['rule_type'], $s['p_day'], $s['p_day2'], $s['p_nth'], $s['p_weekday'], $s['p_count'], $s['shift'], $s['bizonly'],
-                    $s['start_time'], $s['end_time'], $s['todo_auto'], now_str(),
+                    $s['start_time'], $s['end_time'], $s['todo_auto'], $s['p_interval'], $s['p_anchor'], now_str(),
                 ]);
                 $sid = (int)db()->lastInsertId();
             }

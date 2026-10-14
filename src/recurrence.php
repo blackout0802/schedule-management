@@ -7,10 +7,12 @@
 //   first_bizdays 月初から p_count 営業日（1営業日目〜p_count営業日目の期間）
 //   range         毎月 p_day 日〜p_day2 日の期間。bizonly=1 なら営業日だけに切り詰める
 //   last_bizday   毎月の最終営業日
+//   weekly        毎週・隔週など p_interval 週ごとの p_weekday 曜日（数え始めは p_anchor の週）。休日なら shift。
+//                 1か月に何回もあるので、1回分を見分ける印（events.ym）は、月ではなく日付（YYYY-MM-DD）
 
 require_once __DIR__ . '/holidays.php';
 
-const RULE_TYPES = ['day', 'weekday_nth', 'first_bizdays', 'range', 'last_bizday'];
+const RULE_TYPES = ['day', 'weekday_nth', 'first_bizdays', 'range', 'last_bizday', 'weekly'];
 
 function clamp_day(int $y, int $m, int $d): string
 {
@@ -114,13 +116,57 @@ function rule_label(array $s): string
             return '毎月' . (int)$s['p_day'] . '日〜' . (int)$s['p_day2'] . '日' . ((int)$s['bizonly'] === 1 ? '（営業日のみ）' : '');
         case 'last_bizday':
             return '毎月の最終営業日';
+        case 'weekly':
+            $iv = max(1, (int)($s['p_interval'] ?? 1));
+            $head = $iv === 1 ? '毎週' : ($iv === 2 ? '隔週' : $iv . '週ごと');
+            $anchor = ($s['p_anchor'] ?? null) ? '（' . (int)substr($s['p_anchor'], 5, 2) . '/' . (int)substr($s['p_anchor'], 8, 2) . ' の週から）' : '';
+            return $head . ' ' . WEEKDAY_JA[(int)$s['p_weekday']] . '曜日' . ($iv > 1 ? $anchor : '') . ($shift[$s['shift']] ?? '');
     }
     return '';
+}
+
+/** 毎週・隔週: 今月の初めから $monthsAhead か月先の月末までの発生日 [['ym' => 日付, 'start' => 日付, 'end' => 日付]] */
+function weekly_dates(array $s, int $monthsAhead, BizCalendar $cal): array
+{
+    $wd = (int)$s['p_weekday'];
+    $iv = max(1, min(4, (int)($s['p_interval'] ?? 1)));
+    $anchor = !empty($s['p_anchor']) ? $s['p_anchor'] : date('Y-m-d');
+    $winStart = date('Y-m-01');
+    $winEnd = (new DateTime('last day of this month'))->modify("+$monthsAhead month")->format('Y-m-d');
+    $a = new DateTimeImmutable($anchor);
+    $first = $a->modify('+' . (($wd - (int)$a->format('w') + 7) % 7) . ' day'); // 起点の日以降で、最初の指定の曜日
+    $step = 7 * $iv;
+    $d = $first;
+    if ($d < new DateTimeImmutable($winStart)) { // 今月の初めに近い所まで、まとめて進める
+        $skip = (int)floor(((int)$first->diff(new DateTimeImmutable($winStart))->days) / $step);
+        $d = $first->modify('+' . ($skip * $step) . ' day');
+    }
+    $out = [];
+    $guard = 0;
+    for (; $d->format('Y-m-d') <= $winEnd && $guard < 400; $d = $d->modify("+$step day"), $guard++) {
+        $key = $d->format('Y-m-d');
+        if ($key < $winStart) {
+            continue;
+        }
+        $date = $key;
+        if (!$cal->isBusinessDay($date) && ($wd !== 0 && $wd !== 6)) { // 平日の指定が祝日・会社の休業日に当たったとき
+            if ($s['shift'] === 'prev') {
+                $date = $cal->shiftBack($date);
+            } elseif ($s['shift'] === 'next') {
+                $date = $cal->shiftForward($date);
+            }
+        }
+        $out[] = ['ym' => $key, 'start' => $date, 'end' => $date];
+    }
+    return $out;
 }
 
 /** 今月から $monthsAhead か月先までの発生日を返す（保存はしない） */
 function series_preview(array $s, int $monthsAhead, BizCalendar $cal): array
 {
+    if ($s['rule_type'] === 'weekly') {
+        return weekly_dates($s, $monthsAhead, $cal);
+    }
     $out = [];
     $base = new DateTime('first day of this month');
     for ($i = 0; $i <= $monthsAhead; $i++) {
@@ -225,7 +271,11 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
     $leave = owner_leave_days((int)$s['owner_id']);
     foreach (series_preview($s, $monthsAhead, $cal) as $p) {
         $ym = $p['ym'];
-        if ($p['start'] !== null) { // 本人が休みの日は、繰り返し業務の日にしない（休みを優先）
+        if ($p['start'] !== null && $s['rule_type'] === 'weekly') { // 毎週・隔週は、本人が休みの日なら、その回だけ作らない（別の日へは動かさない）
+            if (isset($leave[$p['start']])) {
+                $p['start'] = $p['end'] = null;
+            }
+        } elseif ($p['start'] !== null) { // 本人が休みの日は、繰り返し業務の日にしない（休みを優先）
             $adj = apply_leave_priority($p['start'], $p['end'], $leave, $cal);
             $p['start'] = $adj ? $adj[0] : null;
             $p['end'] = $adj ? $adj[1] : null;
@@ -265,6 +315,19 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
             $changed++;
         }
     }
+    if ($s['rule_type'] === 'weekly') { // ルールを変えて、新しい日付に無くなった今日以降の回（未編集）は、消す
+        $keys = [];
+        foreach (series_preview($s, $monthsAhead, $cal) as $pp) {
+            $keys[$pp['ym']] = true;
+        }
+        foreach ($existing as $key => $ev) {
+            if (isset($keys[$key]) || (int)$ev['detached'] === 1 || in_array($key, $skips, true) || $ev['start_date'] < date('Y-m-d')) {
+                continue;
+            }
+            q('DELETE FROM events WHERE id = ?', [$ev['id']]);
+            $changed++;
+        }
+    }
     if ((int)($s['todo_auto'] ?? 0) === 1) {
         series_make_todos($seriesId);
     }
@@ -275,7 +338,7 @@ const SERIES_TODO_DAYS_AHEAD = 14; // 実施日の、この日数前から、ToD
 
 /**
  * 「毎回ToDoにも入れる」にした繰り返し業務の、各回のToDoを作る。
- * 作るのは、実施日が今月の初め以降で、2週間以内に迫った回だけ（12か月分が、一度にリストへ並ばないように）。
+ * 作るのは、まだ終わっていない（今日以降の）回で、2週間以内に迫ったものだけ（12か月分や、過ぎた週の分が、リストへ並ばないように）。
  * ToDoは「未着手」で、期限日はその回の最終日。同じ回に2度は作らない（作ったあとにToDoを消しても、作り直さない）。
  * 画面を開いたとき・cron・ルールを保存したときに呼ばれる。作った数を返す
  */
@@ -292,7 +355,7 @@ function series_make_todos(?int $seriesId = null, ?int $ownerId = null): int
         $params[] = $ownerId;
     }
     $limit = date('Y-m-d', strtotime('+' . SERIES_TODO_DAYS_AHEAD . ' days'));
-    $first = date('Y-m-01');
+    $first = date('Y-m-d'); // 終わった回（きのうまで）には、作らない（毎週の定例で、過ぎた週の分が、まとめて並ばないように）
     $n = 0;
     foreach (rows($sql, $params) as $s) {
         foreach (rows("SELECT * FROM events WHERE series_id = ? AND todo_id IS NULL AND todo_made = 0 AND kind = 'work' AND start_date <= ? AND end_date >= ? ORDER BY start_date, id", [$s['id'], $limit, $first]) as $e) {

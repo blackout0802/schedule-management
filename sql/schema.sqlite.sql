@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS series (
   start_time TEXT NOT NULL DEFAULT '',
   end_time TEXT NOT NULL DEFAULT '',
   todo_auto INTEGER NOT NULL DEFAULT 0,
+  p_interval INTEGER NOT NULL DEFAULT 1,
+  p_anchor TEXT NULL,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events (

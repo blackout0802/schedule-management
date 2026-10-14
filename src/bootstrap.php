@@ -259,6 +259,21 @@ function migrate_schema(): void
             db()->exec("ALTER TABLE {$c[0]} ADD COLUMN {$c[1]} " . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'TINYINT' : 'INTEGER') . ' NOT NULL DEFAULT 0');
         }
     }
+    foreach ([['series', 'p_interval', 'INTEGER NOT NULL DEFAULT 1'], ['series', 'p_anchor', 'TEXT NULL']] as $c) { // 毎週・隔週の繰り返し（何週ごと・数え始める日）
+        try {
+            db()->query("SELECT {$c[1]} FROM {$c[0]} LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            db()->exec("ALTER TABLE {$c[0]} ADD COLUMN {$c[1]} " . ($c[1] === 'p_anchor' && db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'DATE NULL' : $c[2]));
+        }
+    }
+    if (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') { // 繰り返しの1回分を見分ける印（ym）は、毎週の繰り返しでは、日付（10文字）
+        try {
+            db()->exec('ALTER TABLE events MODIFY ym CHAR(10) NULL');
+            db()->exec('ALTER TABLE series_skips MODIFY ym CHAR(10) NOT NULL');
+        } catch (PDOException $e) {
+            error_log('[schedule] ym の拡張に失敗しました: ' . $e->getMessage());
+        }
+    }
     try { // ToDoの期限日
         db()->query('SELECT due_date FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {
