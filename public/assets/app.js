@@ -1332,7 +1332,8 @@
     // ToDoリストにも入れる（進捗を選ぶ）。ToDoから置いた予定は、下の「ToDoの状態」で変えるので、ここには出さない
     var todoSel = el('select', { name: 'todo_status', 'aria-label': 'ToDoリストの進捗' },
       [['', '入れない'], ['todo', '未着手'], ['doing', '進行中'], ['done', '完了']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
-    var todoLabel = el('label', { class: 'todo-opt' }, 'ToDoリストにも入れる（進捗）', todoSel);
+    var todoLabel = el('label', { class: 'todo-opt' }, 'ToDoリストにも入れる（進捗）', todoSel,
+      ev && ev.recurring ? el('span', { class: 'hint', text: 'この回だけが ToDo になります（保存すると、この回は、あとでルールを変えても変わらなくなります）。' }) : null);
     var hint = el('p', { class: 'hint' });
     var famTouched = false;
     var famCb = el('input', { type: 'checkbox', name: 'family_shared', checked: ev ? ev.family_shared !== false : true, style: 'width:auto', onchange: function () { famTouched = true; } });
@@ -1383,7 +1384,7 @@
       syncFam();
       syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
-      todoLabel.hidden = k === 'off' || !!(ev && (ev.todo_id || ev.recurring || ev.owner_id !== S.me.user.id)); // 休み・繰り返しの予定・ToDoから置いた予定・他の人の予定には出さない
+      todoLabel.hidden = k === 'off' || !!(ev && (ev.todo_id || ev.owner_id !== S.me.user.id)); // 休み・ToDoと結びついた予定・他の人の予定には出さない
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示されます。' : '業務の予定は全員に表示されます。';
       if (k === 'off' && !title.value) title.setAttribute('placeholder', '休み（空のままで可）');

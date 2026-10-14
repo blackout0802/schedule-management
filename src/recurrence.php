@@ -248,6 +248,9 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
                 q('UPDATE events SET owner_id=?, title=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, updated_at=? WHERE id=?', [
                     $s['owner_id'], $s['title'], $s['tag'], $p['start'], $p['end'], $s['start_time'], $s['end_time'], now_str(), $ev['id'],
                 ]);
+                if (($ev['todo_id'] ?? null) !== null) { // その回に結びついた ToDo の件名・分類も、ルールに合わせる
+                    q('UPDATE todos SET title = ?, tag = ? WHERE id = ? AND owner_id = ?', [$s['title'], $s['tag'], $ev['todo_id'], $s['owner_id']]);
+                }
                 $changed++;
             }
         } elseif ($ym >= $thisMonth) {

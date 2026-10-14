@@ -574,11 +574,11 @@ function schedule_todo(array $todo, string $date, array $user): array
 
 /**
  * カレンダーで作った（ToDoと結びついていない）予定を、ToDoリストにも入れる。予定とToDoは結びつき、状態（未着手・進行中・完了）は、どちらからでも変えられる。
- * 入れられるのは、自分の業務・プライベートの予定（休み・繰り返しから作られた予定は入れない）。入れたら ToDo を、入れなかったら null を返す
+ * 入れられるのは、自分の業務・プライベートの予定（休みは入れない）。毎月の繰り返しから作られた予定は、その1回分だけが ToDo になる（完了にすると、その回だけ取り消し線）。入れたら ToDo を、入れなかったら null を返す
  */
 function event_attach_todo(array $e, array $user, string $status): ?array
 {
-    if (!in_array($status, ['todo', 'doing', 'done'], true) || $e['kind'] === 'off' || $e['series_id'] !== null
+    if (!in_array($status, ['todo', 'doing', 'done'], true) || $e['kind'] === 'off'
         || ($e['todo_id'] ?? null) !== null || (int)$e['owner_id'] !== (int)$user['id']) {
         return null;
     }

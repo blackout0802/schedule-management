@@ -1,7 +1,7 @@
 <?php
 // 使い方: php tests/run.php   （SQLite の一時DBを使うので、本番DBには触れません）
-$tmp = sys_get_temp_dir() . '/sched_test_' . getmypid();
-@mkdir($tmp);
+$tmp = sys_get_temp_dir() . '/sched_test_' . getmypid() . '_' . bin2hex(random_bytes(3)); // 前の実行の残りと、混ざらないように
+mkdir($tmp);
 // 既定は SQLite。MySQL/MariaDB で試す場合: SCHEDULE_TEST_DSN='mysql:host=localhost;dbname=xxx;charset=utf8mb4' SCHEDULE_TEST_USER=.. SCHEDULE_TEST_PASS=.. php tests/run.php
 $dsn = getenv('SCHEDULE_TEST_DSN') ?: "sqlite:$tmp/t.sqlite";
 $dbCfg = var_export(['dsn' => $dsn, 'user' => getenv('SCHEDULE_TEST_USER') ?: null, 'pass' => getenv('SCHEDULE_TEST_PASS') ?: null], true);
@@ -1354,7 +1354,12 @@ check('予定→ToDo: 状態が空・不正なら、入れない', [event_attach
 $evB = $mkEv(['title' => '他の人の予定'], $b);
 check('予定→ToDo: 他の人の予定は、入れられない', event_attach_todo($evB, $a, 'doing'), null);
 $evSeries = $mkEv(['title' => '繰り返しの回'], $a); q('UPDATE events SET series_id = 999 WHERE id = ?', [$evSeries['id']]);
-check('予定→ToDo: 繰り返しから作られた予定は、入れられない', event_attach_todo(row('SELECT * FROM events WHERE id = ?', [$evSeries['id']]), $a, 'doing'), null);
+$tdSeries = event_attach_todo(row('SELECT * FROM events WHERE id = ?', [$evSeries['id']]), $a, 'doing');
+check('予定→ToDo: 繰り返しから作られた予定も、その回だけToDoにできる（完了にすると、その回だけ取り消し線）', [$tdSeries['title'], (int)row('SELECT todo_id FROM events WHERE id = ?', [$evSeries['id']])['todo_id'] === (int)$tdSeries['id']], ['繰り返しの回', true]);
+set_todo_status($tdSeries, 'done');
+check('予定→ToDo: 繰り返しの回の、予定側の「完了」', array_values(array_filter(list_events($a, '2026-11-01', '2026-11-30', 'team'), function ($x) use ($evSeries) { return $x['id'] === (int)$evSeries['id']; }))[0]['done'], true);
+check('予定→ToDo: 繰り返しの回は、「ToDoに戻す」はできない（予定が消えるため）', (function () use ($evSeries, $a) { try { event_to_todo(row('SELECT * FROM events WHERE id = ?', [$evSeries['id']]), $a); return 'ok'; } catch (RuntimeException $x) { return 'refused'; } })(), 'refused');
+q('DELETE FROM todos WHERE id = ?', [$tdSeries['id']]);
 q('UPDATE events SET todo_id = NULL WHERE owner_id IN (?, ?)', [$a['id'], $b['id']]);
 q('DELETE FROM events WHERE title IN (?,?,?,?,?,?,?,?)', ['カレンダーで作った予定', '完了で入れる予定', '未着手で入れる予定', '私用の予定', '他の人の予定', '繰り返しの回', 'x1', 'x2']);
 q('DELETE FROM todos WHERE title IN (?,?,?,?)', ['カレンダーで作った予定', '完了で入れる予定', '未着手で入れる予定', '私用の予定']);
@@ -1391,6 +1396,18 @@ check('同期: 予定を休みに変えると、ToDoとの結びつきが外れ�
 q('UPDATE events SET todo_id = NULL WHERE owner_id = ?', [$a['id']]);
 q('DELETE FROM events WHERE id = ?', [$sy['id']]);
 q('DELETE FROM todos WHERE id IN (?, ?)', [$syTodo['id'], $newTd['id']]);
+
+// 繰り返しの回に結びついたToDoは、ルールの件名変更に追従する
+q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [$a['id'], '追従の元の件名', '定例業務', 'day', 20, null, null, null, null, 'prev', 0, '', '', now_str()]);
+$serId = (int)db()->lastInsertId();
+materialize_series($serId);
+$occ = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$serId]);
+$occTodo = event_attach_todo($occ, $a, 'doing');
+q('UPDATE series SET title = ? WHERE id = ?', ['追従した件名', $serId]);
+materialize_series($serId);
+check('繰り返し: ルールの件名を変えると、その回のToDoの件名も変わる', [row('SELECT title FROM events WHERE id = ?', [$occ['id']])['title'], row('SELECT title FROM todos WHERE id = ?', [$occTodo['id']])['title']], ['追従した件名', '追従した件名']);
+delete_series($serId);
+q('DELETE FROM events WHERE todo_id = ?', [$occTodo['id']]); q('DELETE FROM todos WHERE id = ?', [$occTodo['id']]);
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
