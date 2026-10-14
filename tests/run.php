@@ -1330,6 +1330,35 @@ check('利用状況: 初回パスワード未変更の人が、注意に出る',
 q('UPDATE users SET must_change_password = 0 WHERE id = ?', [$b['id']]);
 q('DELETE FROM todos WHERE id = ?', [$secretTodo['id']]);
 
+// ---- カレンダーの予定を、ToDoリストにも入れる ----
+$mkEv = function (array $over, array $user) { [$d, $e] = validate_event_input($over + ['kind' => 'work', 'title' => 'カレンダーで作った予定', 'tag' => '個人作業', 'start' => '2026-11-10', 'end' => '2026-11-10', 'start_time' => '', 'end_time' => '', 'note' => 'メモ', 'important' => 0], $user); return save_event($d, $user, null); };
+$evA = $mkEv([], $a);
+$tdA = event_attach_todo($evA, $a, 'doing');
+check('予定→ToDo: 進行中で入れると、ToDoができる（件名・種類・分類・メモが同じ）', [$tdA['title'], $tdA['kind'], $tdA['tag'], $tdA['note'], (int)$tdA['doing'], $tdA['done_at']], ['カレンダーで作った予定', 'work', '個人作業', 'メモ', 1, null]);
+check('予定→ToDo: 予定とToDoが結びつく', (int)row('SELECT todo_id FROM events WHERE id = ?', [$evA['id']])['todo_id'], (int)$tdA['id']);
+$evShown = array_values(array_filter(list_events($a, '2026-11-01', '2026-11-30', 'team'), function ($x) use ($evA) { return $x['id'] === (int)$evA['id']; }))[0] ?? null;
+check('予定→ToDo: 予定に、ToDoの状態（進行中）が付く', [$evShown['todo_id'] ?? null, $evShown['todo_status'] ?? null, $evShown['done'] ?? null], [(int)$tdA['id'], 'doing', false]);
+check('予定→ToDo: すでに結びついた予定には、もう一度は作らない', event_attach_todo(row('SELECT * FROM events WHERE id = ?', [$evA['id']]), $a, 'todo'), null);
+$evDone = $mkEv(['title' => '完了で入れる予定'], $a);
+$tdDone = event_attach_todo($evDone, $a, 'done');
+check('予定→ToDo: 完了で入れると、ToDoは完了（予定は取り消し線）', [$tdDone['done_at'] !== null, array_values(array_filter(list_events($a, '2026-11-01', '2026-11-30', 'team'), function ($x) use ($evDone) { return $x['id'] === (int)$evDone['id']; }))[0]['done']], [true, true]);
+$evTodo = $mkEv(['title' => '未着手で入れる予定'], $a);
+$tdTodo = event_attach_todo($evTodo, $a, 'todo');
+check('予定→ToDo: 未着手で入れる', [(int)$tdTodo['doing'], $tdTodo['done_at']], [0, null]);
+$evPriv = $mkEv(['kind' => 'private', 'title' => '私用の予定', 'tag' => ''], $a);
+$tdPriv2 = event_attach_todo($evPriv, $a, 'doing');
+check('予定→ToDo: プライベートの予定は、プライベートのToDoになる', [$tdPriv2['kind'], $tdPriv2['tag']], ['private', '']);
+$evOff = $mkEv(['kind' => 'off', 'title' => '', 'tag' => '有給'], $a);
+check('予定→ToDo: 休みは入れられない', event_attach_todo($evOff, $a, 'doing'), null);
+check('予定→ToDo: 状態が空・不正なら、入れない', [event_attach_todo($mkEv(['title' => 'x1'], $a), $a, ''), event_attach_todo($mkEv(['title' => 'x2'], $a), $a, 'bogus')], [null, null]);
+$evB = $mkEv(['title' => '他の人の予定'], $b);
+check('予定→ToDo: 他の人の予定は、入れられない', event_attach_todo($evB, $a, 'doing'), null);
+$evSeries = $mkEv(['title' => '繰り返しの回'], $a); q('UPDATE events SET series_id = 999 WHERE id = ?', [$evSeries['id']]);
+check('予定→ToDo: 繰り返しから作られた予定は、入れられない', event_attach_todo(row('SELECT * FROM events WHERE id = ?', [$evSeries['id']]), $a, 'doing'), null);
+q('UPDATE events SET todo_id = NULL WHERE owner_id IN (?, ?)', [$a['id'], $b['id']]);
+q('DELETE FROM events WHERE title IN (?,?,?,?,?,?,?,?)', ['カレンダーで作った予定', '完了で入れる予定', '未着手で入れる予定', '私用の予定', '他の人の予定', '繰り返しの回', 'x1', 'x2']);
+q('DELETE FROM todos WHERE title IN (?,?,?,?)', ['カレンダーで作った予定', '完了で入れる予定', '未着手で入れる予定', '私用の予定']);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

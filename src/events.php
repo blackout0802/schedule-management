@@ -560,6 +560,21 @@ function schedule_todo(array $todo, string $date, array $user): array
     return $event;
 }
 
+/**
+ * カレンダーで作った（ToDoと結びついていない）予定を、ToDoリストにも入れる。予定とToDoは結びつき、状態（未着手・進行中・完了）は、どちらからでも変えられる。
+ * 入れられるのは、自分の業務・プライベートの予定（休み・繰り返しから作られた予定は入れない）。入れたら ToDo を、入れなかったら null を返す
+ */
+function event_attach_todo(array $e, array $user, string $status): ?array
+{
+    if (!in_array($status, ['todo', 'doing', 'done'], true) || $e['kind'] === 'off' || $e['series_id'] !== null
+        || ($e['todo_id'] ?? null) !== null || (int)$e['owner_id'] !== (int)$user['id']) {
+        return null;
+    }
+    $todo = save_todo(['kind' => $e['kind'], 'title' => $e['title'], 'tag' => $e['kind'] === 'work' ? $e['tag'] : '', 'note' => $e['note'], 'family_shared' => (int)$e['family_shared']], $user, null);
+    q('UPDATE events SET todo_id = ? WHERE id = ?', [$todo['id'], $e['id']]);
+    return set_todo_status($todo, $status);
+}
+
 /** ToDoの種類を変えたとき、結びついた予定の種類・分類・共有を、ToDoに合わせる（家族用の更新履歴にも、変更として残す） */
 function todo_sync_events(int $todoId, array $data): void
 {

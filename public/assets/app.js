@@ -1331,6 +1331,10 @@
     var note = el('textarea', { name: 'note', maxlength: '500' });
     note.value = ev ? ev.note : '';
     var impCb = el('input', { type: 'checkbox', name: 'important', checked: !!(ev && ev.important), style: 'width:auto' });
+    // ToDoリストにも入れる（進捗を選ぶ）。ToDoから置いた予定は、下の「ToDoの状態」で変えるので、ここには出さない
+    var todoSel = el('select', { name: 'todo_status', 'aria-label': 'ToDoリストの進捗' },
+      [['', '入れない'], ['todo', '未着手'], ['doing', '進行中'], ['done', '完了']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
+    var todoLabel = el('label', { class: 'todo-opt' }, 'ToDoリストにも入れる（進捗）', todoSel);
     var hint = el('p', { class: 'hint' });
     var famTouched = false;
     var famCb = el('input', { type: 'checkbox', name: 'family_shared', checked: ev ? ev.family_shared !== false : true, style: 'width:auto', onchange: function () { famTouched = true; } });
@@ -1381,6 +1385,7 @@
       syncFam();
       syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
+      todoLabel.hidden = k === 'off' || !!(ev && (ev.todo_id || ev.recurring || ev.owner_id !== S.me.user.id)); // 休み・繰り返しの予定・ToDoから置いた予定・他の人の予定には出さない
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示されます。' : '業務の予定は全員に表示されます。';
       if (k === 'off' && !title.value) title.setAttribute('placeholder', '休み（空のままで可）');
@@ -1410,10 +1415,12 @@
       // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
       if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
       if (!ownerLabel.hidden) body.owner_id = owner.value;
+      body.todo_status = todoLabel.hidden ? '' : todoSel.value;
       var kindChanged = !!ev && ev.kind !== body.kind;
       if (kindChanged && ev.kind === 'private' && !window.confirm('プライベートの予定を「' + KIND_NAME[body.kind] + '」に変えます。会社の全員に表示されます（メモの内容も）。' + 'よろしいですか？')) return;
       api('event_save', { body: body }).then(function () {
-        ov.close(); toast(kindChanged ? '種類を「' + KIND_NAME[body.kind] + '」に変えて、保存しました' : isNew ? '予定を登録しました' : '予定を更新しました');
+        ov.close(); toast(body.todo_status ? (isNew ? '予定を登録して、ToDoリストにも入れました（' : '予定をToDoリストにも入れました（') + TD_STATE_NAME[body.todo_status] + '）' : kindChanged ? '種類を「' + KIND_NAME[body.kind] + '」に変えて、保存しました' : isNew ? '予定を登録しました' : '予定を更新しました');
+        if (body.todo_status) { loadTodos(); syncMemoTodos(); }
         if ((isNew || kindChanged) && body.kind === 'private' && S.view === 'team') toast('プライベートの予定は「プライベート版」に表示されます');
         load();
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
@@ -1432,6 +1439,7 @@
       el('div', { class: 'row' }, el('label', null, '開始日', start), el('label', null, '終了日', end)),
       el('div', { class: 'row' }, el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
       el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする（カレンダーで目立たせる）'),
+      todoLabel,
       el('label', null, 'メモ（任意）', note),
       famLabel,
       famNote,

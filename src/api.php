@@ -221,6 +221,12 @@ function handle_api(): void
                 api_fail($err);
             }
             $saved = save_event($data, $user, $existing);
+            $todoMade = event_attach_todo($saved, $user, (string)($in['todo_status'] ?? '')); // 「ToDoリストにも入れる」が選ばれていたら、ToDoも作る
+            if ($todoMade) {
+                $saved['todo_id'] = (int)$todoMade['id'];
+                $saved['todo_done_at'] = $todoMade['done_at'];
+                $saved['todo_doing'] = $todoMade['doing'];
+            }
             $saved['owner_name'] = (row('SELECT name FROM users WHERE id = ?', [$saved['owner_id']]))['name'];
             api_out(['event' => event_for_client($saved, $user)]);
 
