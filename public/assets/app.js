@@ -2778,6 +2778,50 @@
       }
       return box;
     }
+    /* カレンダー購読（ICS）: スマホ標準のカレンダー・Googleカレンダーに、URLで取り込む */
+    var ICAL_TEXT = {
+      me: ['自分用（プライベートも含む全予定）', 'あなたの全予定（業務・休み・プライベート）です。URLは、あなただけの秘密にしてください。時刻のある予定には、15分前の通知が付きます（Appleのカレンダーなど）。'],
+      family: ['家族用（共有した予定だけ）', '家族用リンクと同じ範囲（「家族に共有」にした予定だけ）です。家族のスマホに取り込んでもらえます。'],
+      company: ['会社用（管理者のみ・業務と休み）', '会社用リンクと同じ範囲（業務と休み。プライベートは含みません）です。社員のスマホに取り込んでもらえます。']
+    };
+    function icalCard(l) {
+      var t = ICAL_TEXT[l.kind];
+      var box = el('div', { class: 'card' }, el('div', { class: 'name', text: t[0] }), el('p', { class: 'hint', style: 'margin:0', text: t[1] }));
+      if (l.path) {
+        var url = absUrl(l.path);
+        var input = el('input', { type: 'text', readonly: true, value: url, 'aria-label': '購読URL', onclick: function (e) { e.target.select(); } });
+        box.appendChild(el('div', { class: 'share-row' }, input,
+          el('button', { class: 'btn small primary', type: 'button', text: 'コピー', onclick: function () {
+            var done = function () { toast('購読URLをコピーしました'); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { input.select(); toast('選択しました。コピーしてください'); });
+            else { input.select(); try { document.execCommand('copy'); done(); } catch (e) { toast('コピーしてください'); } }
+          } }),
+          el('a', { class: 'btn small', href: url.replace(/^https?:/, 'webcal:'), text: 'iPhoneで登録', title: 'iPhone・Macで開くと、カレンダーに登録する画面が出ます' })));
+        box.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
+          el('button', { class: 'btn small', type: 'button', text: 'URLを作り直す', title: '古いURLは、すぐに使えなくなります', onclick: function () {
+            if (!window.confirm('購読URLを作り直します。古いURLで取り込んだカレンダーは、次の更新から空になります（新しいURLで取り込み直してください）。よろしいですか？')) return;
+            api('ical_create', { body: { kind: l.kind } }).then(function () { toast('作り直しました'); refresh(); }).catch(fail);
+          } }),
+          el('button', { class: 'btn small danger', type: 'button', text: '購読を止める', onclick: function () {
+            if (!window.confirm('購読を止めます。このURLでは、もう取り込めなくなります。よろしいですか？')) return;
+            api('ical_revoke', { body: { kind: l.kind } }).then(function () { toast('購読を止めました'); refresh(); }).catch(fail);
+          } })));
+      } else {
+        box.appendChild(el('div', null, el('button', { class: 'btn primary small', type: 'button', text: '購読URLを作る', onclick: function () {
+          api('ical_create', { body: { kind: l.kind } }).then(function () { toast('購読URLを作りました'); refresh(); }).catch(fail);
+        } })));
+      }
+      return box;
+    }
+    function icalSection(list) {
+      var wrap = el('div', { class: 'ical-sec' }, el('h4', { style: 'margin:14px 0 4px', text: 'カレンダー購読（スマホのカレンダーに取り込む）' }),
+        el('p', { class: 'hint', style: 'margin:0 0 6px', text: 'iPhone の標準カレンダーや Google カレンダーに、このアプリの予定を、読み取り専用で取り込めます。向こうの通知・ウィジェット・Apple Watch でも見られます。取り込んだ予定は、こちらで変えると、しばらくあとに（Apple は数分〜、Google は半日〜1日）向こうにも反映されます。' }));
+      list.forEach(function (l) { wrap.appendChild(icalCard(l)); });
+      wrap.appendChild(el('details', { class: 'help-sm', open: !isPhone() }, el('summary', { text: 'ⓘ 取り込み方' }),
+        el('div', { class: 'inst-box' }, el('h4', { text: 'iPhone' }), el('ol', null, ['上の「iPhoneで登録」を押す（または、設定 → カレンダー → アカウント → アカウントを追加 → その他 → 照会するカレンダーを追加 に、URLを貼る）', '「購読」を押して、完了']),
+          el('h4', { text: 'Google カレンダー（パソコン）' }), el('ol', null, ['左の「他のカレンダー」の「＋」→「URLで追加」', '上の購読URLを貼って、「カレンダーを追加」（https のURLです）']))));
+      return wrap;
+    }
     function refresh() {
       api('share_list').then(function (j) {
         scope = j.family_share || scope; S.me.family_share = scope;
@@ -2785,6 +2829,7 @@
         body.appendChild(el('div', { class: 'notice' }, el('b', { text: 'このURLを知っている人は、ログインなしで見られます' }),
           el('p', { text: '見せたい人にだけ伝えてください。会社の人が見られる場所に、家族用のURLを載せないでください。URLが他の人に伝わったときは「リンクを作り直す」か「共有を止める」で、すぐに見られなくなります。' })));
         j.links.forEach(function (l) { body.appendChild(card(l)); });
+        if (j.ical) body.appendChild(icalSection(j.ical));
         body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
       }).catch(fail);
     }

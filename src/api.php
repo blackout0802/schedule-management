@@ -10,6 +10,7 @@ require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/share.php';
 require_once __DIR__ . '/usage.php';
 require_once __DIR__ . '/undo.php';
+require_once __DIR__ . '/ical.php';
 
 function api_out($data, int $code = 200): void
 {
@@ -404,7 +405,7 @@ function handle_api(): void
                 $l = share_link_get($k, $user);
                 $out[] = ['kind' => $k, 'path' => $l ? 'share.php?t=' . $l['token'] : null, 'created_at' => $l ? $l['created_at'] : null];
             }
-            api_out(['links' => $out, 'family_share' => get_family_share($user)]);
+            api_out(['links' => $out, 'family_share' => get_family_share($user), 'ical' => ical_links_for($user)]);
 
         case 'share_options':
             api_out(['family_share' => save_family_share($user, !empty($in['off']), is_array($in['tags'] ?? null) ? $in['tags'] : [])]);
@@ -486,6 +487,26 @@ function handle_api(): void
             }
             audit_log('share', 'add', ($l['kind'] === 'company' ? '会社用' : '家族用') . 'リンクを作成（作り直し）', $l['kind'] === 'family' ? $user['name'] : '');
             api_out(['kind' => $l['kind'], 'path' => 'share.php?t=' . $l['token']]);
+
+        case 'ical_create': // カレンダー購読のURLを作る（作り直す）
+            try {
+                $l = ical_link_create((string)($in['kind'] ?? ''), $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), 403);
+            }
+            $kn = ['me' => '自分用', 'family' => '家族用', 'company' => '会社用'][(string)$in['kind']];
+            audit_log('share', 'add', 'カレンダー購読URL（' . $kn . '）を作成（作り直し）', $in['kind'] === 'company' ? '' : $user['name']);
+            api_out(['kind' => (string)$in['kind'], 'path' => 'ical.php?t=' . $l['token']]);
+
+        case 'ical_revoke':
+            try {
+                ical_link_revoke((string)($in['kind'] ?? ''), $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), 403);
+            }
+            $kn = ['me' => '自分用', 'family' => '家族用', 'company' => '会社用'][(string)($in['kind'] ?? '')] ?? '';
+            audit_log('share', 'delete', 'カレンダー購読URL（' . $kn . '）を停止', ($in['kind'] ?? '') === 'company' ? '' : $user['name']);
+            api_out(['ok' => true]);
 
         case 'share_revoke':
             try {

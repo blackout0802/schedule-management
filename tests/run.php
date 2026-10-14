@@ -17,6 +17,7 @@ require_once __DIR__ . '/../src/share.php';
 require_once __DIR__ . '/../src/backup.php';
 require_once __DIR__ . '/../src/usage.php';
 require_once __DIR__ . '/../src/undo.php';
+require_once __DIR__ . '/../src/ical.php';
 
 $fail = 0;
 $pass = 0;
@@ -1471,6 +1472,46 @@ q('UPDATE events SET todo_id = NULL WHERE id = ?', [$utEv['id']]); q('DELETE FRO
 $_SESSION['undo'] = [undo_stash('event', ['x' => 1]) => ['type' => 'event', 'at' => time() - 7200, 'data' => ['x' => 1]]];
 check('元に戻す: 10分を過ぎた控えは、使えない', undo_take(array_key_first($_SESSION['undo']), 'event'), null);
 $_SESSION = [];
+
+// ---- カレンダー購読（ICS）----
+$icPriv = $mkEv(['kind' => 'private', 'title' => '購読のひみつ予定', 'tag' => '', 'note' => 'ひみつのメモ'], $a);
+$icWork = $mkEv(['title' => '購読の業務,会議;大事', 'tag' => '打ち合わせ', 'start' => '2026-11-12', 'end' => '2026-11-12', 'start_time' => '09:30', 'end_time' => '10:30', 'note' => "1行目\n2行目", 'important' => 1], $a);
+$icOff = $mkEv(['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2026-11-13', 'end' => '2026-11-14'], $a);
+$icShared = $mkEv(['title' => '家族に見せる業務', 'tag' => '個人作業', 'family_shared' => 1], $a); q('UPDATE events SET family_shared = 1 WHERE id = ?', [$icShared['id']]);
+q('UPDATE events SET family_shared = 0 WHERE id = ?', [$icPriv['id']]); // 家族には、見せない（プライベートは、初期値が「共有」なので、外す）
+$icA = ical_link_create('me', $a); $icFam = ical_link_create('family', $a);
+check('ICS: 作ったURLは、48文字の合言葉。作り直すと、変わる', [strlen($icA['token']), ical_link_create('me', $a)['token'] !== $icA['token']], [48, true]);
+$icA = ical_link_get('me', $a);
+check('ICS: 会社用は、管理者だけが作れる', (function () use ($a) { try { ical_link_create('company', $a); return 'ok'; } catch (RuntimeException $x) { return 'refused'; } })(), 'refused');
+$icCo = ical_link_create('company', $admin);
+$linkMe = ical_link_find($icA['token']);
+$ics = ical_render($linkMe, strtotime('2026-11-01 12:00:00'));
+check('ICS: 先頭と末尾・改行は CRLF', [strpos($ics, "BEGIN:VCALENDAR\r\n") === 0, substr($ics, -15) === "END:VCALENDAR\r\n", strpos(str_replace("\r\n", '', $ics), "\n") === false], [true, true, true]);
+check('ICS（自分用）: プライベートの予定も入る', [strpos($ics, 'SUMMARY:購読のひみつ予定') !== false, strpos($ics, 'ひみつのメモ') !== false], [true, true]);
+check('ICS: 時刻のある予定は、UTCに直る（09:30 JST → 00:30Z）。終日は DATE で、終了は翌日', [strpos($ics, 'DTSTART:20261112T003000Z') !== false, strpos($ics, 'DTEND:20261112T013000Z') !== false, strpos($ics, 'DTSTART;VALUE=DATE:20261113') !== false, strpos($ics, 'DTEND;VALUE=DATE:20261115') !== false], [true, true, true, true]);
+check('ICS: カンマ・セミコロン・改行は、エスケープされる。重要は ★', [strpos(str_replace("\r\n ", '', $ics), 'SUMMARY:★ 購読の業務\\,会議\;大事') !== false, strpos(str_replace("\r\n ", '', $ics), 'DESCRIPTION:1行目\\n2行目') !== false], [true, true]);
+check('ICS: 休みは「休み（有給）」で、予定としては空き（TRANSPARENT）', [strpos($ics, 'SUMMARY:休み（有給）') !== false, strpos($ics, 'TRANSP:TRANSPARENT') !== false], [true, true]);
+check('ICS（自分用）: 時刻のある業務には、15分前の通知が付く', strpos($ics, 'TRIGGER:-PT15M') !== false, true);
+$tooLong = true; foreach (explode("\r\n", $ics) as $ln) { if (strlen($ln) > 75) { $tooLong = false; } }
+check('ICS: どの行も75バイト以内（長い行は折り返す）', $tooLong, true);
+$longEv = $mkEv(['title' => str_repeat('長い件名あいうえお', 8), 'start' => '2026-11-20', 'end' => '2026-11-20'], $a);
+$ics2 = ical_render($linkMe, strtotime('2026-11-01 12:00:00'));
+$tooLong = true; foreach (explode("\r\n", $ics2) as $ln) { if (strlen($ln) > 75) { $tooLong = false; } }
+check('ICS: 長い日本語の件名も、折り返して、元に戻せる（UTF-8の途中で切らない）', [$tooLong, strpos(str_replace("\r\n ", '', $ics2), 'SUMMARY:' . str_repeat('長い件名あいうえお', 8)) !== false], [true, true]);
+$icsFam = ical_render(ical_link_find($icFam['token']), strtotime('2026-11-01 12:00:00'));
+check('ICS（家族用）: 共有した予定だけ。業務の件名・メモは、共有にしていないものは出ない', [strpos($icsFam, '家族に見せる業務') !== false, strpos($icsFam, '購読の業務') === false, strpos($icsFam, 'ひみつのメモ') === false], [true, true, true]);
+$icsCo = ical_render(ical_link_find($icCo['token']), strtotime('2026-11-01 12:00:00'));
+check('ICS（会社用）: 業務と休みだけ。プライベートは入らない。誰の予定かが先頭に付く', [strpos($icsCo, '購読のひみつ予定') === false, strpos($icsCo, 'ひみつのメモ') === false, strpos($icsCo, $a['name'] . '　') !== false, strpos($icsCo, '購読の業務') !== false], [true, true, true, true]);
+check('ICS: 共有ページ用の合言葉では、購読できない。購読用の合言葉では、共有ページを開けない', [ical_link_find(share_link_create('family', $a)['token']), share_link_find($icA['token'])], [null, null]);
+check('ICS: でたらめ・短い合言葉は、無効', [ical_link_find('abc'), ical_link_find(str_repeat('0', 48))], [null, null]);
+q('UPDATE users SET active = 0 WHERE id = ?', [$a['id']]);
+check('ICS: 持ち主が利用停止になると、購読できなくなる', [ical_link_find($icA['token']), ical_link_find($icFam['token'])], [null, null]);
+q('UPDATE users SET active = 1 WHERE id = ?', [$a['id']]);
+ical_link_revoke('me', $a);
+check('ICS: 止めると、そのURLでは取り込めない', ical_link_find($icA['token']), null);
+check('ICS: 一覧（画面用）に、自分用・家族用が出る（管理者は会社用も）', [count(ical_links_for($a)), count(ical_links_for($admin))], [2, 3]);
+share_link_revoke('family', $a); ical_link_revoke('family', $a); ical_link_revoke('company', $admin);
+q('DELETE FROM events WHERE title IN (?,?,?,?,?) OR title LIKE ?', ['購読のひみつ予定', '購読の業務,会議;大事', '', '家族に見せる業務', str_repeat('長い件名あいうえお', 8), '%長い件名%']);
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け

@@ -67,7 +67,7 @@ function share_link_find(string $token): ?array
         return null;
     }
     $l = row('SELECT * FROM share_links WHERE token = ?', [$token]);
-    if (!$l) {
+    if (!$l || !in_array($l['kind'], SHARE_KINDS, true)) { // カレンダー購読（ICS）のトークンは、共有ページでは使えない
         return null;
     }
     if ($l['kind'] === 'family') {
