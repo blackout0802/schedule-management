@@ -119,6 +119,15 @@
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 2800);
   }
+  /* 「元に戻す」つきの通知（9秒）。ボタンを押すと doUndo を呼ぶ */
+  function toastUndo(msg, doUndo) {
+    var t = el('div', { class: 'toast with-action', role: 'status' }, el('span', { text: msg }),
+      el('button', { type: 'button', class: 'toast-act', text: '元に戻す', onclick: function () { t.remove(); doUndo(); } }));
+    var n = document.querySelectorAll('.toast').length;
+    t.style.bottom = (16 + n * 46) + 'px';
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 9000);
+  }
   function fail(e) { if (e.message !== 'login') toast(e.message); }
 
   /* ---------- モーダル ---------- */
@@ -1432,9 +1441,12 @@
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     };
     var del = ev ? el('button', { class: 'btn danger left', type: 'button', text: '削除', onclick: function () {
-      var msg = ev.recurring ? 'この回だけを削除します（毎月の繰り返し自体は残ります）。よろしいですか？' : 'この予定を削除します。よろしいですか？';
-      if (!window.confirm(msg)) return;
-      api('event_delete', { body: { id: ev.id } }).then(function () { ov.close(); toast('削除しました'); load(); }).catch(fail);
+      api('event_delete', { body: { id: ev.id } }).then(function (j) {
+        ov.close(); load();
+        var msg = ev.recurring ? 'この回を削除しました（毎月の繰り返し自体は残ります）' : '予定を削除しました';
+        if (!j.undo) { toast(msg); return; }
+        toastUndo(msg, function () { api('event_restore', { body: { undo: j.undo } }).then(function () { toast('予定を元に戻しました'); load(); loadTodos(); }).catch(fail); });
+      }).catch(fail);
     } }) : null;
 
     var form = el('form', { class: 'form', onsubmit: save },
@@ -1646,8 +1658,7 @@
     if (t.kind === 'work') acts.push(el('button', { class: 'btn small ghost', type: 'button', text: 'コメント', title: 'コメントを見る・書く（業務のToDoは、全員がコメントできます）', onclick: function (e) { e.stopPropagation(); openTodoThread(t); } }));
     acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function (e) {
       e.stopPropagation();
-      if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
-      api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+      deleteTodo(t);
     } }));
     var card = el('div', { class: 'todo-item kb-card ' + t.kind + (status === 'done' ? ' done' : ''), draggable: 'true', 'data-id': String(t.id) },
       el('div', { class: 't-body' },
@@ -1919,11 +1930,19 @@
         el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
           el('span', { class: 'pill', text: t.done_at ? mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' : '完了' })),
         el('div', { class: 't-actions' }, el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function () {
-          if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
-          api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+          deleteTodo(t);
         } }))));
   }
 
+  /* ToDoを消す。「元に戻す」で戻せる（コメントのあるToDoは、コメントも消えて戻せないので、先に確かめる） */
+  function deleteTodo(t) {
+    if (t.comments && !window.confirm('このToDoには、コメント（' + t.comments + '件）があります。消すと、コメントも画像も消えて、元に戻せません。よろしいですか？')) return;
+    api('todo_delete', { body: { id: t.id } }).then(function (j) {
+      loadTodos(); load();
+      if (!j.undo) { toast('ToDoを削除しました'); return; }
+      toastUndo('ToDoを削除しました: ' + t.title, function () { api('todo_restore', { body: { undo: j.undo } }).then(function () { toast('ToDoを元に戻しました'); loadTodos(); load(); }).catch(fail); });
+    }).catch(fail);
+  }
   function todoItem(t) {
     var btn = function (label, title, fn) { return el('button', { class: 'btn small ghost', type: 'button', text: label, title: title, onclick: function (e) { e.stopPropagation(); fn(); } }); };
     var item = el('div', { class: 'todo-item ' + t.kind, draggable: 'true', 'data-id': String(t.id) },
@@ -1936,8 +1955,7 @@
           btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),
           btn('編集', 'ToDoを編集', function () { openTodoDialog(t); }),
           btn('削除', 'ToDoを削除', function () {
-            if (!window.confirm('このToDoを削除します。よろしいですか？')) return;
-            api('todo_delete', { body: { id: t.id } }).then(loadTodos).catch(fail);
+            deleteTodo(t);
           }))));
     item.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'todo', id: t.id }); });
     item.addEventListener('dragend', endDrag);

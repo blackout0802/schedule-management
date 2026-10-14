@@ -824,3 +824,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .row-inline { display: flex; gap: 8px; align-items: center; }
 .row-inline input { flex: 1 1 auto; min-width: 0; }
 .todo-add-row .todo-due-in { width: auto; max-width: 9.5em; padding: 4px 6px; font-size: 13px; }
+
+/* v1.50 「元に戻す」つきの通知 */
+.toast.with-action { display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px); }
+.toast .toast-act { border: 0; background: transparent; color: var(--bg); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 2px 4px; white-space: nowrap; }

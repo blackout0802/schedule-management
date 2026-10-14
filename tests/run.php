@@ -16,6 +16,7 @@ require_once __DIR__ . '/../src/updater.php';
 require_once __DIR__ . '/../src/share.php';
 require_once __DIR__ . '/../src/backup.php';
 require_once __DIR__ . '/../src/usage.php';
+require_once __DIR__ . '/../src/undo.php';
 
 $fail = 0;
 $pass = 0;
@@ -1433,6 +1434,43 @@ set_todo_status($started, 'doing');
 delete_series($sidA);
 check('自動ToDo: ルールを消すと、手を付けていないToDoは消え、進行中のものは残る', [$notStarted >= 1, (int)row('SELECT COUNT(*) AS c FROM todos WHERE id = ?', [$started['id']])['c'], (int)row("SELECT COUNT(*) AS c FROM todos WHERE title = '毎月の自動ToDo' AND doing = 0 AND done_at IS NULL")['c']], [true, 1, 0]);
 q('DELETE FROM todos WHERE title = ?', ['毎月の自動ToDo']); q('DELETE FROM events WHERE title = ?', ['毎月の自動ToDo']);
+
+// ---- 「元に戻す」----
+$_SESSION = [];
+$ue = $mkEv(['title' => '消して戻す予定', 'note' => '戻すメモ', 'important' => 1], $a);
+$ueId = (int)$ue['id'];
+$tok = undo_stash('event', row('SELECT * FROM events WHERE id = ?', [$ueId])); delete_event(row('SELECT * FROM events WHERE id = ?', [$ueId]));
+check('元に戻す: 消した予定は、なくなる', row('SELECT 1 AS x FROM events WHERE id = ?', [$ueId]), null);
+$snapE = undo_take($tok, 'event');
+check('元に戻す: 控えを取り出せる（1度きり）', [$snapE !== null, undo_take($tok, 'event')], [true, null]);
+$back = undo_event_restore($snapE, $a);
+check('元に戻す: 元の番号・件名・メモ・重要のまま戻る', [(int)$back['id'], $back['title'], $back['note'], (int)$back['important']], [$ueId, '消して戻す予定', '戻すメモ', 1]);
+check('元に戻す: すでにある予定は、重ねて戻せない', (function () use ($snapE, $a) { try { undo_event_restore($snapE, $a); return 'ok'; } catch (RuntimeException $x) { return 'refused'; } })(), 'refused');
+check('元に戻す: 他の人の控えの種類違い・不正なトークンは、取り出せない', [undo_take('bogus', 'event'), undo_take(undo_stash('todo', ['x' => 1]), 'event')], [null, null]);
+$tokB = undo_stash('event', row('SELECT * FROM events WHERE id = ?', [$ueId])); delete_event(row('SELECT * FROM events WHERE id = ?', [$ueId]));
+check('元に戻す: 他の人（一般の社員）は、他人の予定を戻せない', (function () use ($tokB, $b) { try { undo_event_restore(undo_take($tokB, 'event'), $b); return 'ok'; } catch (RuntimeException $x) { return 'refused'; } })(), 'refused');
+// 繰り返しの1回分
+q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [$a['id'], '戻す繰り返し', '定例業務', 'day', 20, null, null, null, null, 'none', 0, '', '', now_str()]);
+$usid = (int)db()->lastInsertId(); materialize_series($usid);
+$occ = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$usid]);
+$tokS = undo_stash('event', $occ); delete_event($occ);
+check('元に戻す（繰り返しの回）: 消すと「この回を消した」記録ができる', (int)row('SELECT COUNT(*) AS c FROM series_skips WHERE series_id = ? AND ym = ?', [$usid, $occ['ym']])['c'], 1);
+undo_event_restore(undo_take($tokS, 'event'), $a);
+check('元に戻す（繰り返しの回）: 戻すと、記録も外れて、次の自動作成でも消えない', [(int)row('SELECT COUNT(*) AS c FROM series_skips WHERE series_id = ? AND ym = ?', [$usid, $occ['ym']])['c'], (int)row('SELECT COUNT(*) AS c FROM events WHERE id = ?', [$occ['id']])['c'], (materialize_series($usid) >= 0 ? (int)row('SELECT COUNT(*) AS c FROM events WHERE id = ?', [$occ['id']])['c'] : 0)], [0, 1, 1]);
+delete_series($usid); q('DELETE FROM events WHERE series_id IS NULL AND title IN (?, ?)', ['戻す繰り返し', '消して戻す予定']);
+// ToDo
+$ut = save_todo(validate_todo_input(['kind' => 'work', 'title' => '消して戻すToDo', 'tag' => '個人作業', 'due' => '2026-12-05'])[0], $a, null);
+$utEv = $mkEv(['title' => 'ToDoと結んだ予定'], $a); q('UPDATE events SET todo_id = ? WHERE id = ?', [$ut['id'], $utEv['id']]);
+$tokT = undo_stash('todo', ['todo' => $ut, 'events' => [(int)$utEv['id']]]);
+todo_detach_events('SELECT id FROM todos WHERE id = ?', [$ut['id']]); q('DELETE FROM todos WHERE id = ?', [$ut['id']]);
+$tb = undo_todo_restore(undo_take($tokT, 'todo'), $a);
+check('元に戻す（ToDo）: 元の番号・期限日のまま戻り、結びついた予定も結び直る', [(int)$tb['id'], $tb['due_date'], (int)row('SELECT todo_id FROM events WHERE id = ?', [$utEv['id']])['todo_id']], [(int)$ut['id'], '2026-12-05', (int)$ut['id']]);
+check('元に戻す（ToDo）: 他の人は戻せない', (function () use ($ut, $b) { try { undo_todo_restore(['todo' => $ut, 'events' => []], $b); return 'ok'; } catch (RuntimeException $x) { return 'refused'; } })(), 'refused');
+q('UPDATE events SET todo_id = NULL WHERE id = ?', [$utEv['id']]); q('DELETE FROM events WHERE id = ?', [$utEv['id']]); q('DELETE FROM todos WHERE id = ?', [$ut['id']]);
+// 期限切れ
+$_SESSION['undo'] = [undo_stash('event', ['x' => 1]) => ['type' => 'event', 'at' => time() - 7200, 'data' => ['x' => 1]]];
+check('元に戻す: 10分を過ぎた控えは、使えない', undo_take(array_key_first($_SESSION['undo']), 'event'), null);
+$_SESSION = [];
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け

@@ -9,6 +9,7 @@ require_once __DIR__ . '/slack.php';
 require_once __DIR__ . '/backup.php';
 require_once __DIR__ . '/share.php';
 require_once __DIR__ . '/usage.php';
+require_once __DIR__ . '/undo.php';
 
 function api_out($data, int $code = 200): void
 {
@@ -525,10 +526,24 @@ function handle_api(): void
             if (!$t) {
                 api_fail('ToDoが見つかりません。', 404);
             }
+            $hasComments = (int)row('SELECT COUNT(*) AS c FROM todo_comments WHERE todo_id = ?', [$t['id']])['c'] > 0;
+            $undo = $hasComments ? null : undo_stash('todo', ['todo' => $t, 'events' => array_map('intval', array_column(rows('SELECT id FROM events WHERE todo_id = ?', [$t['id']]), 'id'))]); // コメントのあるToDoは、戻せない
             todo_detach_events('SELECT id FROM todos WHERE id = ?', [$t['id']]);
             todo_comments_purge('SELECT id FROM todos WHERE id = ?', [$t['id']]);
             q('DELETE FROM todos WHERE id = ?', [$t['id']]);
-            api_out(['ok' => true]);
+            api_out(['ok' => true, 'undo' => $undo]);
+
+        case 'todo_restore': // 消したToDoを戻す（「元に戻す」）
+            $snap = undo_take((string)($in['undo'] ?? ''), 'todo');
+            if (!$snap) {
+                api_fail('元に戻せる時間（10分）が過ぎたか、すでに戻しました。', 410);
+            }
+            try {
+                $back = undo_todo_restore($snap, $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'todo' => todo_for_client($back)]);
 
         case 'todo_schedule':
             $t = find_todo((int)($in['id'] ?? 0), $user);
@@ -569,8 +584,22 @@ function handle_api(): void
             if (!can_edit_event($e, $user)) {
                 api_fail('この予定は削除できません。', 403);
             }
+            $undo = undo_stash('event', $e); // 消した直後なら、「元に戻す」で戻せるように、控える
             delete_event($e);
-            api_out(['ok' => true]);
+            api_out(['ok' => true, 'undo' => $undo]);
+
+        case 'event_restore': // 消した予定を戻す（「元に戻す」）
+            $snap = undo_take((string)($in['undo'] ?? ''), 'event');
+            if (!$snap) {
+                api_fail('元に戻せる時間（10分）が過ぎたか、すでに戻しました。', 410);
+            }
+            try {
+                $back = undo_event_restore($snap, $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            $back['owner_name'] = (row('SELECT name FROM users WHERE id = ?', [$back['owner_id']]))['name'];
+            api_out(['ok' => true, 'event' => event_for_client($back, $user)]);
 
         case 'series_list':
             $list = rows('SELECT s.*, u.name AS owner_name FROM series s JOIN users u ON u.id = s.owner_id ORDER BY s.title');
