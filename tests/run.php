@@ -1409,6 +1409,31 @@ check('繰り返し: ルールの件名を変えると、その回のToDoの件�
 delete_series($serId);
 q('DELETE FROM events WHERE todo_id = ?', [$occTodo['id']]); q('DELETE FROM todos WHERE id = ?', [$occTodo['id']]);
 
+// ---- 繰り返し業務の「毎回ToDoにも入れる」----
+q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,todo_auto,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [$a['id'], '毎月の自動ToDo', '定例業務', 'day', (int)date('j', strtotime('+3 days')) , null, null, null, null, 'none', 0, '', '', 1, now_str()]);
+$sidA = (int)db()->lastInsertId();
+materialize_series($sidA);
+$autoTodos = rows("SELECT t.* FROM todos t JOIN events e ON e.todo_id = t.id WHERE e.series_id = ? ORDER BY e.start_date", [$sidA]);
+check('自動ToDo: 実施日が2週間以内の回だけ、ToDoができる（12か月分は並ばない）', count($autoTodos) <= 2 && count($autoTodos) >= 1, true);
+$firstAuto = $autoTodos[0];
+check('自動ToDo: 未着手で、件名・分類は、ルールと同じ。期限日は、その回の日付', [$firstAuto['title'], $firstAuto['tag'], (int)$firstAuto['doing'], $firstAuto['done_at'], $firstAuto['due_date'] === row('SELECT end_date FROM events WHERE todo_id = ?', [$firstAuto['id']])['end_date']], ['毎月の自動ToDo', '定例業務', 0, null, true]);
+check('自動ToDo: 何度呼んでも、増えない', [series_make_todos($sidA), count(rows('SELECT 1 FROM events WHERE series_id = ? AND todo_id IS NOT NULL', [$sidA]))], [0, count($autoTodos)]);
+q('DELETE FROM todos WHERE id = ?', [$firstAuto['id']]); q('UPDATE events SET todo_id = NULL WHERE todo_id = ?', [$firstAuto['id']]);
+check('自動ToDo: 作ったあとにToDoを消しても、作り直さない', series_make_todos($sidA), 0);
+q('UPDATE series SET todo_auto = 0 WHERE id = ?', [$sidA]); q('UPDATE events SET todo_made = 0 WHERE series_id = ?', [$sidA]);
+check('自動ToDo: 「毎回ToDoにも入れる」を切ると、作られない', series_make_todos($sidA), 0);
+q('UPDATE series SET todo_auto = 1 WHERE id = ?', [$sidA]);
+q('UPDATE series SET p_day = ? WHERE id = ?', [(int)date('j', strtotime('+4 days')), $sidA]);
+materialize_series($sidA);
+$moved = row("SELECT t.due_date, e.end_date FROM todos t JOIN events e ON e.todo_id = t.id WHERE e.series_id = ? LIMIT 1", [$sidA]);
+check('自動ToDo: ルールの日付を変えると、未完了のToDoの期限日も、その回の日付に動く', $moved['due_date'], $moved['end_date']);
+$notStarted = (int)row("SELECT COUNT(*) AS c FROM todos t JOIN events e ON e.todo_id = t.id WHERE e.series_id = ?", [$sidA])['c'];
+$started = row("SELECT t.* FROM todos t JOIN events e ON e.todo_id = t.id WHERE e.series_id = ? LIMIT 1", [$sidA]);
+set_todo_status($started, 'doing');
+delete_series($sidA);
+check('自動ToDo: ルールを消すと、手を付けていないToDoは消え、進行中のものは残る', [$notStarted >= 1, (int)row('SELECT COUNT(*) AS c FROM todos WHERE id = ?', [$started['id']])['c'], (int)row("SELECT COUNT(*) AS c FROM todos WHERE title = '毎月の自動ToDo' AND doing = 0 AND done_at IS NULL")['c']], [true, 1, 0]);
+q('DELETE FROM todos WHERE title = ?', ['毎月の自動ToDo']); q('DELETE FROM events WHERE title = ?', ['毎月の自動ToDo']);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

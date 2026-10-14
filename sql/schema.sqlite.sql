@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS series (
   bizonly INTEGER NOT NULL DEFAULT 0,
   start_time TEXT NOT NULL DEFAULT '',
   end_time TEXT NOT NULL DEFAULT '',
+  todo_auto INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS events (
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS events (
   family_shared INTEGER NOT NULL DEFAULT 1,
   important INTEGER NOT NULL DEFAULT 0,
   todo_id INTEGER NULL,
+  todo_made INTEGER NOT NULL DEFAULT 0,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

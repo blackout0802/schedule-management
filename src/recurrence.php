@@ -248,8 +248,11 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
                 q('UPDATE events SET owner_id=?, title=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, updated_at=? WHERE id=?', [
                     $s['owner_id'], $s['title'], $s['tag'], $p['start'], $p['end'], $s['start_time'], $s['end_time'], now_str(), $ev['id'],
                 ]);
-                if (($ev['todo_id'] ?? null) !== null) { // その回に結びついた ToDo の件名・分類も、ルールに合わせる
+                if (($ev['todo_id'] ?? null) !== null) { // その回に結びついた ToDo の件名・分類も、ルールに合わせる（自動で作ったものは、期限日も、その回の日付に）
                     q('UPDATE todos SET title = ?, tag = ? WHERE id = ? AND owner_id = ?', [$s['title'], $s['tag'], $ev['todo_id'], $s['owner_id']]);
+                    if ((int)($ev['todo_made'] ?? 0) === 1) {
+                        q('UPDATE todos SET due_date = ? WHERE id = ? AND done_at IS NULL', [$p['end'], $ev['todo_id']]);
+                    }
                 }
                 $changed++;
             }
@@ -262,7 +265,43 @@ function materialize_series(int $seriesId, ?BizCalendar $cal = null, int $months
             $changed++;
         }
     }
+    if ((int)($s['todo_auto'] ?? 0) === 1) {
+        series_make_todos($seriesId);
+    }
     return $changed;
+}
+
+const SERIES_TODO_DAYS_AHEAD = 14; // 実施日の、この日数前から、ToDoリストに入れる
+
+/**
+ * 「毎回ToDoにも入れる」にした繰り返し業務の、各回のToDoを作る。
+ * 作るのは、実施日が今月の初め以降で、2週間以内に迫った回だけ（12か月分が、一度にリストへ並ばないように）。
+ * ToDoは「未着手」で、期限日はその回の最終日。同じ回に2度は作らない（作ったあとにToDoを消しても、作り直さない）。
+ * 画面を開いたとき・cron・ルールを保存したときに呼ばれる。作った数を返す
+ */
+function series_make_todos(?int $seriesId = null, ?int $ownerId = null): int
+{
+    $sql = 'SELECT * FROM series WHERE todo_auto = 1';
+    $params = [];
+    if ($seriesId !== null) {
+        $sql .= ' AND id = ?';
+        $params[] = $seriesId;
+    }
+    if ($ownerId !== null) {
+        $sql .= ' AND owner_id = ?';
+        $params[] = $ownerId;
+    }
+    $limit = date('Y-m-d', strtotime('+' . SERIES_TODO_DAYS_AHEAD . ' days'));
+    $first = date('Y-m-01');
+    $n = 0;
+    foreach (rows($sql, $params) as $s) {
+        foreach (rows("SELECT * FROM events WHERE series_id = ? AND todo_id IS NULL AND todo_made = 0 AND kind = 'work' AND start_date <= ? AND end_date >= ? ORDER BY start_date, id", [$s['id'], $limit, $first]) as $e) {
+            $todo = save_todo(['kind' => 'work', 'title' => $e['title'], 'tag' => $e['tag'], 'note' => '', 'family_shared' => 0, 'due_date' => $e['end_date']], ['id' => (int)$e['owner_id']], null);
+            q('UPDATE events SET todo_id = ?, todo_made = 1 WHERE id = ?', [$todo['id'], $e['id']]);
+            $n++;
+        }
+    }
+    return $n;
 }
 
 function materialize_all(int $monthsAhead = 12): int
@@ -278,6 +317,10 @@ function materialize_all(int $monthsAhead = 12): int
 /** ルールを削除する。今日以降の未編集の予定は消し、過去分は通常の予定として残す */
 function delete_series(int $seriesId): void
 {
+    // 自動で作った ToDo のうち、まだ手を付けていない（未着手の）今日以降の回のものは、いっしょに消す
+    $mine = "SELECT t.id FROM todos t JOIN events e ON e.todo_id = t.id WHERE e.series_id = ? AND e.detached = 0 AND e.end_date >= ? AND e.todo_made = 1 AND t.done_at IS NULL AND t.doing = 0";
+    todo_comments_purge($mine, [$seriesId, date('Y-m-d')]);
+    q("DELETE FROM todos WHERE id IN (SELECT id FROM ($mine) AS x)", [$seriesId, date('Y-m-d')]);
     q('DELETE FROM events WHERE series_id = ? AND detached = 0 AND end_date >= ?', [$seriesId, date('Y-m-d')]);
     q('UPDATE events SET series_id = NULL, ym = NULL WHERE series_id = ?', [$seriesId]);
     q('DELETE FROM series_skips WHERE series_id = ?', [$seriesId]);

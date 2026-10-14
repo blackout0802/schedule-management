@@ -29,6 +29,7 @@ async function login(b, vp, mobile) {
   await p.fill('.modal input[name=end_time]', '25:00'); await p.click('.modal button[type=submit]'); await p.waitForSelector('.modal .error:not([hidden])');
   ok('不正な時刻（25:00）は、保存されずに案内が出る', (await p.locator('.modal .error').first().innerText()).includes('09:30 の形式'), await p.locator('.modal .error').first().innerText());
   await p.fill('.modal input[name=end_time]', ''); await p.click('.modal button[type=submit]'); await p.waitForFunction(() => !document.querySelector('.modal'));
+  await p.waitForFunction(() => { const b = Array.from(document.querySelectorAll('.bar')).find(x => x.textContent.includes('時刻テスト')); return b && !b.textContent.includes('-18:00'); }, null, { timeout: 8000 }).catch(() => {}); // 保存後のカレンダーの描き直しを待つ
   ok('終了時刻を空にできる', (await p.locator('.bar:has-text("時刻テスト")').first().innerText()).includes('09:30') && !(await p.locator('.bar:has-text("時刻テスト")').first().innerText()).includes('-18:00'));
   // 繰り返しの設定
   await p.click('.toolbar >> text=繰り返し業務'); await p.waitForSelector('.modal'); await p.click('.modal >> text=＋ 新しいルール').catch(() => {});

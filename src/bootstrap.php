@@ -252,6 +252,13 @@ function migrate_schema(): void
             db()->exec("ALTER TABLE users ADD COLUMN $col $def");
         }
     }
+    foreach ([['series', 'todo_auto'], ['events', 'todo_made']] as $c) { // 繰り返し業務の「毎回ToDoにも入れる」と、自動で作ったToDoの印
+        try {
+            db()->query("SELECT {$c[1]} FROM {$c[0]} LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            db()->exec("ALTER TABLE {$c[0]} ADD COLUMN {$c[1]} " . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'TINYINT' : 'INTEGER') . ' NOT NULL DEFAULT 0');
+        }
+    }
     try { // ToDoの期限日
         db()->query('SELECT due_date FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {

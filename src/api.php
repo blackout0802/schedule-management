@@ -32,7 +32,7 @@ function series_for_client(array $s, array $user, BizCalendar $cal): array
         'p_day' => $s['p_day'] === null ? null : (int)$s['p_day'], 'p_day2' => $s['p_day2'] === null ? null : (int)$s['p_day2'],
         'p_nth' => $s['p_nth'] === null ? null : (int)$s['p_nth'], 'p_weekday' => $s['p_weekday'] === null ? null : (int)$s['p_weekday'],
         'p_count' => $s['p_count'] === null ? null : (int)$s['p_count'],
-        'shift' => $s['shift'], 'bizonly' => (int)$s['bizonly'], 'start_time' => $s['start_time'], 'end_time' => $s['end_time'],
+        'shift' => $s['shift'], 'bizonly' => (int)$s['bizonly'], 'start_time' => $s['start_time'], 'end_time' => $s['end_time'], 'todo_auto' => (int)($s['todo_auto'] ?? 0) === 1,
         'owner_name' => $s['owner_name'] ?? '', 'label' => rule_label($s),
         'editable' => (int)$s['owner_id'] === (int)$user['id'] || is_admin($user),
         'next' => array_slice(array_values(array_filter(series_preview($s, 3, $cal), function ($p) {
@@ -63,7 +63,7 @@ function validate_series_input(array $in): array
     $s = [
         'rule_type' => $type, 'title' => $title, 'tag' => $tag, 'start_time' => $st, 'end_time' => $et,
         'p_day' => null, 'p_day2' => null, 'p_nth' => null, 'p_weekday' => null, 'p_count' => null,
-        'shift' => 'none', 'bizonly' => 0,
+        'shift' => 'none', 'bizonly' => 0, 'todo_auto' => !empty($in['todo_auto']) ? 1 : 0,
     ];
     $int = function ($k, $min, $max) use ($in) {
         $v = $in[$k] ?? null;
@@ -273,6 +273,7 @@ function handle_api(): void
 
         case 'todo_list':
             $tv = ($_GET['view'] ?? 'me') === 'team' ? 'team' : 'me';
+            series_make_todos(null, (int)$user['id']); // 「毎回ToDoにも入れる」の繰り返し業務で、そろそろ実施日が近い回の ToDo を作る（cron がなくても、開けば作られる）
             $rev = data_rev();
             $out = ['todos' => list_todos($user, $tv), 'done' => list_done_todos($user, $tv), 'rev' => $rev];
             if ($tv === 'team') {
@@ -597,15 +598,15 @@ function handle_api(): void
                 if ((int)$cur['owner_id'] !== (int)$user['id'] && !is_admin($user)) {
                     api_fail('このルールは編集できません。', 403);
                 }
-                q('UPDATE series SET title=?, tag=?, rule_type=?, p_day=?, p_day2=?, p_nth=?, p_weekday=?, p_count=?, shift=?, bizonly=?, start_time=?, end_time=? WHERE id=?', [
+                q('UPDATE series SET title=?, tag=?, rule_type=?, p_day=?, p_day2=?, p_nth=?, p_weekday=?, p_count=?, shift=?, bizonly=?, start_time=?, end_time=?, todo_auto=? WHERE id=?', [
                     $s['title'], $s['tag'], $s['rule_type'], $s['p_day'], $s['p_day2'], $s['p_nth'], $s['p_weekday'], $s['p_count'], $s['shift'], $s['bizonly'],
-                    $s['start_time'], $s['end_time'], $cur['id'],
+                    $s['start_time'], $s['end_time'], $s['todo_auto'], $cur['id'],
                 ]);
                 $sid = (int)$cur['id'];
             } else {
-                q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
+                q('INSERT INTO series (owner_id,title,tag,rule_type,p_day,p_day2,p_nth,p_weekday,p_count,shift,bizonly,start_time,end_time,todo_auto,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
                     $user['id'], $s['title'], $s['tag'], $s['rule_type'], $s['p_day'], $s['p_day2'], $s['p_nth'], $s['p_weekday'], $s['p_count'], $s['shift'], $s['bizonly'],
-                    $s['start_time'], $s['end_time'], now_str(),
+                    $s['start_time'], $s['end_time'], $s['todo_auto'], now_str(),
                 ]);
                 $sid = (int)db()->lastInsertId();
             }

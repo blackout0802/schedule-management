@@ -1150,11 +1150,14 @@
     }
   }
   function scheduleCloseTodoPanel() { clearTimeout(todoPanelTimer); todoPanelTimer = setTimeout(function () { closeTodoPanel(); }, 450); }
+  /* 入力中（欄の中の入力欄に、カーソルがある）は、マウスが外へ出ても、閉じない。✕・Esc・欄の外をクリックしたときは、閉じる */
+  function todoPanelTyping(p) { var a = document.activeElement; return !!(a && p.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); }
   function closeTodoPanel(now) {
     clearTimeout(todoPanelTimer);
     var p = document.getElementById('todo-panel');
     if (!p) return;
     if (now) { p.remove(); return; }
+    if (todoPanelTyping(p)) return; // 入力中は、閉じない
     p.classList.remove('open');
     setTimeout(function () { if (!p.classList.contains('open')) p.remove(); }, 200);
   }
@@ -1166,6 +1169,10 @@
     p = el('div', { id: 'todo-panel', class: 'todo-panel', role: 'dialog', 'aria-label': 'ToDo' });
     p.addEventListener('mouseenter', function () { clearTimeout(todoPanelTimer); });
     p.addEventListener('mouseleave', scheduleCloseTodoPanel);
+    p.addEventListener('focusout', function (ev) { // 入力欄から離れたとき（欄の外をクリックしたなど）、マウスも外にあるなら、あとで閉じる
+      if (ev.relatedTarget && p.contains(ev.relatedTarget)) return;
+      setTimeout(function () { if (document.getElementById('todo-panel') === p && !todoPanelTyping(p) && !p.matches(':hover')) scheduleCloseTodoPanel(); }, 0);
+    });
     // 予定をドラッグして持ってきたときの、閉じ方（左へ出ていったら閉じる）
     p.addEventListener('dragenter', function () { clearTimeout(todoPanelTimer); });
     p.addEventListener('dragover', function (ev) { if (S.drag && S.drag.t === 'event') { ev.preventDefault(); clearTimeout(todoPanelTimer); } });
@@ -2737,7 +2744,7 @@
         }
         j.series.forEach(function (s) {
           body.appendChild(el('div', { class: 'card' },
-            el('div', { class: 'top' }, el('div', null, el('div', { class: 'name', text: s.title }), el('div', { class: 'muted', text: s.label + (s.start_time ? '　' + s.start_time + (s.end_time ? '〜' + s.end_time : '') : '') })),
+            el('div', { class: 'top' }, el('div', null, el('div', { class: 'name', text: s.title }), el('div', { class: 'muted' }, s.label + (s.start_time ? '　' + s.start_time + (s.end_time ? '〜' + s.end_time : '') : ''), s.todo_auto ? el('span', { class: 'pill', style: 'margin-left:8px', text: 'ToDo連動', title: '毎回、ToDoリストにも入ります' }) : null)),
               s.editable ? el('div', null, el('button', { class: 'btn small', type: 'button', text: '編集', onclick: function () { openSeriesForm(s, function () { refresh(); load(); }); } }), ' ',
                 el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
                   if (!window.confirm('「' + s.title + '」のルールを削除します。今日以降の自動作成分も消えます。よろしいですか？')) return;
@@ -2762,6 +2769,7 @@
     var st = timeInput('start_time', s ? s.start_time : (pf.start_time || ''));
     var et = timeInput('end_time', s ? s.end_time : (pf.end_time || ''));
     var preview = el('div', { class: 'scroll-x' });
+    var autoTodo = el('input', { type: 'checkbox', name: 'todo_auto', checked: !!(s && s.todo_auto), style: 'width:auto' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var timer = null;
 
@@ -2788,7 +2796,7 @@
       fields.querySelectorAll('input,select').forEach(function (n) { n.addEventListener('input', schedule); n.addEventListener('change', schedule); });
     }
     function collect() {
-      var b = { id: s ? s.id : null, title: title.value, tag: tag.value, rule_type: typeSel.value, start_time: timeVal(st), end_time: timeVal(et) };
+      var b = { id: s ? s.id : null, title: title.value, tag: tag.value, rule_type: typeSel.value, start_time: timeVal(st), end_time: timeVal(et), todo_auto: autoTodo.checked };
       fields.querySelectorAll('input,select').forEach(function (n) { b[n.name] = n.type === 'checkbox' ? n.checked : n.value; });
       b.start_time = timeVal(st); b.end_time = timeVal(et);
       return b;
@@ -2817,6 +2825,7 @@
       el('div', { class: 'row' }, el('label', null, 'ルールの種類', typeSel), el('label', null, '分類', tag)),
       fields,
       el('div', { class: 'row' }, el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
+      el('label', { class: 'check' }, autoTodo, '毎回、ToDoリストにも入れる（実施日の約2週間前に「未着手」で入り、期限日はその回の日付。ToDoを完了にすると、その回に取り消し線）'),
       el('h4', { style: 'margin:4px 0 0', text: 'この設定で作られる予定（今月から8か月分）' }), preview, err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal(s ? 'ルールを編集' : 'ルールを追加', form, true);
