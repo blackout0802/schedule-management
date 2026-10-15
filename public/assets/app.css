@@ -5,6 +5,7 @@
   --overlay: rgba(10, 18, 32, .5);
   --fw: 400; /* 文字の基本の太さ（Apple風に細め）。太く戻したいときは、ここを 500〜600 にする */
   --rec: #b25000; /* 毎月の繰り返し業務の文字色（単発の業務は青） */
+  --rm0: #2459b8; --rm0-soft: #e1ebfa; --rm1: #b85a08; --rm1-soft: #fbe9d6; --rm2: #1f7a37; --rm2-soft: #e3f5e8; --rm3: #8e35bd; --rm3-soft: #f3e8fb; --on-rm: #fff; /* 会議室の色（部屋ごとに固定。大=青、小=オレンジ） */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
 }
 /* 画面の色: 端末の設定に合わせる（自動）。「画面の色」で、ライト／ダークに固定できる（html の data-theme） */
@@ -13,12 +14,14 @@
     --bg: #0e1522; --surface: #162033; --surface-2: #1e2b43; --ink: #e8eef8; --muted: #9aa8bd; --line: #2a3850;
     --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
     --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
+    --rm0: #7ba2ff; --rm0-soft: #1b2c52; --rm1: #f0a04b; --rm1-soft: #3d2b14; --rm2: #4fd0a8; --rm2-soft: #123a31; --rm3: #c79bf2; --rm3-soft: #2e1d44; --on-rm: #0b1620;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e1522; --surface: #162033; --surface-2: #1e2b43; --ink: #e8eef8; --muted: #9aa8bd; --line: #2a3850;
   --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
   --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
+  --rm0: #7ba2ff; --rm0-soft: #1b2c52; --rm1: #f0a04b; --rm1-soft: #3d2b14; --rm2: #4fd0a8; --rm2-soft: #123a31; --rm3: #c79bf2; --rm3-soft: #2e1d44; --on-rm: #0b1620;
 }
 :root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
@@ -854,3 +857,80 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .grid-table td.g-cell.off.t-abs, :root:not([data-theme="light"]) .g-key.abs { background: #3d1a1a; color: #ff9d96; } :root:not([data-theme="light"]) .grid-table td.g-cell.many { background: #3a2a14; color: #ffc274; } }
 :root[data-theme="dark"] .grid-table td.g-cell.off.t-abs, :root[data-theme="dark"] .g-key.abs { background: #3d1a1a; color: #ff9d96; } :root[data-theme="dark"] .grid-table td.g-cell.many { background: #3a2a14; color: #ffc274; }
 @media (max-width: 640px) { .grid-table th.g-name { min-width: 5.5em; max-width: 6.5em; padding: 0 6px; } }
+
+/* ---------- 会議室の予約（v1.51）----------
+   部屋ごとに、色と一文字（大・小）を決めて、リスト・空き日・見取り図・予約の画面の、すべてで同じ見た目にする。
+   色は、予定の区分（業務・休み・プライベート）とは別に、部屋のためだけに使う。 */
+.rm-s0 { --rc: var(--rm0); --rcs: var(--rm0-soft); } .rm-s1 { --rc: var(--rm1); --rcs: var(--rm1-soft); }
+.rm-s2 { --rc: var(--rm2); --rcs: var(--rm2-soft); } .rm-s3 { --rc: var(--rm3); --rcs: var(--rm3-soft); }
+.rooms-btn { font-weight: 600; }
+.rooms-page { max-width: 1180px; margin: 0 auto; padding: 8px 16px 48px; display: block; }
+.rooms-page > h2 { margin: 12px 0; font-size: 22px; }
+.rb { flex: none; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--rc, var(--muted)); color: var(--on-rm); font-weight: 700; font-size: 17px; line-height: 1; }
+.rb.sm { width: 22px; height: 22px; font-size: 13px; border-radius: 6px; }
+.rm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.rm-nav { display: flex; gap: 4px; }
+.rm-month { margin: 0 4px; font-size: 18px; font-variant-numeric: tabular-nums; }
+.rm-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.rm-seg button { border: 0; border-right: 1px solid var(--line); background: var(--surface); padding: 5px 12px; cursor: pointer; font-size: 13.5px; }
+.rm-seg button:last-child { border-right: 0; }
+.rm-seg button[aria-pressed="true"] { background: var(--work); color: #fff; }
+.rm-key { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: center; padding: 8px 12px; margin-bottom: 14px; background: var(--surface-2); border-radius: 10px; font-size: 13.5px; }
+.rm-key-it { display: inline-flex; align-items: center; gap: 8px; }
+.rm-key small { color: var(--muted); font-size: 12.5px; }
+.rm-split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.rm-h { margin: 14px 0 8px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.rm-split > div > .rm-h:first-child { margin-top: 0; }
+.rm-agenda, .rm-col { display: grid; gap: 8px; align-content: start; }
+.rm-row { display: grid; grid-template-columns: auto 46px minmax(0, 1fr) auto; gap: 12px; align-items: center; text-align: left; width: 100%; cursor: pointer; background: var(--rcs); border: 1px solid color-mix(in srgb, var(--rc) 35%, transparent); border-left: 6px solid var(--rc); border-radius: 10px; padding: 8px 12px 8px 10px; color: var(--ink); }
+.rm-row.nr { grid-template-columns: 46px minmax(0, 1fr) auto; }
+.rm-row:hover { filter: brightness(.97); }
+.rm-row.past { opacity: .6; }
+.rm-d { display: grid; justify-items: center; line-height: 1.2; } .rm-d b { font-size: 21px; font-variant-numeric: tabular-nums; } .rm-d small { color: var(--muted); }
+.rm-t { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; } .rm-t b { overflow-wrap: anywhere; }
+.rm-kind { font-size: 11.5px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); line-height: 1.7; }
+.rm-kind.priv { color: var(--private); border-color: var(--private); } .rm-kind.mine { color: var(--work); border-color: var(--work); }
+.rm-sub { color: var(--muted); font-size: 12.5px; } .rm-sub .rn { color: var(--rc); }
+.rm-done { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
+.rm-empty { color: var(--muted); padding: 14px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; margin: 0; }
+.rm-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rm-col-h { display: flex; align-items: center; gap: 10px; background: var(--rc); color: var(--on-rm); border-radius: 10px; padding: 8px 12px; }
+.rm-col-h .rb { background: var(--on-rm); color: var(--rc); }
+.rm-col-h b { display: block; font-size: 14px; } .rm-col-h small { display: block; opacity: .92; font-size: 11.5px; line-height: 1.3; } .rm-col-h .cnt { margin-left: auto; font-weight: 700; }
+.rm-free { border: 1px dashed color-mix(in srgb, var(--rc) 60%, var(--line)); background: transparent; color: var(--rc); border-radius: 6px; padding: 3px 12px; font-size: 13px; cursor: pointer; }
+.rm-free:hover { background: var(--rcs); border-color: var(--rc); }
+.rm-col .rm-free { padding: 6px 12px; }
+.rm-nfs { display: grid; gap: 6px; }
+.rm-nf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .rm-nf > b { min-width: 5.6em; font-size: 13px; }
+.rm-mini { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.rm-mh { text-align: center; font-size: 11px; color: var(--muted); }
+.rm-mc { border-radius: 6px; background: var(--surface-2); min-height: 66px; padding: 3px; display: grid; justify-items: stretch; align-content: start; gap: 3px; font-size: 12px; min-width: 0; }
+.rm-mc > b { justify-self: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rm-mc.today { outline: 2px solid var(--work); outline-offset: -2px; }
+.rm-mc.off { opacity: .5; background: transparent; } .rm-mc.out { background: transparent; }
+.rm-chip { height: 20px; border-radius: 5px; border: 1.5px solid var(--rc); background: var(--surface); color: var(--rc); font-size: 11.5px; font-weight: 700; padding: 0; line-height: 1; cursor: pointer; }
+.rm-chip.b { background: var(--rc); color: var(--on-rm); }
+.rm-chip:hover:not(:disabled) { background: var(--rcs); } .rm-chip.b:hover { background: var(--rc); filter: brightness(1.12); }
+.rm-chip:disabled { opacity: .4; cursor: default; }
+.rm-rules { margin-top: 18px; font-size: 13.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; }
+.rm-rules summary { cursor: pointer; font-weight: 600; } .rm-rules ul { margin: 8px 0 4px; padding-left: 1.3em; display: grid; gap: 3px; color: var(--muted); }
+/* 予約の画面 */
+.rm-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.rm-pick { display: flex; align-items: center; gap: 8px; text-align: left; background: var(--surface); border: 2px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; color: var(--ink); min-width: 0; }
+.rm-pick b { display: block; font-size: 14px; } .rm-pick small { display: block; color: var(--muted); font-size: 11.5px; }
+.rm-pick[aria-checked="true"] { border-color: var(--rc); background: var(--rcs); }
+.rm-pick .rs { font-style: normal; margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--off); white-space: nowrap; } .rm-pick.busy .rs { color: var(--danger); }
+.rm-quick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rm-msg { margin: 0; font-size: 13px; padding: 7px 10px; border-radius: 8px; } .rm-msg.ok { background: var(--off-soft); color: var(--off); } .rm-msg.ng { background: var(--danger-soft); color: var(--danger); }
+.rm-priv { align-items: flex-start; }
+.rm-view { display: flex; gap: 12px; align-items: flex-start; border-left: 6px solid var(--rc); background: var(--rcs); border-radius: 10px; padding: 10px 12px; } .rm-view p { margin: 0 0 2px; }
+.rm-adm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; } .rm-adm-row input:not([type=checkbox]) { width: auto; flex: 1 1 8em; min-width: 0; }
+@media (max-width: 760px) { .rm-split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .rooms-page { padding: 4px 10px 32px; } .rooms-page > h2 { font-size: 19px; margin: 6px 0; }
+  .rm-cols { grid-template-columns: minmax(0, 1fr); }
+  .rm-row { grid-template-columns: auto 40px minmax(0, 1fr); gap: 8px; } .rm-row.nr { grid-template-columns: 40px minmax(0, 1fr); } .rm-row .rm-done { display: none; }
+  .rb { width: 30px; height: 30px; font-size: 15px; } .rb.sm { width: 22px; height: 22px; font-size: 13px; }
+  .rm-mc { min-height: 62px; }
+  .rm-bar .btn.primary { flex: 1 1 100%; min-height: 42px; }
+}

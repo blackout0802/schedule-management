@@ -129,7 +129,7 @@ const EXAMPLE_SERIES = [
 
 /** GET（画面を開くだけ）でも使ってよい、読むだけの操作。これ以外は、POST（CSRFトークンの確認つき）だけ受け付ける */
 const API_READ_ACTIONS = ['me', 'rev', 'events', 'todo_list', 'todo_comments', 'todo_file', 'share_list', 'slack_status', 'slack_cfg',
-    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get'];
+    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list'];
 
 function handle_api(): void
 {
@@ -841,6 +841,91 @@ function handle_api(): void
                 $n = audit_delete('one', (int)$in['id']);
             }
             api_out(['ok' => true, 'deleted' => $n]);
+
+        case 'rooms_list': // 会議室の一覧と、期間内の予約（非公開の予約は、本人と管理者以外には「予約済」とだけ見える）
+            $from = (string)($_GET['from'] ?? '');
+            $to = (string)($_GET['to'] ?? '');
+            if (!valid_date($from) || !valid_date($to) || $to < $from || strtotime($to) - strtotime($from) > 100 * 86400) {
+                api_fail('期間が正しくありません。');
+            }
+            $rev = data_rev();
+            $closed = [];
+            for ($t = strtotime($from), $end = strtotime($to); $t <= $end; $t = strtotime('+1 day', $t)) {
+                $d = date('Y-m-d', $t);
+                $why = rooms_closed_reason($d, $cal);
+                if ($why !== null) {
+                    $closed[$d] = $why;
+                }
+            }
+            api_out(['rooms' => rooms_for_client(false), 'bookings' => rooms_list_bookings($from, $to, $user), 'closed' => (object)$closed,
+                'cfg' => rooms_cfg(), 'kinds' => ROOM_KINDS, 'today' => date('Y-m-d'), 'now' => date('H:i'), 'rev' => $rev]);
+
+        case 'room_booking_save':
+            $existing = null;
+            if (!empty($in['id'])) {
+                $existing = row('SELECT * FROM room_bookings WHERE id = ?', [(int)$in['id']]);
+                if (!$existing) {
+                    api_fail('予約が見つかりません。', 404);
+                }
+                if (!rooms_can_edit($existing, $user)) {
+                    api_fail(rooms_is_past($existing) ? '終了した予約は、変更できません。' : 'この予約を変更できるのは、予約した本人と管理者だけです。', 403);
+                }
+            }
+            [$data, $err] = rooms_validate_input($in, $user, $existing);
+            if ($err) {
+                api_fail($err);
+            }
+            try {
+                $saved = rooms_save($data, $user, $existing);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), 409);
+            }
+            $saved['owner_name'] = (row('SELECT name FROM users WHERE id = ?', [$saved['owner_id']]))['name'];
+            api_out(['booking' => room_booking_for_client($saved, $user)]);
+
+        case 'room_booking_delete':
+            $b = row('SELECT * FROM room_bookings WHERE id = ?', [(int)($in['id'] ?? 0)]);
+            if (!$b) {
+                api_fail('予約が見つかりません。', 404);
+            }
+            if (!rooms_can_edit($b, $user)) {
+                api_fail(rooms_is_past($b) ? '終了した予約は、取り消せません。' : 'この予約を取り消せるのは、予約した本人と管理者だけです。', 403);
+            }
+            $undo = undo_stash('room_booking', $b); // 取り消した直後なら、「元に戻す」で戻せるように、控える
+            rooms_delete($b);
+            api_out(['ok' => true, 'undo' => $undo]);
+
+        case 'room_booking_restore': // 取り消した予約を戻す（「元に戻す」）
+            $snap = undo_take((string)($in['undo'] ?? ''), 'room_booking');
+            if (!$snap) {
+                api_fail('元に戻せる時間（10分）が過ぎたか、すでに戻しました。', 410);
+            }
+            try {
+                $back = undo_room_restore($snap, $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            $back['owner_name'] = (row('SELECT name FROM users WHERE id = ?', [$back['owner_id']]))['name'];
+            api_out(['ok' => true, 'booking' => room_booking_for_client($back, $user)]);
+
+        case 'room_save': // 部屋の追加・変更（管理者）
+            require_admin($user);
+            try {
+                $r = rooms_save_room($in);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'id' => $r['id'], 'over' => $r['over']]);
+
+        case 'rooms_cfg_save': // 予約の決まり・通知の時刻（管理者）
+            require_admin($user);
+            try {
+                $cfgNew = rooms_cfg_save($in);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            audit_log('room', 'update', '会議室の予約ルール｜先の予約 ' . $cfgNew['advance_months'] . 'か月・' . $cfgNew['open'] . '〜' . $cfgNew['close']);
+            api_out(['ok' => true, 'cfg' => $cfgNew]);
 
         case 'holidays_list':
             api_out(['holidays' => rows('SELECT id, hdate, name FROM company_holidays ORDER BY hdate')]);

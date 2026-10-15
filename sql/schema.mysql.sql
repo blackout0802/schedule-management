@@ -191,3 +191,30 @@ CREATE TABLE IF NOT EXISTS todo_comment_files (
   KEY ix_tcf_comment (comment_id),
   KEY ix_tcf_todo (todo_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS rooms (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(30) NOT NULL,
+  short VARCHAR(4) NOT NULL DEFAULT '',
+  capacity INT UNSIGNED NOT NULL DEFAULT 10,
+  equipment VARCHAR(60) NOT NULL DEFAULT '',
+  sort_order INT NOT NULL DEFAULT 0,
+  active TINYINT NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS room_bookings (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  room_id INT UNSIGNED NOT NULL,
+  bdate DATE NOT NULL,
+  start_time VARCHAR(5) NOT NULL,
+  end_time VARCHAR(5) NOT NULL,
+  title VARCHAR(60) NOT NULL,
+  kind VARCHAR(10) NOT NULL DEFAULT 'meeting',
+  pax INT UNSIGNED NOT NULL DEFAULT 1,
+  owner_id INT UNSIGNED NOT NULL,
+  is_private TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  updated_by INT UNSIGNED NULL,
+  KEY ix_room_bookings_day (bdate, room_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

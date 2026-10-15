@@ -509,7 +509,7 @@ function notify_due(?int $now = null): array
             $msg[] = $n > 0 ? "{$label}の休み: {$n} 件を通知しました" : "{$label}は休みなしと通知しました";
         }
     }
-    return $msg;
+    return array_merge($msg, rooms_notify_due($now)); // 会議室の予約（前日の夕方・当日の朝）
 }
 
 /** 設定画面のプレビュー（まだ保存していない入力のまま、3つの通知の見本文を作る。実在の社員は使わない） */

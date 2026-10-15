@@ -97,3 +97,26 @@ function undo_todo_restore(array $snap, array $user): array
     }
     return $todo;
 }
+
+/** 取り消した会議室の予約を戻す。戻した行を返す（戻せなければ RuntimeException） */
+function undo_room_restore(array $snap, array $user): array
+{
+    if ((int)$snap['owner_id'] !== (int)$user['id'] && !is_admin($user)) {
+        throw new RuntimeException('この予約は戻せません。');
+    }
+    if (row('SELECT 1 AS x FROM room_bookings WHERE id = ?', [$snap['id']])) {
+        throw new RuntimeException('この予約は、すでにあります。');
+    }
+    if (rooms_is_past($snap)) {
+        throw new RuntimeException('終了した予約は、戻せません。');
+    }
+    $c = rooms_conflict((int)$snap['room_id'], $snap['bdate'], room_min($snap['start_time']), room_min($snap['end_time']));
+    if ($c) {
+        throw new RuntimeException('取り消したあとに、同じ時間の予約が入ったため、戻せません。');
+    }
+    $snap['updated_at'] = now_str();
+    $b = undo_insert_row('room_bookings', $snap);
+    $room = row('SELECT name FROM rooms WHERE id = ?', [(int)$b['room_id']]);
+    audit_log('room', 'add', rooms_audit_label($b, (string)($room['name'] ?? '')), '', '取り消しを元に戻しました');
+    return $b;
+}

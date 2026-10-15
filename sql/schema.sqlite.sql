@@ -181,3 +181,30 @@ CREATE TABLE IF NOT EXISTS todo_comment_files (
 );
 CREATE INDEX IF NOT EXISTS ix_tcf_comment ON todo_comment_files (comment_id);
 CREATE INDEX IF NOT EXISTS ix_tcf_todo ON todo_comment_files (todo_id);
+
+CREATE TABLE IF NOT EXISTS rooms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  short TEXT NOT NULL DEFAULT '',
+  capacity INTEGER NOT NULL DEFAULT 10,
+  equipment TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS room_bookings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id INTEGER NOT NULL,
+  bdate TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  title TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'meeting',
+  pax INTEGER NOT NULL DEFAULT 1,
+  owner_id INTEGER NOT NULL,
+  is_private INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by INTEGER NULL
+);
+CREATE INDEX IF NOT EXISTS ix_room_bookings_day ON room_bookings (bdate, room_id);
