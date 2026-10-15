@@ -1567,10 +1567,10 @@ check('毎週: 入力の検証（曜日が無い・数え始める日が不正�
 
 // ---- 会議室の予約 ----
 $rms = rooms_all();
-check('会議室: 初めから、大会議室（8名）と応接室（4名）が入っている', [count($rms), $rms[0]['name'], (int)$rms[0]['capacity'], $rms[1]['name'], (int)$rms[1]['capacity']], [2, '大会議室', 8, '応接室', 4]);
+check('会議室: 初めから、会議室（6名）と応接室（3名）が入っている。設備は入っていない', [count($rms), $rms[0]['name'], (int)$rms[0]['capacity'], $rms[1]['name'], (int)$rms[1]['capacity'], $rms[0]['equipment'] . $rms[1]['equipment']], [2, '会議室', 6, '応接室', 3, '']);
 $rA = (int)$rms[0]['id']; $rB = (int)$rms[1]['id'];
 $rn = strtotime('2031-03-12 10:00:00'); // 水曜日の10:00 を「いま」にして確かめる
-$rin = function (array $o = []) use ($rA) { return array_merge(['room_id' => $rA, 'date' => '2031-03-13', 'start' => '10:00', 'end' => '12:00', 'title' => '安全衛生委員会', 'kind' => 'committee', 'pax' => 8, 'private' => false], $o); };
+$rin = function (array $o = []) use ($rA) { return array_merge(['room_id' => $rA, 'date' => '2031-03-13', 'start' => '10:00', 'end' => '12:00', 'title' => '安全衛生委員会', 'kind' => 'committee', 'pax' => 6, 'private' => false], $o); };
 $rv = function (array $o, $u = null, $ex = null) use ($rin, $a, $rn) { return rooms_validate_input($rin($o), $u ?? $a, $ex, $rn)[1]; };
 check('会議室: 正しい入力は通る（当日の予約も、過去でない日の予約もよい）', [$rv([]), $rv(['date' => '2031-03-12', 'start' => '09:30', 'end' => '11:00'])], [null, null]);
 check('会議室: 30分刻みでない時間・終わりが始まりより前は断る', [strpos((string)$rv(['start' => '10:15']), '30分刻み') !== false, $rv(['start' => '11:00', 'end' => '10:30'])], [true, '終了は、開始より後の時刻にしてください。']);
@@ -1580,14 +1580,14 @@ check('会議室: 土日・祝日・会社の休業日は、一般の社員は�
 check('会議室: 管理者は、休業日にも予約できる', [rooms_validate_input($rin(['date' => '2031-03-15']), $admin, null, $rn)[1], rooms_validate_input($rin(['date' => '2031-03-14']), $admin, null, $rn)[1]], [null, null]);
 check('会議室: 営業時間（9:00〜18:00）の外は、一般の社員は予約できない。管理者はできる', [strpos((string)$rv(['start' => '08:30', 'end' => '09:30']), '9:00〜18:00') !== false, strpos((string)$rv(['start' => '17:00', 'end' => '18:30']), '9:00〜18:00') !== false, $rv(['start' => '09:00', 'end' => '18:00']), rooms_validate_input($rin(['start' => '08:00', 'end' => '19:30']), $admin, null, $rn)[1]], [true, true, null, null]);
 check('会議室: 予約は3か月先まで（管理者は、それより先も可）', [$rv(['date' => '2031-06-12']), strpos((string)$rv(['date' => '2031-06-13']), '3か月先') !== false, rooms_validate_input($rin(['date' => '2031-09-10']), $admin, null, $rn)[1]], [null, true, null]);
-check('会議室: 人数は必須で、定員を超えると断る（応接室は4名まで）', [$rv(['pax' => '']), $rv(['pax' => 0]), strpos((string)$rv(['room_id' => $rB, 'pax' => 5]), '定員は4名') !== false, $rv(['room_id' => $rB, 'pax' => 4]), $rv(['pax' => 8]), strpos((string)$rv(['pax' => 9]), '定員は8名') !== false], ['人数を入力してください。', '人数を入力してください。', true, null, null, true]);
+check('会議室: 人数は必須で、定員を超えると断る（応接室は3名まで）', [$rv(['pax' => '']), $rv(['pax' => 0]), strpos((string)$rv(['room_id' => $rB, 'pax' => 4]), '定員は3名') !== false, $rv(['room_id' => $rB, 'pax' => 3]), $rv(['pax' => 6]), strpos((string)$rv(['pax' => 7]), '定員は6名') !== false], ['人数を入力してください。', '人数を入力してください。', true, null, null, true]);
 check('会議室: 用件・区分は必須', [strpos((string)$rv(['title' => '  ']), '用件') !== false, strpos((string)$rv(['kind' => 'xxx']), '区分') !== false, strpos((string)$rv(['title' => str_repeat('あ', 61)]), '60文字') !== false], [true, true, true]);
 check('会議室: 存在しない部屋・使わない部屋は選べない', [$rv(['room_id' => 99999]), strpos((string)$rv(['room_id' => 0]), '部屋') !== false], ['部屋を選んでください。', true]);
 // 保存・二重予約
 $bk1 = rooms_save(rooms_validate_input($rin(), $a, null, $rn)[0], $a);
-check('会議室: 予約を保存すると、予約した人・日付・時間が残る', [(int)$bk1['owner_id'], $bk1['bdate'], $bk1['start_time'], $bk1['end_time'], (int)$bk1['pax']], [(int)$a['id'], '2031-03-13', '10:00', '12:00', 8]);
+check('会議室: 予約を保存すると、予約した人・日付・時間が残る', [(int)$bk1['owner_id'], $bk1['bdate'], $bk1['start_time'], $bk1['end_time'], (int)$bk1['pax']], [(int)$a['id'], '2031-03-13', '10:00', '12:00', 6]);
 check('会議室: 同じ部屋・重なる時間は、二重予約として断る（先に取った人が優先）', [strpos((string)$rv(['start' => '11:00', 'end' => '13:00'], $b), '「安全衛生委員会」（山田）') !== false, strpos((string)$rv(['start' => '09:30', 'end' => '10:30'], $b), '10:00〜12:00') !== false, $rv(['start' => '09:00', 'end' => '13:00'], $b) !== null], [true, true, true]);
-check('会議室: 時間が接しているだけなら、予約できる。別の部屋も、同じ時間に予約できる', [$rv(['start' => '12:00', 'end' => '13:00'], $b), $rv(['start' => '09:00', 'end' => '10:00'], $b), $rv(['room_id' => $rB, 'pax' => 4], $b)], [null, null, null]);
+check('会議室: 時間が接しているだけなら、予約できる。別の部屋も、同じ時間に予約できる', [$rv(['start' => '12:00', 'end' => '13:00'], $b), $rv(['start' => '09:00', 'end' => '10:00'], $b), $rv(['room_id' => $rB, 'pax' => 3], $b)], [null, null, null]);
 check('会議室: 自分の予約を変更するときは、自分自身とは重ならない', $rv(['end' => '12:30'], $a, $bk1), null);
 $bkP = rooms_save(rooms_validate_input($rin(['room_id' => $rB, 'pax' => 3, 'start' => '14:00', 'end' => '15:00', 'title' => '人事面談（秘密）', 'kind' => 'other', 'private' => true]), $a, null, $rn)[0], $a);
 $mErr = (string)$rv(['room_id' => $rB, 'pax' => 3, 'start' => '14:30', 'end' => '15:30'], $b);
@@ -1619,14 +1619,14 @@ check('会議室: 戻した予約は、また取り消せる状態（本人の�
 // 変更履歴
 $lg = rows("SELECT * FROM audit_log WHERE type = 'room' ORDER BY id");
 $lgText = implode("\n", array_map(function ($r) { return $r['action'] . '|' . $r['label'] . '|' . $r['detail']; }, $lg));
-check('会議室: 予約の追加・取り消し・元に戻すが、変更履歴に残る', [strpos($lgText, 'add|会議室｜大会議室　3/13 10:00〜12:00　安全衛生委員会') !== false, strpos($lgText, 'delete|会議室｜大会議室') !== false, strpos($lgText, '取り消しを元に戻しました') !== false], [true, true, true]);
+check('会議室: 予約の追加・取り消し・元に戻すが、変更履歴に残る', [strpos($lgText, 'add|会議室｜会議室　3/13 10:00〜12:00　安全衛生委員会') !== false, strpos($lgText, 'delete|会議室｜会議室') !== false, strpos($lgText, '取り消しを元に戻しました') !== false], [true, true, true]);
 check('会議室: 非公開の予約は、変更履歴にも、件名を残さない', [strpos($lgText, '人事面談') === false, strpos($lgText, '非公開の予約') !== false], [true, true]);
 // 一覧
 $lst = rooms_list_bookings('2031-03-01', '2031-03-31', $b);
 check('会議室: 一覧は、日付・時間の順で、非公開は「予約済」', array_map(function ($x) { return $x['date'] . ' ' . $x['start'] . ' ' . $x['title']; }, $lst), ['2031-03-13 10:00 安全衛生委員会', '2031-03-13 14:00 予約済']);
 // 通知
 $lines = rooms_notify_text('2031-03-13', '明日');
-check('会議室: Slack通知の文面は、時刻順に並び、非公開は件名を出さない', [strpos($lines, "【明日の会議室】3/13（木）") === 0, strpos($lines, '• 10:00〜12:00　大会議室　安全衛生委員会（委員会）　山田') !== false, strpos($lines, '• 14:00〜15:00　応接室　予約済（非公開）') !== false, strpos($lines, '人事面談') === false], [true, true, true, true]);
+check('会議室: Slack通知の文面は、時刻順に並び、非公開は件名を出さない', [strpos($lines, "【明日の会議室】3/13（木）") === 0, strpos($lines, '• 10:00〜12:00　会議室　安全衛生委員会（委員会）　山田') !== false, strpos($lines, '• 14:00〜15:00　応接室　予約済（非公開）') !== false, strpos($lines, '人事面談') === false], [true, true, true, true]);
 $bkX = rooms_save(rooms_validate_input($rin(['room_id' => $rB, 'pax' => 2, 'start' => '16:00', 'end' => '17:00', 'title' => '<!channel> & <@U12345678> 全員集合', 'kind' => 'other']), $a, null, $rn)[0], $a);
 $xt = rooms_notify_text('2031-03-13', '明日');
 check('会議室: Slack の通知に入れる用件は、<!channel> や @呼び出しが効かない形にする', [strpos($xt, '<!channel>') === false && strpos($xt, '<@U12345678>') === false, strpos($xt, '&lt;!channel&gt; &amp; &lt;@U12345678&gt; 全員集合') !== false], [true, true]);
@@ -1655,9 +1655,9 @@ check('会議室: 少人数のお勧めはない（設定にも出ない）', ar
 $nr3 = rooms_save_room(['name' => '相談室', 'short' => '', 'capacity' => 4, 'equipment' => 'テレビ']);
 $r3 = row('SELECT * FROM rooms WHERE id = ?', [$nr3['id']]);
 check('会議室: 部屋を追加できる（略称は、名前の1文字目）', [$r3['name'], $r3['short'], (int)$r3['capacity'], (int)$r3['sort_order']], ['相談室', '相', 4, 3]);
-$ov = rooms_save_room(['id' => $rA, 'name' => '大会議室', 'short' => '大', 'capacity' => 6, 'equipment' => 'プロジェクター・ホワイトボード']);
+$ov = rooms_save_room(['id' => $rA, 'name' => '会議室', 'short' => '会', 'capacity' => 4, 'equipment' => '']);
 check('会議室: 定員を減らしたとき、先の予約で人数が超える件数を知らせる（予約は残る）', [$ov['over'], (int)row('SELECT COUNT(*) AS c FROM room_bookings WHERE room_id = ?', [$rA])['c']], [1, 1]);
-rooms_save_room(['id' => $rA, 'name' => '大会議室', 'short' => '大', 'capacity' => 8, 'equipment' => 'プロジェクター・ホワイトボード']);
+rooms_save_room(['id' => $rA, 'name' => '会議室', 'short' => '会', 'capacity' => 6, 'equipment' => 'プロジェクター・ホワイトボード']);
 rooms_save_room(['id' => $nr3['id'], 'name' => '相談室', 'short' => '相', 'capacity' => 4, 'equipment' => '', 'active' => 0]);
 check('会議室: 使わない部屋は、選択肢から外れ、予約には選べない（色の番号は、並び順のまま）', [count(rooms_all()), strpos((string)$rv(['room_id' => $nr3['id'], 'pax' => 2]), '部屋') !== false, array_map(function ($x) { return $x['slot']; }, rooms_for_client(false))], [2, true, [0, 1, 2]]);
 $badR = [];
@@ -1666,8 +1666,8 @@ foreach ([['name' => '', 'capacity' => 5], ['name' => 'あ', 'capacity' => 0], [
 }
 check('会議室: 部屋の名前・定員・設備がおかしいと、保存できない', $badR, ['ng', 'ng', 'ng']);
 check('会議室: 最後の1部屋は、使わない設定にできない', (function () use ($rA, $rB) {
-    rooms_save_room(['id' => $rB, 'name' => '応接室', 'short' => '応', 'capacity' => 4, 'equipment' => 'モニター', 'active' => 0]);
-    try { rooms_save_room(['id' => $rA, 'name' => '大会議室', 'short' => '大', 'capacity' => 8, 'active' => 0]); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } finally { rooms_save_room(['id' => $rB, 'name' => '応接室', 'short' => '応', 'capacity' => 4, 'equipment' => 'モニター', 'active' => 1]); }
+    rooms_save_room(['id' => $rB, 'name' => '応接室', 'short' => '応', 'capacity' => 3, 'equipment' => '', 'active' => 0]);
+    try { rooms_save_room(['id' => $rA, 'name' => '会議室', 'short' => '会', 'capacity' => 6, 'active' => 0]); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } finally { rooms_save_room(['id' => $rB, 'name' => '応接室', 'short' => '応', 'capacity' => 3, 'equipment' => '', 'active' => 1]); }
 })(), 'ng');
 check('会議室: バックアップに、部屋と予約が入る', [isset(backup_collect()['tables']['rooms']), count(backup_collect()['tables']['room_bookings']) >= 1], [true, true]);
 q('DELETE FROM room_bookings'); q("DELETE FROM company_holidays WHERE hdate = '2031-03-14'"); q('DELETE FROM rooms WHERE id = ?', [$nr3['id']]);
@@ -1682,6 +1682,16 @@ check('会議室: 古い初期値の部屋は、応接室（4名）・大会議�
     row("SELECT capacity AS x FROM rooms WHERE sort_order = 9")['x'] . '',
     row("SELECT name || '/' || capacity AS x FROM rooms WHERE sort_order = 10")['x'],
 ], ['応接室/応/4', '8', '小さな部屋/5']);
+q('DELETE FROM rooms WHERE sort_order >= 8');
+
+// v1.55.0: 大会議室(8名) → 会議室(6名)、応接室(4名) → 3名。初期の設備名は消し、自分で書いた設備は残す。名前を変えた部屋は触らない
+q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES ('大会議室', '大', 8, 'プロジェクター・ホワイトボード', 8, 1)");
+q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES ('応接室', '応', 4, 'モニター', 9, 1)");
+q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES ('大会議室', '大', 8, '大きなテレビ', 10, 1)");
+q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES ('第2会議室', '2', 8, 'モニター', 11, 1)");
+rooms_migrate_v26(); rooms_migrate_v26();
+$m26 = function ($o) { $r = row('SELECT * FROM rooms WHERE sort_order = ?', [$o]); return $r['name'] . '/' . $r['short'] . '/' . $r['capacity'] . '/' . $r['equipment']; };
+check('会議室: 古い初期値の部屋は、会議室（6名）・応接室（3名）になり、初期の設備名は消える。自分で書いた設備・名前を変えた部屋は、そのまま', [$m26(8), $m26(9), $m26(10), $m26(11)], ['会議室/会/6/', '応接室/応/3/', '会議室/会/6/大きなテレビ', '第2会議室/2/8/モニター']);
 q('DELETE FROM rooms WHERE sort_order >= 8');
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";

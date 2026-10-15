@@ -102,15 +102,15 @@ function rooms_cfg_save(array $in): array
     return rooms_cfg();
 }
 
-/** 初めて使うときの部屋（大会議室 8名・応接室 4名）。部屋が1つもないときだけ入れる */
+/** 初めて使うときの部屋（会議室 6名・応接室 3名。設備は入れない）。部屋が1つもないときだけ入れる */
 function rooms_seed_defaults(): void
 {
     $r = row('SELECT COUNT(*) AS c FROM rooms');
     if ($r && (int)$r['c'] > 0) {
         return;
     }
-    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['大会議室', '大', 8, 'プロジェクター・ホワイトボード', 1]);
-    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['応接室', '応', 4, 'モニター', 2]);
+    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['会議室', '会', 6, '', 1]);
+    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['応接室', '応', 3, '', 2]);
 }
 
 /**
@@ -121,6 +121,16 @@ function rooms_migrate_v25(): void
 {
     q("UPDATE rooms SET name = '応接室', short = '応', capacity = 4 WHERE name = '小会議室' AND short = '小'");
     q("UPDATE rooms SET capacity = 8 WHERE name = '大会議室' AND short = '大'");
+}
+
+/**
+ * 会社の実際の部屋に合わせる（大会議室 → 会議室・6名、応接室 → 3名。設備の初期値「プロジェクター・ホワイトボード」「モニター」は消す）。一度だけ。
+ * 名前が初期のままの部屋だけを直す。何度実行しても安全。
+ */
+function rooms_migrate_v26(): void
+{
+    q("UPDATE rooms SET name = '会議室', short = '会', capacity = 6, equipment = CASE WHEN equipment = 'プロジェクター・ホワイトボード' THEN '' ELSE equipment END WHERE name = '大会議室' AND short = '大'");
+    q("UPDATE rooms SET capacity = 3, equipment = CASE WHEN equipment = 'モニター' THEN '' ELSE equipment END WHERE name = '応接室' AND short = '応'");
 }
 
 function rooms_all(bool $onlyActive = true): array
