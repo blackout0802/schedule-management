@@ -934,3 +934,12 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
   .rm-mc { min-height: 62px; }
   .rm-bar .btn.primary { flex: 1 1 100%; min-height: 42px; }
 }
+
+/* ---------- 全社の表示: 人ごとの色分け（v1.52）----------
+   業務は淡い色、休みは同じ色味のやや濃い色に、斜線（斜線は、背景の色によらず見える、白と黒の半透明の線）。 */
+.bar.off.pc, .day-item.off.pc { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.5) 0 4px, rgba(0,0,0,.07) 4px 8px); }
+.pc-opt { font-size: 13px; white-space: nowrap; }
+.pc-opt input { width: auto; margin: 0; }
+.legend .pc-chip { display: inline-flex; align-items: center; }
+.legend .pc-chip i { box-shadow: inset 0 0 0 1px rgba(0,0,0,.22); width: 12px; height: 12px; }
+.legend .pc-stripe { display: inline-block; padding: 0 8px; border-radius: 4px; font-size: 11px; background: color-mix(in srgb, var(--muted) 30%, var(--surface)); background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.5) 0 4px, rgba(0,0,0,.07) 4px 8px); color: var(--ink); margin-right: 4px; }

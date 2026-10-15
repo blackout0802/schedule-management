@@ -54,6 +54,7 @@ const backToCal = async (p) => { await p.click('button:has-text("カレンダー
   // ---- 他の人の画面
   const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await s.selectOption('#who-sel', 'all'); await s.waitForSelector('.cal .bar');
   await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const d = new Date(); const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); await fetch('api.php?action=event_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'work', title: '鈴木の業務', tag: '打ち合わせ', start: ds, end: ds }) }); });
+  await s.evaluate(() => localStorage.setItem('sched.personColor', 'false')); // 全社の「人ごとに色分け」は、ここでは切っておく（標準の色を確かめるため。人ごとの色は pcolor で確かめる）
   await s.reload(); await s.waitForSelector('.cal .bar:has-text("鈴木の業務")'); await s.selectOption('#who-sel', 'all'); await s.waitForSelector('.cal .bar:has-text("単発の打ち合わせ")');
   const sy = await colorOf(s, '単発の打ち合わせ'), ss = await colorOf(s, '鈴木の業務');
   ok('鈴木さんの画面でも、山田さんの予定は、山田さんの色', sy[1] === 'rgb(245, 163, 163)', sy);

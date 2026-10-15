@@ -234,8 +234,42 @@
   }
   /* 予定の持ち主が決めた色を、その予定の帯だけに当てる（全員の画面で、その人の予定が、その人の色になる） */
   function eventColorStyle(e) {
-    var v = colorVars(e.colors);
+    var c = e.colors || {};
+    if (personColorOn() && e.kind !== 'private' && e.owner_id) { // 全社の表示では、持ち主が自分で決めた色がなければ、人ごとの色にする
+      var pc = personColors(e.owner_id);
+      c = { work: c.work || pc.work, rec: c.rec || '', off: c.off || pc.off };
+    }
+    var v = colorVars(c);
     return Object.keys(v).map(function (k) { return ';' + k + ':' + v[k]; }).join('');
+  }
+  /* ---------- 全社の表示: 誰の予定か ----------
+     全社（全員）の業務版・会社用リンクでは、(1) 業務の予定の先頭に、持ち主の名前（姓。同じ姓の人がいれば、フルネーム）を付け、
+     (2) 「人ごとに色分け」（初期値はオン。端末ごとに覚える）で、社員ごとに色を変える。業務は淡い色、休みは同じ色味のやや濃い色に斜線。
+     色は、社員の番号で決まる（人が増えても、減っても、他の人の色は変わらない）。本人が「予定の色」で決めた色があれば、そちらを優先する。 */
+  var PERSON_HUES = [10, 2, 6, 13, 0, 8, 3, 14, 5, 11, 1, 7, 12, 4, 9, 15]; // COLOR_PRESETS の色相の番号。隣り合う番号の社員の色が離れるように並べてある
+  function allView() { return !FAMILY && S.view === 'team' && !whoId(); }
+  function personColorOn() { return allView() && S.mode !== 'grid' && store('sched.personColor') !== false; }
+  function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3 + 1] }; }
+  function pcClass(e) { return personColorOn() && e.kind === 'off' && e.owner_id ? ' pc' : ''; }
+  function surnameOf(n) { return String(n || '').split(/[\s　]+/)[0] || String(n || ''); }
+  function ownerShort(e) {
+    if (S._nameEv !== S.events || S._nameUsers !== (S.me && S.me.users)) { // 同じ姓の人がいるか（社員の一覧と、いま読み込んでいる予定の持ち主）
+      var m = {};
+      var add = function (id, name) { if (!name) return; var k = surnameOf(name); (m[k] = m[k] || {})[id] = 1; };
+      ((S.me && S.me.users) || []).forEach(function (u) { add(u.id, u.name); });
+      (S.events || []).forEach(function (x) { add(x.owner_id, x.owner_name); });
+      S._dupNames = m; S._nameEv = S.events; S._nameUsers = S.me && S.me.users;
+    }
+    var k = surnameOf(e.owner_name);
+    return S._dupNames[k] && Object.keys(S._dupNames[k]).length > 1 ? e.owner_name : k;
+  }
+  /* 凡例（カレンダーの下）: いま表示している月に出てくる社員の、色と名前 */
+  function personLegend() {
+    var seen = {}, list = [];
+    S.events.forEach(function (e) { if (e.kind !== 'private' && e.owner_id && e.owner_name && !e.deleted && !seen[e.owner_id]) { seen[e.owner_id] = 1; list.push(e); } });
+    list.sort(function (a, b) { return a.owner_name.localeCompare(b.owner_name, 'ja'); });
+    return list.map(function (e) { return el('span', { class: 'pc-chip' }, el('i', { style: 'background:' + ((e.colors && e.colors.work) || personColors(e.owner_id).work) }), ownerShort(e)); })
+      .concat([el('span', null, el('span', { class: 'pc-stripe', text: '休み' }), '＝斜線（人ごとの色）')]);
   }
   function parseRgb(str) {
     var m = /^rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)/.exec(str) || null;
@@ -690,6 +724,8 @@
           el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
+      todoOnly || S.mode === 'grid' || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは斜線つき）。この端末の設定です' },
+        el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
       SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         [['cal', 'カレンダー']].concat(!SHARE && S.view === 'team' ? [['grid', '休み表']] : [], [['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'grid' ? '休み表: 人×日（g）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
@@ -831,7 +867,8 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    return (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
+    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : ''; // 全社の表示: 業務の予定の先頭に、誰の予定か
+    return who + (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
   /* 土日祝か（会社の休業日を含む。祝日は読み込んだ範囲の分だけ分かる） */
@@ -897,7 +934,7 @@
 
   function barFor(g, days) {
     var e = g.ev;
-    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + pcClass(e) + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
       text: (g.contL ? '… ' : '') + eventLabel(e, e.start === ymd(days[g.s]), NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
@@ -926,7 +963,7 @@
 
   /* リスト表示: ログインして使う画面は、ToDoの管理だけ（予定は、カレンダーで見る）。共有リンク（会社用）は、今月の予定を日ごとに */
   function plainBar(e, ds) {
-    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''),
+    var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + pcClass(e) + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''),
       text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
     if (!SHARE && e.editable) { // リストの予定を、ToDoの列へ・別の日の行へドラッグできる
@@ -1072,8 +1109,8 @@
     if (NARROW()) tips.push('カレンダーを左右にスワイプすると、前の月・次の月に切り替わります。');
     if (POLL_MS && !FAMILY) tips.push('他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に、自動で反映されます。');
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
-      el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
-      el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み'),
+      personColorOn() ? personLegend() : [el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
+        el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み')],
       offdayPref().on ? el('span', null, el('i', { class: 'offday-sw', style: offdayPref().color ? 'background:' + offdayBg(offdayPref().color) : null }), '休みの人がいる日') : null,
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--uc-private, var(--private))' }), 'プライベート') : null,
       FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' })),
@@ -2623,7 +2660,7 @@
       if (e.kind === 'work' && !FAMILY && e.owner_name) sub.push(e.owner_name);
       if (e.tag && e.kind !== 'off') sub.push(e.tag); // 休みは、見出しに分類が入っている
       if (e.start !== e.end) sub.push(mdw(e.start) + ' 〜 ' + mdw(e.end));
-      return el('button', { type: 'button', class: 'day-item ' + e.kind + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''), style: eventColorStyle(e) || null, onclick: function () { ov.close(); openEventDialog(e); } },
+      return el('button', { type: 'button', class: 'day-item ' + e.kind + pcClass(e) + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''), style: eventColorStyle(e) || null, onclick: function () { ov.close(); openEventDialog(e); } },
         el('span', { class: 'di-title', text: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) }),
         sub.length ? el('span', { class: 'di-sub', text: sub.join('　') }) : null,
         e.note ? el('span', { class: 'di-note', text: e.note }) : null);
