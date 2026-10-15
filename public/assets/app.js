@@ -46,7 +46,6 @@
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   /* 右上のボタンの絵（線画。文字と同じ色・同じ大きさ） */
   var ICON_PATHS = {
-    people: '<circle cx="9" cy="8.2" r="3.2"/><circle cx="17" cy="9.2" r="2.5"/><path d="M3 19.5c0-3.3 2.7-5.8 6-5.8s6 2.5 6 5.8"/><path d="M15.6 13.9c.5-.1.9-.2 1.4-.2 2.4 0 4.3 1.9 4.3 4.6"/>',
     gear: '<path d="M19.43 10.40L21.93 10.82L21.93 13.18L19.43 13.60L18.38 16.12L19.85 18.19L18.19 19.85L16.12 18.38L13.60 19.43L13.18 21.93L10.82 21.93L10.40 19.43L7.88 18.38L5.81 19.85L4.15 18.19L5.62 16.12L4.57 13.60L2.07 13.18L2.07 10.82L4.57 10.40L5.62 7.88L4.15 5.81L5.81 4.15L7.88 5.62L10.40 4.57L10.82 2.07L13.18 2.07L13.60 4.57L16.12 5.62L18.19 4.15L19.85 5.81L18.38 7.88Z"/><circle cx="12" cy="12" r="3.2"/>'
   };
   function svgIcon(name) { var s = el('span', { class: 'ic-wrap', 'aria-hidden': 'true' }); s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" focusable="false">' + ICON_PATHS[name] + '</svg>'; return s; }
@@ -256,7 +255,7 @@
      色は、社員の番号で決まる（人が増えても、減っても、他の人の色は変わらない）。本人が「予定の色」で決めた色があれば、そちらを優先する。 */
   var PERSON_HUES = [10, 2, 6, 13, 0, 8, 3, 14, 5, 11, 1, 7, 12, 4, 9, 15]; // COLOR_PRESETS の色相の番号。隣り合う番号の社員の色が離れるように並べてある
   function allView() { return !FAMILY && S.view === 'team' && !whoId(); }
-  function personColorOn() { return allView() && S.mode !== 'grid' && store('sched.personColor') !== false; }
+  function personColorOn() { return allView() && store('sched.personColor') !== false; }
   function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3], badge: COLOR_PRESETS[h * 3 + 2] }; } // 休みも、業務と同じ淡い色。違いは、頭の「休」バッジ（濃い色）
   function onColor(hex) { var bg = hexRgb(hex); return contrastRatio(bg, [255, 255, 255]) >= contrastRatio(bg, [20, 32, 51]) ? '#ffffff' : '#14202f'; }
   function pcClass(e) { return personColorOn() && e.kind === 'off' && e.owner_id ? ' pc' : ''; }
@@ -347,7 +346,7 @@
      入力欄に文字を打っているとき、ダイアログを開いているとき、Ctrl・Alt・Command を押しているときは、動かさない。
      日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
   var SHORTCUTS = [
-    ['c', 'カレンダーを表示'], ['g', '休み表（人×日）を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月に戻る（今日）'], ['← / →', '前の月 / 次の月'],
+    ['c', 'カレンダーを表示'], ['r', '会議室予約を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月に戻る（今日）'], ['← / →', '前の月 / 次の月'],
     ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['s', 'システム更新（管理者のみ）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
   ];
   function shortcutKey(e) {
@@ -373,11 +372,11 @@
     var k = shortcutKey(e);
     if (!k) return;
     if (S.page !== 'main') { // 設定・会議室のページ: カレンダーに関わるキーは、カレンダーに戻ってから動かす。それ以外（予定の追加など）は動かさない
-      if (['c', 'g', 'l', 't', 'b', 'p', 'ArrowLeft', 'ArrowRight'].indexOf(k) >= 0) leaveSettings(); else if (k !== '?' && k !== 's') return;
+      if (['c', 'r', 'l', 't', 'b', 'p', 'ArrowLeft', 'ArrowRight'].indexOf(k) >= 0) leaveSettings(); else if (k !== '?' && k !== 's') return;
     }
     var done = true;
     if (k === 'c') setMode('cal');
-    else if (k === 'g' && !SHARE && S.view === 'team') setMode('grid');
+    else if (k === 'r' && !SHARE && S.view === 'team') openRoomsPage();
     else if (k === 'l' && !FAMILY) setMode('list');
     else if (k === 't') goToday();
     else if (k === 'ArrowLeft') navMonth(-1);
@@ -445,8 +444,7 @@
       }));
 
     return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
-      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })), tabs, el('span', { class: 'spacer' }),
-      el('button', { class: 'btn small rooms-btn' + (onMain ? '' : ' on'), type: 'button', title: '会議室の予約', 'aria-label': '会議室の予約', 'aria-current': onMain ? null : 'page', onclick: function () { if (onMain) openRoomsPage(); } }, svgIcon('people'), el('span', { class: 'lbl', text: ' 会議室' })), settingsMenu, userMenu)));
+      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })), tabs, el('span', { class: 'spacer' }), settingsMenu, userMenu)));
   }
 
   function renderShell() {
@@ -711,7 +709,6 @@
   function setView(v) {
     if (S.view === v) return;
     S.view = v; store('sched.view', v);
-    if (v !== 'team' && S.mode === 'grid') S.mode = 'cal'; // 休み表は、業務版だけ
     if (S.page !== 'main' || SHARE) { renderShell(); load(); return; }
     document.querySelectorAll('.tabs .tab').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-view') === v ? 'true' : 'false'); });
     var c = S.cache[evKey(evParams())];
@@ -734,23 +731,23 @@
       todoOnly ? null : el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
       el('span', { class: 'spacer', style: 'flex:1' }),
       el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
-      SHARE || todoOnly || S.view !== 'team' || S.mode === 'grid' ? null : el('label', { class: 'who' }, el('span', { class: 'lbl', text: '表示する人' }),
+      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' }, el('span', { class: 'lbl', text: '表示する人' }),
         el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { selectWho(this.value); } },
           el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
-      todoOnly || S.mode === 'grid' || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
+      todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
       SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
-        [['cal', 'カレンダー']].concat(!SHARE && S.view === 'team' ? [['grid', '休み表']] : [], [['list', 'リスト']]).map(function (m) {
-          return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'grid' ? '休み表: 人×日（g）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { setMode(m[0]); } }), m[1]);
+        [['cal', 'カレンダー']].concat(!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : [], [['list', 'リスト']]).map(function (m) {
+          return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
         })),
       todoOnly && !SHARE ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
         return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'pane', checked: (S.pane || 'todo') === m[0], onchange: function () { S.pane = m[0]; var lay = document.querySelector('.layout'); if (lay) lay.setAttribute('data-pane', m[0]); } }), m[1]);
       })) : null,
       SHARE ? null : el('button', { class: 'btn', type: 'button', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }, '↻ 繰り返し', el('span', { class: 'lbl', text: '業務' }))
     ));
-    if (!todoOnly && S.mode !== 'grid') tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
+    if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' }));
   }
@@ -768,7 +765,7 @@
   function evParams(view) {
     var r = gridRange();
     var p = { from: ymd(r.start), to: ymd(r.end), view: view || S.view };
-    if (p.view === 'team' && !SHARE && whoId() && S.mode !== 'grid') p.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
+    if (p.view === 'team' && !SHARE && whoId()) p.who = String(whoId()); // 業務版で、特定の社員だけを見ているとき
     if (!SHARE) p.sum = S.year + '-' + pad(S.month); // 表示している月の、自分の出勤日・休みの日数
     return p;
   }
@@ -987,44 +984,6 @@
     }
     return bar;
   }
-  /* ---------- 休み表（業務版）: 縦に社員、横に日付。いつ誰が休みかを、一目で見る ---------- */
-  var GRID_ABBR = { '有給': '有', '調整休': '調', '欠勤': '欠', '午前半休': 'AM', '午後半休': 'PM' };
-  function renderGridView(board) {
-    var y = S.year, mo = S.month, n = new Date(y, mo, 0).getDate(), todayStr = ymd(new Date());
-    var users = S.me.users.slice().sort(function (a, b) { return (a.id === S.me.user.id ? 0 : 1) - (b.id === S.me.user.id ? 0 : 1) || a.id - b.id; });
-    var days = [];
-    for (var i = 1; i <= n; i++) days.push(y + '-' + pad(mo) + '-' + pad(i));
-    var offOf = function (uid, ds) { return S.events.filter(function (e) { return e.kind === 'off' && e.owner_id === uid && e.start <= ds && e.end >= ds; })[0] || null; };
-    var weekday = function (ds) { return parse(ds).getDay(); };
-    var dayCls = function (ds) { var w = weekday(ds); return (w === 0 ? ' sun' : w === 6 ? ' sat' : '') + (S.holidays[ds] ? ' hol' : '') + (ds === todayStr ? ' today' : ''); };
-    var many = Math.max(2, Math.ceil(users.length * 0.3));
-    var headCells = [el('th', { class: 'g-name', scope: 'col', text: '' })].concat(days.map(function (ds) {
-      return el('th', { class: 'g-day' + dayCls(ds), scope: 'col', title: mdw(ds) + (S.holidays[ds] ? '（' + S.holidays[ds] + '）' : '') }, el('div', { class: 'g-d', text: String(+ds.slice(8)) }), el('div', { class: 'g-w', text: DOW[weekday(ds)] }));
-    }), [el('th', { class: 'g-sum', scope: 'col', text: '休み計', title: '土日祝を除いた、休みの日数（半休は0.5日）' })]);
-    var counts = days.map(function () { return 0; });
-    var rows = users.map(function (u) {
-      var total = 0;
-      var cells = days.map(function (ds, di) {
-        var e = offOf(u.id, ds);
-        if (e && !isOffDay(ds)) { total += /半休/.test(e.tag || '') ? 0.5 : 1; counts[di] += /半休/.test(e.tag || '') ? 0.5 : 1; }
-        var ab = e ? (GRID_ABBR[e.tag] || '休') : '';
-        return el('td', { class: 'g-cell' + dayCls(ds) + (e ? ' off t-' + (ab === 'AM' || ab === 'PM' ? 'half' : ab === '欠' ? 'abs' : 'full') : ''), title: e ? u.name + '　' + mdw(ds) + '　' + (e.tag || '休み') : null,
-          tabindex: e ? '0' : null, onclick: function () { openDayPopup(ds); } }, ab);
-      });
-      return el('tr', { class: u.id === S.me.user.id ? 'me' : '' }, [el('th', { class: 'g-name', scope: 'row', text: u.name })].concat(cells, [el('td', { class: 'g-sum', text: total ? fmtDays(total) : '' })]));
-    });
-    var foot = el('tr', { class: 'g-foot' }, [el('th', { class: 'g-name', scope: 'row', text: '休み人数' })].concat(days.map(function (ds, di) {
-      var c = counts[di];
-      return el('td', { class: 'g-cell' + dayCls(ds) + (c >= many ? ' many' : ''), text: c ? String(Math.round(c * 10) / 10) : '' });
-    }), [el('td', { class: 'g-sum' })]));
-    board.appendChild(el('div', { class: 'grid-wrap', role: 'region', 'aria-label': S.year + '年' + S.month + '月の休み表' },
-      el('table', { class: 'grid-table' }, el('thead', null, el('tr', null, headCells)), el('tbody', null, rows), el('tfoot', null, foot))));
-    board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
-      el('span', null, el('b', { class: 'g-key full', text: '有' }), '有給'), el('span', null, el('b', { class: 'g-key full', text: '調' }), '調整休'), el('span', null, el('b', { class: 'g-key abs', text: '欠' }), '欠勤'),
-      el('span', null, el('b', { class: 'g-key half', text: 'AM' }), '午前半休'), el('span', null, el('b', { class: 'g-key half', text: 'PM' }), '午後半休'), el('span', null, el('b', { class: 'g-key full', text: '休' }), 'その他の休み'),
-      el('span', { class: 'muted', text: '日付や休みを押すと、その日の予定が開きます。「休み人数」が橙色の日は、休みが重なっています（全社員の3割以上、または2人以上）。' })));
-  }
-
   function renderListView(board, keepFrom) {
     if (!SHARE) {
       var mgr = el('section', { id: 'todo-mgr', class: 'todo todo-mgr', 'aria-label': 'ToDoの管理' });
@@ -1100,7 +1059,6 @@
     if (lay) { lay.classList.toggle('list-mode', S.mode === 'list'); lay.setAttribute('data-pane', S.pane || 'todo'); }
     syncTodoHover();
     if (S.mode === 'list') { renderListView(board, mgrKeep); return; }
-    if (S.mode === 'grid') { renderGridView(board); return; }
     var todayStr = ymd(new Date());
     var r = gridRange();
     var days = [];
@@ -1617,9 +1575,8 @@
   }
 
   function setMode(m) {
-    if (m === 'grid' && (SHARE || S.view !== 'team')) m = 'cal';
     S.mode = m; store('sched.mode', m);
-    if (m !== 'list') { var c = S.cache[evKey(evParams())]; if (c) applyEvents(c); else S.events = []; } // 表示する人が違うと、読み込む予定も違う（休み表は、全員）
+    if (m !== 'list') { var c = S.cache[evKey(evParams())]; if (c) applyEvents(c); else S.events = []; } // 表示する人が違うと、読み込む予定も違う
     renderToolbar(); renderBoard(); if (m !== 'list') load();
   }
 
@@ -3480,7 +3437,11 @@
       el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', title: '前の月（←）', text: '‹', onclick: function () { go(monthShift(rm.month, -1)); } }),
       el('h2', { text: rm.month.slice(0, 4) + '年' + mo + '月' }),
       el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { go(monthShift(rm.month, 1)); } }),
-      el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: function () { go(monthFirst(new Date())); } })));
+      el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: function () { go(monthFirst(new Date())); } }),
+      el('span', { class: 'spacer', style: 'flex:1' }), el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
+      el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' }, [['cal', 'カレンダー'], ['rooms', '会議室予約'], ['list', 'リスト']].map(function (m) {
+        return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: m[0] === 'rooms', onchange: function () { if (m[0] !== 'rooms') { S.mode = m[0]; store('sched.mode', m[0]); S.view = 'team'; store('sched.view', 'team'); leaveSettings(); } } }), m[1]);
+      }))));
     host.appendChild(el('div', { class: 'view-banner team', style: 'margin-top:8px', text: '会議室の予約: カレンダーの日付を押すと、その日に予約できます。色つきの帯をおすと、予約の内容を見られます。' }));
     var r = roomsGridRange(rm.month), days = [], byDay = {};
     for (var t = r.start; t <= r.end; t = addDays(t, 1)) days.push(t);
@@ -3696,7 +3657,7 @@
       S.view = 'team'; store('sched.view', 'team');
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* 履歴を触れなくても、表示には影響しない */ }
     }
-    S.mode = store('sched.mode') === 'list' ? 'list' : (store('sched.mode') === 'grid' && S.view === 'team' ? 'grid' : 'cal');
+    S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
     S.listWork = store('sched.listWork') === true;
     S.who = String(me.user.id); // ログインして開いたときは、まず自分のカレンダー・自分のToDo（「表示する人」「表示」で全員にも切り替えられる。開き直すと自分に戻る）
     S.todoWho = 'me';

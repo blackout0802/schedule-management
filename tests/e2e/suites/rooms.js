@@ -35,10 +35,12 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   const bar = (p, t) => p.locator('.bar.rm:has-text("' + t + '")');
 
   // ---- ページを開く
-  await y.click('.rooms-btn'); await y.waitForSelector('.cal .week'); await y.waitForSelector('.month-sum');
-  ok('「会議室」ボタンで、会議室のページが開く（URL は #rooms）。上の帯はカレンダーと同じで、「会議室」が選ばれている', (await y.url()).endsWith('#rooms') && (await y.locator('.rooms-btn.on').count()) === 1 && (await y.locator('.tabs .tab').count()) === 2 && (await y.locator('.brand .ver').count()) === 1);
-  ok('カレンダーと同じ作り: 月の移動（‹ ›・今日）・曜日の行・日付のマス', (await y.locator('.toolbar h2').innerText()).includes('年') && (await y.locator(".toolbar button").count()) === 3 && (await y.locator('.cal-dow .dow').count()) === 7 && (await y.locator('.cal .week .cell').count()) >= 28);
-  ok('「大・応で分ける」「まとめて」の切り替えと、「＋ 会議室を予約」ボタンは、ない', (await y.locator('.rm-seg').count()) === 0 && (await y.locator('button:has-text("会議室を予約")').count()) === 0 && (await y.locator('.seg').count()) === 0);
+  const segTxt0 = await y.locator('.seg').first().innerText();
+  ok('業務版の切り替えは、「カレンダー／会議室予約／リスト」。「休み表」はなくなり、右上の会議室ボタンもない', segTxt0.includes('会議室予約') && !segTxt0.includes('休み表') && (await y.locator('.rooms-btn').count()) === 0 && (await y.locator('header button[aria-label="会議室の予約"]').count()) === 0, segTxt0);
+  await y.click('.seg label:has-text("会議室予約")'); await y.waitForSelector('.cal .week'); await y.waitForSelector('.month-sum');
+  ok('「会議室予約」で、会議室のページが開く（URL は #rooms）。上の帯はカレンダーと同じで、「会議室予約」が選ばれている', (await y.url()).endsWith('#rooms') && (await y.locator('.seg label:has(input:checked)').innerText()).includes('会議室予約') && (await y.locator('.tabs .tab').count()) === 2 && (await y.locator('.brand .ver').count()) === 1);
+  ok('カレンダーと同じ作り: 月の移動（‹ ›・今日）・曜日の行・日付のマス', (await y.locator('.toolbar h2').innerText()).includes('年') && (await y.locator('.toolbar > button').count()) === 3 && (await y.locator('.cal-dow .dow').count()) === 7 && (await y.locator('.cal .week .cell').count()) >= 28);
+  ok('会議室のページに、「大・応で分ける」「まとめて」の切り替えと、「＋ 会議室を予約」ボタンは、ない。切り替えは「カレンダー／会議室予約／リスト」の3つ', (await y.locator('.rm-seg').count()) === 0 && (await y.locator('button:has-text("会議室を予約")').count()) === 0 && (await y.locator('.seg label').count()) === 3);
   const legTxt = await y.locator('.legend').innerText();
   ok('凡例に、会議室（6名）・応接室（3名）が出る。設備は出ない', legTxt.includes('会議室（6名）') && legTxt.includes('応接室（3名）') && !legTxt.includes('プロジェクター') && !legTxt.includes('モニター'), legTxt);
   ok('部屋の色: 会議室は青（色番号0）・応接室はオレンジ（色番号1）', (await y.locator('.legend .rm-s0').count()) === 1 && (await y.locator('.legend .rm-s1').count()) === 1);
@@ -97,7 +99,7 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   await book(y, { title: '人事面談（秘密）', date: open[1], room: '会議室', start: '14:00', end: '15:00', kind: 'other', pax: 2, priv: true });
   await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal')); await showMonth(y, open[1]); await y.waitForSelector('.bar.rm:has-text("人事面談")');
   ok('本人には、非公開の予約の用件が見え、「非公開」の印が付く', (await y.locator('.rm-table tr:has-text("人事面談")').innerText()).includes('非公開') && (await bar(y, '人事面談').getAttribute('title')).includes('非公開'));
-  const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await s.click('.rooms-btn'); await s.waitForSelector('.cal .week'); await showMonth(s, open[1]); await s.waitForSelector('.bar.rm');
+  const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await s.click('.seg label:has-text("会議室予約")'); await s.waitForSelector('.cal .week'); await showMonth(s, open[1]); await s.waitForSelector('.bar.rm');
   const sTxt = await s.locator('#rooms-body').innerText();
   ok('他の人には、非公開の予約は「予約済」とだけ見える（用件・予約した人・人数は出ない）', sTxt.includes('予約済') && !sTxt.includes('人事面談') && (await s.locator('.rm-table tr:has-text("予約済")').innerText()).includes('会議室') && !(await s.locator('.rm-table tr:has-text("予約済")').innerText()).includes('山田'), sTxt);
   await bar(s, '予約済').click(); await s.waitForSelector('.modal .rm-view');
@@ -163,8 +165,12 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   ok('スマホ幅の予約の画面も、横にはみ出さず、部屋の選択が見える', await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && (await m.locator('.rm-pick').count()) === 2);
   await m.keyboard.press('Escape');
 
-  // ---- カレンダーに戻る（上の「業務版」を押す）
-  await y.goto(BASE + 'index.php#rooms'); await y.waitForSelector('.cal .week'); await y.click('.tabs .tab[data-view=team]'); await y.waitForSelector('.cal .week .bar, #who-sel');
-  ok('上の「業務版」を押すと、カレンダーに戻る（会議室のページではなくなる）', (await y.locator('#who-sel, .seg').count()) >= 1 && !(await y.url()).includes('#rooms') && (await y.locator('.rm-table').count()) === 0);
+  // ---- カレンダーに戻る（切り替えの「カレンダー」か、上の「業務版」）
+  await y.goto(BASE + 'index.php#rooms'); await y.waitForSelector('.cal .week'); await y.click('.seg label:has-text("カレンダー")'); await y.waitForSelector('#who-sel');
+  ok('切り替えの「カレンダー」を押すと、カレンダーに戻る（会議室のページではなくなる）', !(await y.url()).includes('#rooms') && (await y.locator('.rm-table').count()) === 0 && (await y.locator('.seg label:has(input:checked)').innerText()).includes('カレンダー'));
+  await y.click('.seg label:has-text("会議室予約")'); await y.waitForSelector('.rm-table, .month-sum'); await y.click('.tabs .tab[data-view=team]'); await y.waitForSelector('#who-sel');
+  ok('上の「業務版」を押しても、カレンダーに戻る', !(await y.url()).includes('#rooms') && (await y.locator('.rm-table').count()) === 0);
+  await y.click('.seg label:has-text("会議室予約")'); await y.waitForSelector('.month-sum'); await y.keyboard.press('c'); await y.waitForSelector('#who-sel');
+  ok('キーの c でも、カレンダーに戻る', !(await y.url()).includes('#rooms'));
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

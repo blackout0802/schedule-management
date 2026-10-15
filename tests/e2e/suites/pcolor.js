@@ -57,8 +57,5 @@ const styleOf = (p, sel) => p.locator(sel).first().getAttribute('style');
   ok('特定の人だけを見るときは、名前を付けず、色分けもしない（切り替えも出ない）', !(await a.locator('.bar.work:has-text("PC検証C")').first().innerText()).includes('｜') && (await a.locator('#pc-toggle').count()) === 0 && !(await styleOf(a, '.bar.work:has-text("PC検証C")') || '').includes('--ub-work'));
   await y.reload(); await y.waitForSelector('.bar.work:has-text("PC検証会議")');
   ok('自分の表示（初期）にも、名前は付かない', !(await y.locator('.bar.work:has-text("PC検証会議")').first().innerText()).includes('｜') && (await y.locator('#pc-toggle').count()) === 0);
-  // 日の一覧（ポップアップ）・休み表は、そのまま使える
-  await a.selectOption('#who-sel', 'all'); await a.waitForSelector(yBar); await a.click('.seg label:has-text("休み表")'); await a.waitForSelector('.grid-table, table');
-  ok('休み表は、これまでどおり（切り替えは出ない）', (await a.locator('#pc-toggle').count()) === 0);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
