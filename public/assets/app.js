@@ -44,6 +44,12 @@
     else node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
   }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
+  /* 右上のボタンの絵（線画。文字と同じ色・同じ大きさ） */
+  var ICON_PATHS = {
+    people: '<circle cx="9" cy="8.2" r="3.2"/><circle cx="17" cy="9.2" r="2.5"/><path d="M3 19.5c0-3.3 2.7-5.8 6-5.8s6 2.5 6 5.8"/><path d="M15.6 13.9c.5-.1.9-.2 1.4-.2 2.4 0 4.3 1.9 4.3 4.6"/>',
+    gear: '<path d="M19.43 10.40L21.93 10.82L21.93 13.18L19.43 13.60L18.38 16.12L19.85 18.19L18.19 19.85L16.12 18.38L13.60 19.43L13.18 21.93L10.82 21.93L10.40 19.43L7.88 18.38L5.81 19.85L4.15 18.19L5.62 16.12L4.57 13.60L2.07 13.18L2.07 10.82L4.57 10.40L5.62 7.88L4.15 5.81L5.81 4.15L7.88 5.62L10.40 4.57L10.82 2.07L13.18 2.07L13.60 4.57L16.12 5.62L18.19 4.15L19.85 5.81L18.38 7.88Z"/><circle cx="12" cy="12" r="3.2"/>'
+  };
+  function svgIcon(name) { var s = el('span', { class: 'ic-wrap', 'aria-hidden': 'true' }); s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" focusable="false">' + ICON_PATHS[name] + '</svg>'; return s; }
 
   /* ---------- 時刻の入力 ----------
      ブラウザ標準の時刻欄（上下にスクロールして選ぶ形）は、PCでは動きが重く選びにくい。
@@ -238,18 +244,21 @@
     if (personColorOn() && e.kind !== 'private' && e.owner_id) { // 全社の表示では、持ち主が自分で決めた色がなければ、人ごとの色にする
       var pc = personColors(e.owner_id);
       c = { work: c.work || pc.work, rec: c.rec || '', off: c.off || pc.off };
+      var badge = c.off === pc.off ? pc.badge : inkFor(c.off); // 「休」バッジの色（本人が休みの色を決めていれば、その文字色）
     }
     var v = colorVars(c);
+    if (badge && e.kind === 'off') { v['--pc-badge'] = badge; v['--pc-on'] = onColor(badge); }
     return Object.keys(v).map(function (k) { return ';' + k + ':' + v[k]; }).join('');
   }
   /* ---------- 全社の表示: 誰の予定か ----------
      全社（全員）の業務版・会社用リンクでは、(1) 業務の予定の先頭に、持ち主の名前（姓。同じ姓の人がいれば、フルネーム）を付け、
-     (2) 「人ごとに色分け」（初期値はオン。端末ごとに覚える）で、社員ごとに色を変える。業務は淡い色、休みは同じ色味のやや濃い色に斜線。
+     (2) 「人ごとに色分け」（初期値はオン。端末ごとに覚える）で、社員ごとに色を変える。業務も休みも同じ淡い色で、休みは、頭に濃い色の「休」バッジが付く。
      色は、社員の番号で決まる（人が増えても、減っても、他の人の色は変わらない）。本人が「予定の色」で決めた色があれば、そちらを優先する。 */
   var PERSON_HUES = [10, 2, 6, 13, 0, 8, 3, 14, 5, 11, 1, 7, 12, 4, 9, 15]; // COLOR_PRESETS の色相の番号。隣り合う番号の社員の色が離れるように並べてある
   function allView() { return !FAMILY && S.view === 'team' && !whoId(); }
   function personColorOn() { return allView() && S.mode !== 'grid' && store('sched.personColor') !== false; }
-  function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3 + 1] }; }
+  function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3], badge: COLOR_PRESETS[h * 3 + 2] }; } // 休みも、業務と同じ淡い色。違いは、頭の「休」バッジ（濃い色）
+  function onColor(hex) { var bg = hexRgb(hex); return contrastRatio(bg, [255, 255, 255]) >= contrastRatio(bg, [20, 32, 51]) ? '#ffffff' : '#14202f'; }
   function pcClass(e) { return personColorOn() && e.kind === 'off' && e.owner_id ? ' pc' : ''; }
   function surnameOf(n) { return String(n || '').split(/[\s　]+/)[0] || String(n || ''); }
   function ownerShort(e) {
@@ -269,7 +278,7 @@
     S.events.forEach(function (e) { if (e.kind !== 'private' && e.owner_id && e.owner_name && !e.deleted && !seen[e.owner_id]) { seen[e.owner_id] = 1; list.push(e); } });
     list.sort(function (a, b) { return a.owner_name.localeCompare(b.owner_name, 'ja'); });
     return list.map(function (e) { return el('span', { class: 'pc-chip' }, el('i', { style: 'background:' + ((e.colors && e.colors.work) || personColors(e.owner_id).work) }), ownerShort(e)); })
-      .concat([el('span', null, el('span', { class: 'pc-stripe', text: '休み' }), '＝斜線（人ごとの色）')]);
+      .concat([el('span', null, el('span', { class: 'pc-badge-sample', text: '休' }), '＝休み（人ごとの色）')]);
   }
   function parseRgb(str) {
     var m = /^rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)/.exec(str) || null;
@@ -426,7 +435,7 @@
       return el('div', { class: 'menu' + (extraClass ? ' ' + extraClass : '') }, btn);
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
-    var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, '⚙', el('span', { class: 'lbl', text: ' 設定' })));
+    var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
     });
@@ -440,7 +449,7 @@
 
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })), tabs, el('span', { class: 'spacer' }),
-      el('button', { class: 'btn small rooms-btn', type: 'button', title: '会議室の予約', 'aria-label': '会議室の予約', onclick: openRoomsPage }, el('span', { 'aria-hidden': 'true', text: '👥' }), el('span', { class: 'lbl', text: ' 会議室' })), settingsMenu, userMenu)));
+      el('button', { class: 'btn small rooms-btn', type: 'button', title: '会議室の予約', 'aria-label': '会議室の予約', onclick: openRoomsPage }, svgIcon('people'), el('span', { class: 'lbl', text: ' 会議室' })), settingsMenu, userMenu)));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }),
       el('div', { class: 'layout' }, el('div', { id: 'board', class: 'board' }),
         el('div', { class: 'side' }, el('aside', { id: 'todo', class: 'todo', 'aria-label': 'ToDoリスト' }), el('section', { id: 'memo', class: 'todo memo', 'aria-label': 'メモ（日報用）' })))));
@@ -724,7 +733,7 @@
           el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
-      todoOnly || S.mode === 'grid' || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは斜線つき）。この端末の設定です' },
+      todoOnly || S.mode === 'grid' || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
       SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         [['cal', 'カレンダー']].concat(!SHARE && S.view === 'team' ? [['grid', '休み表']] : [], [['list', 'リスト']]).map(function (m) {

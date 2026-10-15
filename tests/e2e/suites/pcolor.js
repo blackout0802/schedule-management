@@ -1,4 +1,4 @@
-// 全社の表示: 業務の予定の先頭に名前（姓）／人ごとの色分け（休みは斜線）／同じ姓はフルネーム／本人が決めた色が優先／自分の表示には名前を付けない
+// 全社の表示: 業務の予定の先頭に名前（姓）／人ごとの色分け（休みは「休」バッジ）／同じ姓はフルネーム／本人が決めた色が優先／自分の表示には名前を付けない
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
 const env = require('../lib/env');
 const BASE = env.BASE;
@@ -28,13 +28,16 @@ const styleOf = (p, sel) => p.locator(sel).first().getAttribute('style');
   ok('全社の表示: 業務の予定の先頭に、持ち主の姓が付く（山田｜…、鈴木｜…）', (await a.locator(yBar).first().innerText()).startsWith('山田｜') && (await a.locator(sBar).first().innerText()).startsWith('鈴木｜'), [await a.locator(yBar).first().innerText(), await a.locator(sBar).first().innerText()]);
   const ys = await styleOf(a, yBar), ss = await styleOf(a, sBar);
   ok('全社の表示: 人ごとに、違う色になる（初期値でオン）', !!ys && !!ss && ys.includes('--ub-work') && ss.includes('--ub-work') && ys !== ss, [ys, ss]);
-  ok('全社の表示: 休みも、人ごとの色で、斜線つき（山田さんの休みは、山田さんの業務と同じ色味）', (await a.locator('.bar.off.pc:has-text("山田 花子")').count()) >= 1 && (await styleOf(a, '.bar.off.pc:has-text("山田 花子")')).includes('--ub-off'));
+  const offSel = '.bar.off.pc:has-text("山田 花子")';
+  const bg = sel => a.locator(sel).first().evaluate(e => getComputedStyle(e).backgroundColor);
+  ok('全社の表示: 休みも、山田さんの業務と同じ淡い色で、頭に「休」バッジが付く', (await a.locator(offSel).count()) >= 1 && (await bg(offSel)) === (await bg(yBar)) && (await a.locator(offSel).first().evaluate(e => getComputedStyle(e, '::before').content)) === '"休"' && (await styleOf(a, offSel)).includes('--pc-badge'), [await bg(offSel), await bg(yBar)]);
+  ok('「休」バッジは、人ごとの濃い色（帯の背景より濃い）', await a.locator(offSel).first().evaluate(e => { const c = s => s.match(/\d+/g).map(Number); const b = c(getComputedStyle(e).backgroundColor), k = c(getComputedStyle(e, '::before').backgroundColor); return (k[0] + k[1] + k[2]) < (b[0] + b[1] + b[2]); }));
   const legend = await a.locator('.legend').first().innerText();
-  ok('凡例に、いま出ている社員の名前と、斜線の説明が出る', legend.includes('山田') && legend.includes('鈴木') && legend.includes('斜線'), legend);
+  ok('凡例に、いま出ている社員の名前と、「休」バッジの説明が出る', legend.includes('山田') && legend.includes('鈴木') && legend.includes('休＝休み'), legend);
   ok('「人ごとに色分け」の切り替えが、全社のときだけ出る', (await a.locator('#pc-toggle').count()) === 1 && (await a.locator('#pc-toggle').isChecked()));
   // 切ると、色は標準に戻る（名前は残る）。開き直しても覚えている
   await a.uncheck('#pc-toggle'); await a.waitForTimeout(300);
-  ok('切ると、標準の色（青）に戻り、斜線もなくなる。先頭の名前は残る', !(await styleOf(a, yBar) || '').includes('--ub-work') && (await a.locator('.bar.off.pc').count()) === 0 && (await a.locator(yBar).first().innerText()).startsWith('山田｜'));
+  ok('切ると、標準の色（青）に戻り、「休」バッジもなくなる。先頭の名前は残る', !(await styleOf(a, yBar) || '').includes('--ub-work') && (await a.locator('.bar.off.pc').count()) === 0 && (await a.locator(yBar).first().innerText()).startsWith('山田｜'));
   await a.reload(); await a.waitForSelector('#who-sel'); await a.selectOption('#who-sel', 'all'); await a.waitForSelector(yBar);
   ok('切り替えは、開き直しても覚えている', !(await a.locator('#pc-toggle').isChecked()) && !(await styleOf(a, yBar) || '').includes('--ub-work'));
   await a.check('#pc-toggle'); await a.waitForTimeout(300);
