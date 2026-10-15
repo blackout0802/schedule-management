@@ -45,8 +45,8 @@ async function login(browser, email, pw) {
   ok('飛ばした分も、Slackには送られない', log2.filter(Boolean).length === log0);
   // 他の社員(鈴木)の画面にも複製された休みが出る。かつ編集できない=複製ボタンなし
   const s = await login(b, 'suzuki@example.com', 'suzukipass1');
-  await s.selectOption('#who-sel', 'all'); await s.waitForSelector('.bar.off:has-text("山田 花子")');
-  await s.click('.bar.off:has-text("山田 花子") >> nth=0');
+  await s.selectOption('#who-sel', 'all'); await s.waitForSelector('.bar.off:has-text("山田")');
+  await s.click('.bar.off:has-text("山田") >> nth=0');
   ok('他の社員は複製できない（詳細表示のみ）', await s.locator('.modal button:has-text("複製")').count() === 0);
   // プライベートの複製
   await p.goto(BASE + 'index.php'); await p.waitForSelector('.cal'); await p.click('.tab[data-view=me]'); await p.waitForTimeout(500);

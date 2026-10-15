@@ -82,7 +82,7 @@ async function login(browser, email, pw) {
   // --- 鈴木さん（別の一般社員）---
   const s = await login(browser, 'suzuki@example.com', 'suzukipass1');
   await s.page.selectOption('#who-sel', 'all'); await s.page.waitForSelector('.bar:has-text("A社")');
-  ok('鈴木さんに山田さんの業務・休みが見える', await s.page.locator('.bar:has-text("A社")').count() === 1 && await s.page.locator('.bar.off:has-text("山田 花子")').count() >= 1);
+  ok('鈴木さんに山田さんの業務・休みが見える', await s.page.locator('.bar:has-text("A社")').count() === 1 && await s.page.locator('.bar.off:has-text("山田")').count() >= 1);
   await s.page.click('.tab[data-view=me]');
   await s.page.waitForTimeout(500);
   ok('鈴木さんのプライベート版に山田さんのプライベートは出ない', (await s.page.content()).indexOf('歯医者') < 0);
@@ -129,10 +129,10 @@ async function login(browser, email, pw) {
   await a.page.selectOption('select[name=owner_id]', { label: '鈴木 一郎' });
   await a.page.fill('input[name=start]', t3);
   await a.page.click('.modal button[type=submit]');
-  await a.page.waitForSelector('.bar.off:has-text("鈴木 一郎")');
+  await a.page.waitForSelector('.bar.off:has-text("鈴木")');
   ok('管理者が他の社員の休みを登録できる', true);
   // 管理者が山田さんの休みを編集できる
-  await a.page.click('.bar.off:has-text("山田 花子") >> nth=0');
+  await a.page.click('.bar.off:has-text("山田") >> nth=0');
   ok('管理者は他人の休みを編集できる(フォーム表示)', await a.page.locator('.modal input[name=title]').count() === 1);
   await a.page.click('.modal >> text=キャンセル');
   // 社員管理

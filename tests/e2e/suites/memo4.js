@@ -19,7 +19,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('【日付】の行が2つ（当日・次回出勤日）', heads.length === 2 && /^【\d+\/\d+　予定・To Do】$/.test(heads[0]) && /^【\d+\/\d+　予定・To Do】$/.test(heads[1]), heads);
   const hd = await p.locator('.memo-single div[data-md]').evaluateAll(l => l.map(x => x.getAttribute('data-date')));
   ok('日付の行は、当日 < 次回出勤日', hd[0] < hd[1], hd);
-  ok('日付の行は、編集できない', (await p.locator('.memo-single div[data-md]').first().getAttribute('contenteditable')) === 'false');
+  ok('日付の行の見出し（予定・To Do の部分）は、日報の中で、直接書き換えられる', (await p.locator('.memo-single div[data-md]').first().getAttribute('contenteditable')) !== 'false');
   // 当日の項目を入力（空行をはさんだ見出しの下）
   const items = ['給与計算の準備', '基本契約書・NDAの格納', 'BASEの写真と商品名が違うものの修正', '優良企業のロゴ申請', '荒井さんの退職手続き', '藤原さんの注文書作成・送付'];
   // 当日の見出しの2つ下（空行の次）の行へ
@@ -64,6 +64,11 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   const clip = await p.evaluate(() => navigator.clipboard.readText());
   ok('コピーすると、挨拶から締めまで、日付の行つきで1つのテキスト', clip.startsWith('お疲れ様です。') && /【\d+\/\d+　予定・To Do】/.test(clip) && clip.includes('以上となります。'), clip.slice(0, 200));
   ok('コピーでは、取り消し線は線の文字になる', clip.includes('基̶本̶契̶約̶書̶'), clip);
+  // 見出しの言葉を書き換える（日付のところは、自動のまま）
+  await p.evaluate(() => { document.querySelectorAll('.memo-single div[data-md]').forEach(h => { const m = h.textContent.match(/^【(\d+\/\d+)/); h.textContent = '【' + m[1] + '　本日の予定】'; }); document.querySelector('.memo-single').dispatchEvent(new Event('input', { bubbles: true })); });
+  await p.waitForTimeout(1300);
+  await p.reload(); await p.waitForSelector('.memo-single');
+  ok('書き換えた見出しの言葉は、保存され、開き直しても残る（日付は自動のまま）', (await p.locator('.memo-single div[data-md]').allInnerTexts()).every(x => /^【\d+\/\d+　本日の予定】$/.test(x)), await p.locator('.memo-single div[data-md]').allInnerTexts());
   // 日が進む: サーバーが今日が休みと答えるように、有給を登録
   const today = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date());
   console.log('EVSAVE', await p.evaluate(async (d) => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=event_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'off', title: '', tag: '有給', start: d, end: d }) }); return r.status + ' ' + (await r.text()).slice(0, 150); }, today));
@@ -72,6 +77,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.click('.seg label:has-text("リスト")'); await p.waitForSelector('.memo-single'); await p.waitForTimeout(900);
   const after = await p.locator('.memo-single div[data-md]').evaluateAll(l => l.map(x => x.getAttribute('data-date')));
   console.log('   日付', before, '→', after);
+  ok('日が進んでも、書き換えた見出しの言葉は残り、日付だけが入れ替わる', (await p.locator('.memo-single div[data-md]').allInnerTexts()).every(x => /^【\d+\/\d+　本日の予定】$/.test(x)), await p.locator('.memo-single div[data-md]').allInnerTexts());
   ok('日が進むと、当日の日付が次回出勤日に、次回出勤日がその次になる', after[0] === before[1] && after[1] > before[1], [before, after]);
   const rolled = await p.evaluate(() => { const h = document.querySelector('.memo-single div[data-md=cur]'); const out = []; let d = h.nextElementSibling; while (d && !d.textContent.trim()) d = d.nextElementSibling; while (d && d.textContent.trim()) { out.push(d.textContent + (d.hasAttribute('data-tr') ? '[tr]' : '') + (d.querySelector('s') ? '[s]' : '')); d = d.nextElementSibling; } return out; });
   console.log('   新しい当日:', rolled);

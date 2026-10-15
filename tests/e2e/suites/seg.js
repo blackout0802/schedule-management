@@ -4,7 +4,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1200, height: 860 } });
   await p.goto('http://127.0.0.1:8099/login.php'); await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); await p.selectOption('#who-sel', 'all'); await p.waitForTimeout(1000);
-  const info = async t => p.$$eval('.bar', (bs, t) => bs.filter(b => b.textContent.includes(t)).map(b => ({ c: b.className, t: b.textContent, r: b.parentElement.className })), t);
+  const info = async t => p.$$eval('.bar', (bs, t) => bs.filter(b => (b.textContent + b.title).includes(t)).map(b => ({ c: b.className, t: b.textContent, r: b.parentElement.className })), t);
   const g = await info('ギャップ業務');
   ok('土日をはさむ業務は、2本に分かれる', g.length === 2, g);
   ok('どちらの端も丸い（続きの印の平らな端にならない）', g.every(x => !/\bcl\b|\bcr\b/.test(x.c)), g);

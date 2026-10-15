@@ -731,9 +731,9 @@
       todoOnly ? null : el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
       el('span', { class: 'spacer', style: 'flex:1' }),
       el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
-      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' }, el('span', { class: 'lbl', text: '表示する人' }),
+      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' },
         el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { selectWho(this.value); } },
-          el('option', { value: 'all', text: '全社（全員）', selected: !whoId() }),
+          el('option', { value: 'all', text: '全社', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
       todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
@@ -868,10 +868,13 @@
         n ? el('button', { class: 'btn small', type: 'button', text: '確認した', onclick: markSeen }) : null));
   }
 
-  function eventLabel(e, first, compact) {
+  /* full = true のときは、休みも「名前 分類（件名）」の全部（ポップアップ・ホバーの説明用）。カレンダーの帯では、全社の表示のとき、「休」バッジ＋姓だけに詰める */
+  function eventLabel(e, first, compact, full) {
     var t;
     if (e.kind === 'off' && SHARE && SHARE.kind === 'family') {
       t = '休み'; // 家族用の共有には、名前も休みの種類も出さない
+    } else if (e.kind === 'off' && !full && allView() && e.owner_name) {
+      t = (personColorOn() && !compact ? '' : '休｜') + ownerShort(e); // 全社の表示: 「休」バッジ（狭い画面・色分けなしでは「休｜」）と姓だけ。同じ姓の人がいるときは、ownerShort がフルネームにする
     } else if (e.kind === 'off' && compact) {
       t = e.owner_name.split(/[\s　]+/)[0] + (e.tag || '休み'); // スマホのカレンダー: 狭いので「山田有給」のように詰める
     } else if (e.kind === 'off') {
@@ -948,7 +951,7 @@
     var e = g.ev;
     var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + pcClass(e) + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
-      text: (g.contL ? '… ' : '') + eventLabel(e, e.start === ymd(days[g.s]), NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      text: (g.contL ? '… ' : '') + eventLabel(e, e.start === ymd(days[g.s]), NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''),
       draggable: e.editable ? 'true' : null,
       onclick: function (ev) {
         ev.stopPropagation();
@@ -976,7 +979,7 @@
   /* リスト表示: ログインして使う画面は、ToDoの管理だけ（予定は、カレンダーで見る）。共有リンク（会社用）は、今月の予定を日ごとに */
   function plainBar(e, ds) {
     var bar = el('div', { role: 'button', tabindex: '0', draggable: !SHARE && e.editable ? 'true' : null, style: eventColorStyle(e) || null, class: 'bar plain ' + e.kind + pcClass(e) + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''),
-      text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) + (e.note ? '\n' + e.note : ''),
+      text: (e.start === ds ? '' : '… ') + eventLabel(e, e.start === ds), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''),
       onclick: function () { openEventDialog(e); }, onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEventDialog(e); } } });
     if (!SHARE && e.editable) { // リストの予定を、ToDoの列へ・別の日の行へドラッグできる
       bar.addEventListener('dragstart', function (ev) { startDrag(ev, { t: 'event', id: e.id, off: Math.max(0, daysBetween(e.start, ds)), ok: canReturnToTodo(e) }); });
@@ -2220,9 +2223,12 @@
     Object.keys(attrs || {}).forEach(function (k) { d.setAttribute(k, attrs[k]); });
     return d;
   }
-  function mHeadText(iso) { return '【' + (+iso.slice(5, 7)) + '/' + (+iso.slice(8, 10)) + '　予定・To Do】'; }
-  function mHeadDiv(kind, iso) { var d = mDiv(mHeadText(iso), { 'data-md': kind, 'data-date': iso }); d.setAttribute('contenteditable', 'false'); return d; }
-  function lockHeads() { memoEd.querySelectorAll(':scope > div[data-md]').forEach(function (h) { h.setAttribute('contenteditable', 'false'); }); }
+  /* 日付の行は「【10/15　予定・To Do】」。日付の部分は、出勤日に合わせて自動で入れ替わる。そのあとの言葉（初めは「　予定・To Do」）は、日報の中で、そのまま書き換えられる */
+  var MEMO_HEAD_LABEL = '　予定・To Do';
+  function mHeadText(iso, label) { return '【' + (+iso.slice(5, 7)) + '/' + (+iso.slice(8, 10)) + (label === undefined || label === null ? MEMO_HEAD_LABEL : label) + '】'; }
+  function mHeadLabel(d) { var m = /^【\s*\d{1,2}\/\d{1,2}([^】]*)】/.exec(d.textContent.trim()); return m ? m[1] : MEMO_HEAD_LABEL; }
+  function mHeadDiv(kind, iso, label) { return mDiv(mHeadText(iso, label), { 'data-md': kind, 'data-date': iso }); }
+  function lockHeads() { memoEd.querySelectorAll(':scope > div[data-md]').forEach(function (h) { h.removeAttribute('contenteditable'); }); } // 見出しも、書き換えられる（日付だけは、自動で直る）
 
   /* 当日の項目のうち、取り消し線のないものを、次回出勤日の項目に転記する（取り消し線のあるものは、転記しない）。変えたら true */
   function memoTranscribe() {
@@ -2258,8 +2264,9 @@
       changed = true;
     }
     [[ch, info.cur, 'cur'], [nh, info.next, 'next']].forEach(function (x) {
-      if (x[0].getAttribute('data-date') === x[1] && x[0].textContent === mHeadText(x[1])) return;
-      x[0].setAttribute('data-date', x[1]); x[0].textContent = mHeadText(x[1]); changed = true;
+      var want = mHeadText(x[1], mHeadLabel(x[0])); // 書き換えた言葉は、そのまま残す
+      if (x[0].getAttribute('data-date') === x[1] && x[0].textContent === want) return;
+      x[0].setAttribute('data-date', x[1]); x[0].textContent = want; changed = true;
     });
     if (memoTranscribe()) changed = true;
     memoSig = memoCurSig();
@@ -2273,9 +2280,9 @@
     var cand = Array.prototype.filter.call(memoEd.children, function (d) { return /^【\s*\d{1,2}\/\d{1,2}[^】]*】\s*$/.test(d.textContent.trim()); });
     if (cand.length < 2) return false;
     [[cand[0], 'cur', info.cur], [cand[1], 'next', info.next]].forEach(function (x) {
-      x[0].setAttribute('data-md', x[1]); x[0].setAttribute('data-date', x[2]); x[0].setAttribute('contenteditable', 'false');
+      x[0].setAttribute('data-md', x[1]); x[0].setAttribute('data-date', x[2]);
       MEMO_ATTRS.forEach(function (a) { if (a !== 'data-md' && a !== 'data-date') x[0].removeAttribute(a); });
-      x[0].textContent = mHeadText(x[2]);
+      x[0].textContent = mHeadText(x[2], mHeadLabel(x[0]));
     });
     return true;
   }
@@ -2321,14 +2328,15 @@
   }
 
   /* 日報の雛形（初めて開いたとき・「雛形に戻す」）。seed があれば、以前の版の内容を引き継ぐ */
+  var memoKeepLabels = {}; // 「雛形に戻す」で、書き換えた見出しの言葉を残す
   function memoTemplate(info, seed) {
     var frag = document.createDocumentFragment(), add = function (t) { frag.appendChild(mDiv(t)); };
     var addHtml = function (h) { Array.prototype.forEach.call(memoBuild(h).childNodes, function (n) { frag.appendChild(n); }); };
     ['お疲れ様です。', '業務終了しました。', '', '以下、本日の業務報告です。', ''].forEach(add);
-    frag.appendChild(mHeadDiv('cur', info.cur)); add('');
+    frag.appendChild(mHeadDiv('cur', info.cur, memoKeepLabels.cur)); add('');
     if (seed && seed.cur) addHtml(seed.cur);
     add('');
-    frag.appendChild(mHeadDiv('next', info.next)); add('');
+    frag.appendChild(mHeadDiv('next', info.next, memoKeepLabels.next)); add('');
     if (seed && seed.next) addHtml(seed.next);
     add('');
     add('以上となります。'); add('よろしくお願いいたします。');
@@ -2476,7 +2484,7 @@
     memoEd = null;
     var tool = function (label, title, fn, cls) { return el('button', { class: 'btn small ' + (cls || ''), type: 'button', title: title, onmousedown: function (e) { e.preventDefault(); }, onclick: fn }, label); };
     box.appendChild(el('h2', { text: 'メモ（日報用）' }));
-    box.appendChild(helpText('【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。'));
+    box.appendChild(helpText('【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。日付のあとの言葉（予定・To Do）や、挨拶・締めの文は、ここで直接書き換えられます。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。'));
     box.appendChild(el('div', { class: 'memo-bar' },
       tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
       tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
@@ -2484,7 +2492,9 @@
     box.appendChild(el('div', { class: 'memo-bar' },
       tool('雛形に戻す', '日報を、お疲れ様です〜よろしくお願いいたします、の雛形に置き換える', function () {
         if (memoLines(memoEd).length && !window.confirm('いまの日報を、雛形で置き換えます（当日・次回出勤日の項目は空になります）。よろしいですか？')) return;
-        memoInit('', S.memo, null); memoSig = memoCurSig(); memoChanged();
+        var hc = mHead('cur'), hn = mHead('next');
+        memoKeepLabels = { cur: hc ? mHeadLabel(hc) : undefined, next: hn ? mHeadLabel(hn) : undefined };
+        memoInit('', S.memo, null); memoKeepLabels = {}; memoSig = memoCurSig(); memoChanged();
       }, 'ghost'),
       tool('過去の日報', '日が進んだときの、前の日の日報の控えを見る', openMemoHistory, 'ghost')));
     if (!S.memo) { box.appendChild(el('p', { class: 'hint', text: '読み込み中…' })); memoRefreshDays(true); return; }
@@ -2607,7 +2617,7 @@
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
       el('div', { class: 'notice' }, el('b', { text: '複製する予定' }),
-        el('p', { text: '[' + kindName + '] ' + eventLabel(ev, true) + '　' + (ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)) })),
+        el('p', { text: '[' + kindName + '] ' + eventLabel(ev, true, false, true) + '　' + (ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)) })),
       el('p', { class: 'hint', text: span > 0 ? '複製先の日付を選ぶと、同じ ' + (span + 1) + '日間の予定が作られます。' : '複製先の日付を選んでください。複数の日付をまとめて指定できます。' }),
       list,
       el('div', null, el('button', { class: 'btn small', type: 'button', text: '＋ 日付を追加', onclick: function () {
@@ -2633,7 +2643,7 @@
       if (e.tag && e.kind !== 'off') sub.push(e.tag); // 休みは、見出しに分類が入っている
       if (e.start !== e.end) sub.push(mdw(e.start) + ' 〜 ' + mdw(e.end));
       return el('button', { type: 'button', class: 'day-item ' + e.kind + pcClass(e) + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''), style: eventColorStyle(e) || null, onclick: function () { ov.close(); openEventDialog(e); } },
-        el('span', { class: 'di-title', text: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true) }),
+        el('span', { class: 'di-title', text: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true, false, true) }),
         sub.length ? el('span', { class: 'di-sub', text: sub.join('　') }) : null,
         e.note ? el('span', { class: 'di-note', text: e.note }) : null);
     });
@@ -2684,7 +2694,7 @@
 
   function openEventView(ev) {
     if (ev.deleted) return openDeletedView(ev);
-    var rows = [['種類', ev.kind === 'off' ? '休み' : ev.kind === 'private' ? 'プライベート' : '業務'], ['件名', eventLabel(ev, true)], ['日付', ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)]];
+    var rows = [['種類', ev.kind === 'off' ? '休み' : ev.kind === 'private' ? 'プライベート' : '業務'], ['件名', eventLabel(ev, true, false, true)], ['日付', ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end)]];
     if (ev.start_time) rows.push(['時刻', ev.start_time + (ev.end_time ? ' 〜 ' + ev.end_time : '')]);
     if (ev.tag) rows.push(['分類', ev.tag]);
     rows.push(['持ち主', ev.owner_name]);
