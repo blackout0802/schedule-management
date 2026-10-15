@@ -37,24 +37,24 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   await y.click('.rooms-btn'); await y.waitForSelector('.rooms-page .rm-bar'); await y.waitForSelector('.rm-mini');
   ok('「会議室」ボタンで、会議室のページが開く（URL は #rooms）', (await y.url()).endsWith('#rooms') && (await y.locator('.rooms-page h2').innerText()) === '会議室の予約');
   const keyTxt = await y.locator('.rm-key').innerText();
-  ok('部屋の色の見方に、大会議室（16名）・小会議室（6名）が出る', keyTxt.includes('大会議室') && keyTxt.includes('小会議室') && keyTxt.includes('16名') && keyTxt.includes('6名'), keyTxt);
-  ok('大は青の色番号0・小はオレンジの色番号1で、一文字のバッジ（大・小）が付く', (await y.locator('.rm-key .rm-s0 .rb').innerText()) === '大' && (await y.locator('.rm-key .rm-s1 .rb').innerText()) === '小');
+  ok('部屋の色の見方に、大会議室（8名）・応接室（4名）が出る', keyTxt.includes('大会議室') && keyTxt.includes('応接室') && keyTxt.includes('8名') && keyTxt.includes('4名'), keyTxt);
+  ok('大は青の色番号0・応はオレンジの色番号1で、一文字のバッジ（大・応）が付く', (await y.locator('.rm-key .rm-s0 .rb').innerText()) === '大' && (await y.locator('.rm-key .rm-s1 .rb').innerText()) === '応');
   ok('今月の予約がまだ無いときは、案内が出る', (await y.locator('.rm-agenda').innerText()).includes('予約はありません'));
   ok('今日からの空き日が、部屋ごとに出る', (await y.locator('.rm-nf').count()) === 2 && (await y.locator('.rm-nf').first().locator('.rm-free').count()) >= 1);
 
-  // ---- 予約する（小会議室）
+  // ---- 予約する（応接室）
   const book = async (p, o) => {
     await p.click('.rm-bar .btn.primary'); await p.waitForSelector('.modal input[name=title]');
     await p.fill('input[name=title]', o.title); await p.fill('input[name=date]', o.date);
     await p.click('.rm-pick:has-text("' + o.room + '")'); await p.selectOption('select[name=start]', o.start || '09:00'); await p.selectOption('select[name=end]', o.end || '11:00');
     if (o.kind) await p.selectOption('select[name=kind]', o.kind); await p.fill('input[name=pax]', String(o.pax || 4)); if (o.priv) await p.check('input[name=private]');
   };
-  await book(y, { title: 'e2e 定例会議', date: open[0], room: '小会議室', kind: 'committee', pax: 4 });
+  await book(y, { title: 'e2e 定例会議', date: open[0], room: '応接室', kind: 'committee', pax: 4 });
   ok('予約の画面に、「空いています」と出て、予約できる', (await y.locator('.rm-msg').innerText()).includes('空いています') && !(await y.locator('.modal button[type=submit]').isDisabled()));
   await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal'));
   await showMonth(y, open[0]); await y.waitForSelector('.rm-row:has-text("e2e 定例会議")');
   const row = y.locator('.rm-row:has-text("e2e 定例会議")');
-  ok('予約したものが、リストに、小会議室の色（番号1）・「小」バッジ・時間・区分つきで出る', (await row.getAttribute('class')).includes('rm-s1') && (await row.locator('.rb').innerText()) === '小' && (await row.innerText()).includes('小会議室') && (await row.innerText()).includes('09:00–11:00') && (await row.innerText()).includes('委員会') && (await row.innerText()).includes('自分'));
+  ok('予約したものが、リストに、応接室の色（番号1）・「応」バッジ・時間・区分つきで出る', (await row.getAttribute('class')).includes('rm-s1') && (await row.locator('.rb').innerText()) === '応' && (await row.innerText()).includes('応接室') && (await row.innerText()).includes('09:00–11:00') && (await row.innerText()).includes('委員会') && (await row.innerText()).includes('自分'));
   ok('月の見取り図で、その日の小が塗られ、大は枠だけ', (await y.locator('.rm-mc:has(.rm-chip.b.rm-s1) .rm-chip.rm-s0:not(.b)').count()) >= 1 && (await y.locator('.rm-chip.b.rm-s1').count()) === 1);
 
   // ---- 決まり: 画面での確認
@@ -62,16 +62,16 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   await y.fill('input[name=title]', '確認'); await y.fill('input[name=pax]', '4');
   await y.fill('input[name=date]', closedDay); await y.waitForTimeout(500);
   ok('休業日は、予約できないと出て、予約ボタンが押せない', (await y.locator('.rm-msg').innerText()).includes('休業日') && await y.locator('.modal button[type=submit]').isDisabled(), await y.locator('.rm-msg').innerText());
-  await y.fill('input[name=date]', open[0]); await y.click('.rm-pick:has-text("小会議室")'); await y.fill('input[name=pax]', '7'); await y.waitForTimeout(300);
-  ok('小会議室に7名は、定員（6名）を超えると出る', (await y.locator('.rm-msg').innerText()).includes('定員は6名'), await y.locator('.rm-msg').innerText());
+  await y.fill('input[name=date]', open[0]); await y.click('.rm-pick:has-text("応接室")'); await y.fill('input[name=pax]', '5'); await y.waitForTimeout(300);
+  ok('応接室に5名は、定員（4名）を超えると出る', (await y.locator('.rm-msg').innerText()).includes('定員は4名'), await y.locator('.rm-msg').innerText());
   await y.fill('input[name=pax]', '4'); await y.selectOption('select[name=start]', '10:00'); await y.selectOption('select[name=end]', '12:00'); await y.waitForTimeout(300);
   const dupMsg = await y.locator('.rm-msg').innerText();
   ok('同じ部屋・重なる時間は、「予約が入っています」と、先の予約の用件・予約した人が出る', dupMsg.includes('「e2e 定例会議」') && dupMsg.includes('山田 花子') && await y.locator('.modal button[type=submit]').isDisabled(), dupMsg);
-  ok('二重予約の案内の部屋の枠に、「使用中」と出る（もう一方は「空き」）', (await y.locator('.rm-pick:has-text("小会議室") .rs').innerText()) === '使用中' && (await y.locator('.rm-pick:has-text("大会議室") .rs').innerText()) === '空き');
+  ok('二重予約の案内の部屋の枠に、「使用中」と出る（もう一方は「空き」）', (await y.locator('.rm-pick:has-text("応接室") .rs').innerText()) === '使用中' && (await y.locator('.rm-pick:has-text("大会議室") .rs').innerText()) === '空き');
   await y.click('.rm-pick:has-text("大会議室")'); await y.waitForTimeout(300);
   ok('別の部屋（大会議室）なら、同じ時間でも予約できる', (await y.locator('.rm-msg').innerText()).includes('空いています') && !(await y.locator('.modal button[type=submit]').isDisabled()));
   await y.fill('input[name=pax]', '3'); await y.waitForTimeout(300);
-  ok('大会議室を少人数で使おうとすると、小会議室をお勧めする案内が出る（予約はできる）', (await y.locator('.rm-form .rm-hint:not([hidden])').innerText()).includes('小会議室がお勧め') && !(await y.locator('.modal button[type=submit]').isDisabled()));
+  ok('大会議室を少人数で使おうとすると、応接室をお勧めする案内が出る（予約はできる）', (await y.locator('.rm-form .rm-hint:not([hidden])').innerText()).includes('応接室がお勧め') && !(await y.locator('.modal button[type=submit]').isDisabled()));
   await y.click('.rm-quick button:has-text("午後")'); ok('「午後」で、13:00〜18:00 になる', (await y.inputValue('select[name=start]')) === '13:00' && (await y.inputValue('select[name=end]')) === '18:00');
   // 先の月（3か月より先）
   const far = await y.evaluate(async () => { const f = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); for (let i = 130; i < 160; i++) { const d = new Date(Date.now() + i * 864e5), s = f(d); if (d.getDay() === 0 || d.getDay() === 6) continue; const j = await (await fetch('api.php?action=rooms_list&from=' + s + '&to=' + s)).json(); if (!(s in j.closed)) return s; } return ''; });
@@ -80,14 +80,14 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
 
   // ---- サーバー側の確認（画面を通さない）
-  const r1 = await get(y, 'rooms_list&from=' + open[0] + '&to=' + open[0]); const small = r1.rooms.find(r => r.name === '小会議室'), big = r1.rooms.find(r => r.name === '大会議室');
+  const r1 = await get(y, 'rooms_list&from=' + open[0] + '&to=' + open[0]); const small = r1.rooms.find(r => r.name === '応接室'), big = r1.rooms.find(r => r.name === '大会議室');
   const bad = async o => (await api(y, 'room_booking_save', Object.assign({ room_id: small.id, date: open[0], start: '13:00', end: '14:00', title: 'x', kind: 'meeting', pax: 2 }, o))).error || '';
   ok('サーバーも: 土日・営業時間の外・定員超え・二重予約・先の月・区分なしは断る', [closedDay, 'x'].length && (await bad({ date: closedDay })).includes('休業日') && (await bad({ start: '08:00', end: '09:00' })).includes('9:00〜18:00') && (await bad({ pax: 9 })).includes('定員') && (await bad({ start: '10:00', end: '10:30' })).includes('e2e 定例会議') && (await bad({ date: far })).includes('3か月先') && (await bad({ kind: 'zz' })).includes('区分') && (await bad({ pax: '' })).includes('人数'));
   ok('サーバーも: 30分刻みでない時間・過去の日付は断る', (await bad({ start: '13:10' })).includes('30分刻み') && (await bad({ date: ymd(new Date(Date.now() - 864e5)) })).includes('過去'));
 
-  // ---- 大・小で分ける
-  await y.click('.rm-seg button:has-text("大・小で分ける")'); await y.waitForSelector('.rm-cols');
-  ok('「大・小で分ける」で、部屋ごとの列になり、小の予約は小の列だけに出る（見出しは部屋の色）', (await y.locator('.rm-col').count()) === 2 && (await y.locator('.rm-col.rm-s1:has-text("e2e 定例会議")').count()) === 1 && (await y.locator('.rm-col.rm-s0:has-text("e2e 定例会議")').count()) === 0 && (await y.locator('.rm-col-h').first().innerText()).includes('大会議室'));
+  // ---- 大・応で分ける
+  await y.click('.rm-seg button:has-text("大・応で分ける")'); await y.waitForSelector('.rm-cols');
+  ok('「大・応で分ける」で、部屋ごとの列になり、小の予約は小の列だけに出る（見出しは部屋の色）', (await y.locator('.rm-col').count()) === 2 && (await y.locator('.rm-col.rm-s1:has-text("e2e 定例会議")').count()) === 1 && (await y.locator('.rm-col.rm-s0:has-text("e2e 定例会議")').count()) === 0 && (await y.locator('.rm-col-h').first().innerText()).includes('大会議室'));
   await y.reload(); await y.waitForSelector('.rm-cols');
   ok('選んだ見せ方は、開き直しても覚えている', (await y.locator('.rm-cols').count()) === 1);
   await y.click('.rm-seg button:has-text("まとめて")'); await y.waitForSelector('.rm-agenda');
@@ -131,10 +131,10 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   ok('管理者でない人には、会議室の設定が出ない', await (async () => { await y.goto(BASE + 'index.php#settings'); await y.waitForSelector('.settings-page'); return (await y.locator('#set-rooms').count()) === 0; })());
   const row2 = a.locator('#set-rooms .rm-adm-row').nth(1); await row2.locator('input[type=number]').fill('8'); await row2.locator('button[type=submit]').click(); await a.waitForSelector('.toast');
   const r2 = await get(a, 'rooms_list&from=' + open[0] + '&to=' + open[0]);
-  ok('部屋の定員を変えると、保存される（予約の人数の検査にも使われる）', r2.rooms.find(r => r.name === '小会議室').capacity === 8 && !(await api(y, 'room_booking_save', { room_id: small.id, date: open[2], start: '09:00', end: '10:00', title: '8名の会議', kind: 'meeting', pax: 8 })).error);
+  ok('部屋の定員を変えると、保存される（予約の人数の検査にも使われる）', r2.rooms.find(r => r.name === '応接室').capacity === 8 && !(await api(y, 'room_booking_save', { room_id: small.id, date: open[2], start: '09:00', end: '10:00', title: '8名の会議', kind: 'meeting', pax: 8 })).error);
   await a.waitForSelector('#set-rooms .rm-adm-row'); const row3 = a.locator('#set-rooms .rm-adm-row').nth(1); await row3.locator('input[type=number]').fill('6'); await row3.locator('button[type=submit]').click(); await a.waitForTimeout(700);
   const cfg0 = (await get(a, 'rooms_list&from=' + open[0] + '&to=' + open[0])).cfg;
-  ok('予約の決まりの初期値: 3か月先・9:00〜18:00・前日17:00と当日8:30に通知・5名以下で小会議室を案内', cfg0.advance_months === 3 && cfg0.open === '09:00' && cfg0.close === '18:00' && cfg0.notify_prev.time === '17:00' && cfg0.notify_today.time === '08:30' && cfg0.small_hint_pax === 5, cfg0);
+  ok('予約の決まりの初期値: 3か月先・9:00〜18:00・前日17:00と当日8:30に通知・4名以下で応接室を案内', cfg0.advance_months === 3 && cfg0.open === '09:00' && cfg0.close === '18:00' && cfg0.notify_prev.time === '17:00' && cfg0.notify_today.time === '08:30' && cfg0.small_hint_pax === 4, cfg0);
   const cf = await api(a, 'rooms_cfg_save', Object.assign({}, cfg0, { advance_months: 6, open: '08:30' }));
   ok('決まりを保存できる（先の月数・使える時間）。おかしな値は保存できない', cf.cfg.advance_months === 6 && cf.cfg.open === '08:30' && !!(await api(a, 'rooms_cfg_save', Object.assign({}, cfg0, { open: '09:10' }))).error && !!(await api(y, 'rooms_cfg_save', cfg0)).error);
   await api(a, 'rooms_cfg_save', cfg0);

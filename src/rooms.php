@@ -6,7 +6,7 @@
 //   ・30分単位。平日の 9:00〜18:00 だけ（土日・祝日・会社の休業日は不可）。管理者は、時間外・休業日にも入れられる
 //   ・予約できるのは、今日から3か月先まで。当日の予約もよい。終了した予約は、変更も取り消しもできない
 //   ・同じ部屋・同じ時間の二重予約は、できない。先に取った人が優先（割り込みはなし）
-//   ・人数は必須。部屋の定員を超える人数は、予約できない（大会議室を少人数で使う予約には、小会議室を勧める案内だけを出す）
+//   ・人数は必須。部屋の定員を超える人数は、予約できない（大会議室を少人数で使う予約には、応接室を勧める案内だけを出す）
 //   ・用件と区分（委員会・打ち合わせ・来客・研修・その他）は必須。「非公開」にすると、他の人には「予約済」とだけ見える
 //   ・Slack には、前日の夕方と当日の朝に、その日の予約をまとめて通知する
 // 予約の追加・変更・取り消しは、管理者の「変更履歴」に残す（非公開の予約は、件名を残さない）。
@@ -21,7 +21,7 @@ function rooms_cfg_defaults(): array
         'advance_months' => 3,
         'open' => '09:00',
         'close' => '18:00',
-        'small_hint_pax' => 5, // 大きい部屋を、この人数以下で予約するとき、小さい部屋を勧める案内を出す（0 = 出さない）
+        'small_hint_pax' => 4, // 大きい部屋を、この人数以下で予約するとき、小さい部屋を勧める案内を出す（0 = 出さない）
         'notify_prev' => ['on' => true, 'time' => '17:00'],
         'notify_today' => ['on' => true, 'time' => '08:30'],
     ];
@@ -110,15 +110,25 @@ function rooms_cfg_save(array $in): array
     return rooms_cfg();
 }
 
-/** 初めて使うときの部屋（大会議室・小会議室）。部屋が1つもないときだけ入れる */
+/** 初めて使うときの部屋（大会議室 8名・応接室 4名）。部屋が1つもないときだけ入れる */
 function rooms_seed_defaults(): void
 {
     $r = row('SELECT COUNT(*) AS c FROM rooms');
     if ($r && (int)$r['c'] > 0) {
         return;
     }
-    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['大会議室', '大', 16, 'プロジェクター・ホワイトボード', 1]);
-    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['小会議室', '小', 6, 'モニター', 2]);
+    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['大会議室', '大', 8, 'プロジェクター・ホワイトボード', 1]);
+    q('INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES (?,?,?,?,?,1)', ['応接室', '応', 4, 'モニター', 2]);
+}
+
+/**
+ * 初期の部屋を、会社の実際の部屋に合わせる（小会議室 → 応接室・4名、大会議室 → 8名）。一度だけ。
+ * 名前が初期のままの部屋だけを直す（部屋の名前を自分で変えている場合は、そのまま）。何度実行しても安全。
+ */
+function rooms_migrate_v25(): void
+{
+    q("UPDATE rooms SET name = '応接室', short = '応', capacity = 4 WHERE name = '小会議室' AND short = '小'");
+    q("UPDATE rooms SET capacity = 8 WHERE name = '大会議室' AND short = '大'");
 }
 
 function rooms_all(bool $onlyActive = true): array

@@ -204,7 +204,7 @@ function run_schema(): void
     }
     migrate_schema();
     migrate_data();
-    rooms_seed_defaults(); // 会議室（大会議室・小会議室）。部屋がまだ1つもないときだけ入れる
+    rooms_seed_defaults(); // 会議室（大会議室・応接室）。部屋がまだ1つもないときだけ入れる
 }
 
 /**
@@ -228,6 +228,9 @@ function ensure_schema(): void
         // 業務・休みは「自分で選んだものだけ共有」にするので、一度だけ全て「共有しない」に戻す（プライベートは触らない）
         q("UPDATE events SET family_shared = 0 WHERE kind IN ('work', 'off')");
         q("UPDATE todos SET family_shared = 0 WHERE kind = 'work'");
+    }
+    if ($cur < 25) {
+        rooms_migrate_v25(); // 小会議室 → 応接室（4名）、大会議室 → 8名
     }
     q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
     q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', (string)SCHEMA_VERSION]);

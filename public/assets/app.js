@@ -3341,7 +3341,7 @@
 
   /* ---------- 会議室の予約 ----------
      トップの「会議室」ボタン（URL は #rooms）で開く、1つのページ。この月の予約のリスト・今日からの空き日・月の見取り図を、まとめて見せる。
-     部屋ごとに、色と一文字（大・小）を決めて、リスト・空き日・見取り図・予約の画面の、すべてで同じ見た目にする（一目で見分けられるように）。
+     部屋ごとに、色と一文字（大・応 など）を決めて、リスト・空き日・見取り図・予約の画面の、すべてで同じ見た目にする（一目で見分けられるように）。
      予約の決まり（時間・先の予約・二重予約・人数・変更できる人）は、サーバーが最終的に確かめる。画面でも同じ確認をして、押す前に分かるようにしている。 */
   var ROOM_KIND_NAME = { committee: '委員会', meeting: '打ち合わせ', visitor: '来客', training: '研修', other: 'その他' };
   function monthFirst(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-01'; }
@@ -3478,7 +3478,7 @@
       el('h3', { class: 'rm-month', text: rm.month.slice(0, 4) + '年' + (+rm.month.slice(5, 7)) + '月' }),
       el('span', { class: 'spacer' }),
       el('span', { class: 'rm-seg', role: 'group', 'aria-label': 'リストの見せ方' },
-        [['mix', 'まとめて'], ['split', '大・小で分ける']].map(function (v) { return el('button', { type: 'button', 'aria-pressed': rm.view === v[0] ? 'true' : 'false', text: v[0] === 'split' && rooms.length !== 2 ? '部屋ごと' : v[1], onclick: function () { setView(v[0]); } }); })),
+        [['mix', 'まとめて'], ['split', '部屋ごとに分ける']].map(function (v) { return el('button', { type: 'button', 'aria-pressed': rm.view === v[0] ? 'true' : 'false', text: v[0] === 'split' ? (rooms.length === 2 ? rooms[0].short + '・' + rooms[1].short + 'で分ける' : '部屋ごとに分ける') : v[1], onclick: function () { setView(v[0]); } }); })),
       el('button', { class: 'btn primary', type: 'button', text: '＋ 会議室を予約', onclick: function () { openRoomBooking({}); } })));
     host.appendChild(el('div', { class: 'rm-key', 'aria-label': '部屋の色の見方' },
       rooms.map(function (r) { return el('span', { class: 'rm-key-it rm-s' + r.slot }, roomBadge(r), el('b', { text: r.name }), el('small', { text: r.capacity + '名' })); }),
