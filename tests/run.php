@@ -1642,14 +1642,15 @@ check('会議室: 通知を止めると、送らない', count(rooms_notify_due(
 $cf['notify_prev']['on'] = true; rooms_cfg_save($cf);
 // 決まりの設定
 $badC = [];
-foreach ([['advance_months' => 0], ['advance_months' => 13], ['open' => '09:10'], ['open' => '19:00', 'close' => '18:00'], ['small_hint_pax' => -1], ['notify_prev' => ['time' => '25:00']]] as $chg) {
+foreach ([['advance_months' => 0], ['advance_months' => 13], ['open' => '09:10'], ['open' => '19:00', 'close' => '18:00'], ['notify_prev' => ['time' => '25:00']]] as $chg) {
     try { rooms_cfg_save(array_merge(rooms_cfg(), $chg)); $badC[] = 'ok'; } catch (RuntimeException $x) { $badC[] = 'ng'; }
 }
-check('会議室: 決まりの設定は、おかしな値（月数・30分刻みでない時刻・逆の時間帯・人数・通知の時刻）を保存できない', $badC, ['ng', 'ng', 'ng', 'ng', 'ng', 'ng']);
+check('会議室: 決まりの設定は、おかしな値（月数・30分刻みでない時刻・逆の時間帯・通知の時刻）を保存できない', $badC, ['ng', 'ng', 'ng', 'ng', 'ng']);
 $nc = rooms_cfg_save(array_merge(rooms_cfg(), ['advance_months' => 6, 'open' => '08:30', 'close' => '19:00']));
 check('会議室: 決まりを変えると、予約の検査にも反映される（営業時間・先の月数）', [$nc['advance_months'], rooms_validate_input($rin(['start' => '08:30', 'end' => '09:30']), $a, null, $rn)[1], rooms_validate_input($rin(['date' => '2031-09-12']), $a, null, $rn)[1], strpos((string)rooms_validate_input($rin(['date' => '2031-09-16']), $a, null, $rn)[1], '6か月先') !== false], [6, null, null, true]);
 rooms_cfg_save(array_merge(rooms_cfg(), rooms_cfg_defaults()));
 check('会議室: 決まりを初期値に戻せる', [rooms_cfg()['advance_months'], rooms_cfg()['open'], rooms_cfg()['close']], [3, '09:00', '18:00']);
+check('会議室: 少人数のお勧めはない（設定にも出ない）', array_key_exists('small_hint_pax', rooms_cfg()), false);
 // 部屋の管理
 $nr3 = rooms_save_room(['name' => '相談室', 'short' => '', 'capacity' => 4, 'equipment' => 'テレビ']);
 $r3 = row('SELECT * FROM rooms WHERE id = ?', [$nr3['id']]);

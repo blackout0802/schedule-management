@@ -6,7 +6,7 @@
 //   ・30分単位。平日の 9:00〜18:00 だけ（土日・祝日・会社の休業日は不可）。管理者は、時間外・休業日にも入れられる
 //   ・予約できるのは、今日から3か月先まで。当日の予約もよい。終了した予約は、変更も取り消しもできない
 //   ・同じ部屋・同じ時間の二重予約は、できない。先に取った人が優先（割り込みはなし）
-//   ・人数は必須。部屋の定員を超える人数は、予約できない（大会議室を少人数で使う予約には、応接室を勧める案内だけを出す）
+//   ・人数は必須。部屋の定員を超える人数は、予約できない
 //   ・用件と区分（委員会・打ち合わせ・来客・研修・その他）は必須。「非公開」にすると、他の人には「予約済」とだけ見える
 //   ・Slack には、前日の夕方と当日の朝に、その日の予約をまとめて通知する
 // 予約の追加・変更・取り消しは、管理者の「変更履歴」に残す（非公開の予約は、件名を残さない）。
@@ -21,7 +21,6 @@ function rooms_cfg_defaults(): array
         'advance_months' => 3,
         'open' => '09:00',
         'close' => '18:00',
-        'small_hint_pax' => 4, // 大きい部屋を、この人数以下で予約するとき、小さい部屋を勧める案内を出す（0 = 出さない）
         'notify_prev' => ['on' => true, 'time' => '17:00'],
         'notify_today' => ['on' => true, 'time' => '08:30'],
     ];
@@ -64,9 +63,6 @@ function rooms_cfg(): array
         $d['open'] = $j['open'];
         $d['close'] = $j['close'];
     }
-    if (isset($j['small_hint_pax']) && is_numeric($j['small_hint_pax']) && (int)$j['small_hint_pax'] >= 0 && (int)$j['small_hint_pax'] <= 50) {
-        $d['small_hint_pax'] = (int)$j['small_hint_pax'];
-    }
     foreach (['notify_prev', 'notify_today'] as $k) {
         if (isset($j[$k]) && is_array($j[$k])) {
             $d[$k]['on'] = isset($j[$k]['on']) ? (bool)$j[$k]['on'] : $d[$k]['on'];
@@ -94,11 +90,7 @@ function rooms_cfg_save(array $in): array
     if ($open >= $close) {
         throw new RuntimeException('終わりの時刻は、始まりの時刻より後にしてください。');
     }
-    $hint = $in['small_hint_pax'] ?? $cur['small_hint_pax'];
-    if (!is_numeric($hint) || (int)$hint < 0 || (int)$hint > 50) {
-        throw new RuntimeException('小さい部屋を勧める人数は、0〜50 で入力してください（0 なら、案内を出しません）。');
-    }
-    $new = ['advance_months' => (int)$adv, 'open' => $open, 'close' => $close, 'small_hint_pax' => (int)$hint];
+    $new = ['advance_months' => (int)$adv, 'open' => $open, 'close' => $close];
     foreach (['notify_prev' => '前日', 'notify_today' => '当日'] as $k => $label) {
         $t = (string)($in[$k]['time'] ?? $cur[$k]['time']);
         if (!rooms_notify_time_ok($t)) {

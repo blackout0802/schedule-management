@@ -3509,7 +3509,6 @@
       '人数は必須です。部屋の定員を超える人数は、予約できません。',
       '用件と区分（委員会・打ち合わせ・来客・研修・その他）は必須です。「非公開」にすると、他の人には「予約済」とだけ見えます。'
     ];
-    if (c.small_hint_pax > 0) rules.push('大きい部屋を' + c.small_hint_pax + '名以下で予約するときは、小さい部屋をお勧めします（案内だけで、予約はできます）。');
     if (c.notify_prev.on || c.notify_today.on) rules.push('Slackに、' + [c.notify_prev.on ? '前日の ' + c.notify_prev.time : '', c.notify_today.on ? '当日の ' + c.notify_today.time : ''].filter(Boolean).join('と') + ' に、その日の予約を知らせます（Slack通知を設定している場合）。');
     if (roomIsAdmin()) rules.push('管理者は、営業時間の外・休業日・先の月にも予約できます。');
     return el('details', { class: 'rm-rules' }, el('summary', { text: '予約のルール' }), el('ul', null, rules.map(function (t) { return el('li', { text: t }); })));
@@ -3540,7 +3539,6 @@
     var pax = el('input', { type: 'number', name: 'pax', min: '1', max: '999', required: true, inputmode: 'numeric', value: b ? String(b.pax) : '', placeholder: '人数' });
     var priv = el('input', { type: 'checkbox', name: 'private', checked: !!(b && b.private), style: 'width:auto' });
     var msg = el('p', { class: 'rm-msg', role: 'status', 'aria-live': 'polite' });
-    var hint = el('p', { class: 'hint rm-hint', hidden: true });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var okBtn = el('button', { class: 'btn primary', type: 'submit', text: b ? '変更を保存' : '予約する' });
     var picks = rooms.map(function (r) {
@@ -3581,10 +3579,6 @@
       msg.className = 'rm-msg ' + (p ? 'ng' : 'ok');
       msg.textContent = p || (mdw(v.date) + ' ' + v.start + '–' + v.end + '（' + durText(hmMin(v.end) - hmMin(v.start)) + '）は空いています。');
       okBtn.disabled = !!p;
-      var big = rooms.slice().sort(function (a, z) { return z.capacity - a.capacity; })[0], small = rooms.filter(function (r) { return r.id !== roomId && r.capacity >= (v.pax || 1) && r.capacity < roomOf(roomId).capacity; })[0];
-      var show = c.small_hint_pax > 0 && v.pax !== '' && v.pax <= c.small_hint_pax && big && roomId === big.id && !!small;
-      hint.hidden = !show;
-      if (show) hint.textContent = v.pax + '名なら、' + small.name + 'がお勧めです（' + roomOf(roomId).name + 'は、大人数の会議のために空けておきましょう）。';
     }
     function refreshDay() { if (!date.value) { check(); return; } roomsEnsureDay(date.value).then(check).catch(function () { check(); }); }
     date.addEventListener('change', function () { refreshDay(); });
@@ -3605,7 +3599,6 @@
       el('div', { class: 'rm-quick' }, el('span', { class: 'hint', text: '時間帯：' }), quick('午前 ' + c.open.replace(/^0/, '') + '–12:00', c.open, noon), quick('午後 13:00–' + c.close.replace(/^0/, ''), pm, c.close), quick('終日', c.open, c.close)),
       el('div', { class: 'row' }, el('label', null, '開始', st), el('label', null, '終了', et)),
       el('div', { class: 'row' }, el('label', null, '区分', kind), el('label', null, '人数', pax)),
-      hint,
       el('label', { class: 'check rm-priv' }, priv, '非公開にする（他の人には「予約済」とだけ見える。用件・人数・予約した人は、本人と管理者だけに見える）'),
       msg, err,
       el('div', { class: 'actions' },
@@ -3664,16 +3657,14 @@
         var adv = el('select', null, [1, 2, 3, 4, 5, 6, 9, 12].map(function (n) { return el('option', { value: String(n), text: n + 'か月先まで', selected: n === c.advance_months }); }));
         var opn = el('select'), cls = el('select');
         roomTimeOpts(opn, 6 * 60, 21 * 60, c.open); roomTimeOpts(cls, 7 * 60, 22 * 60, c.close);
-        var hnt = el('input', { type: 'number', min: '0', max: '50', value: String(c.small_hint_pax), style: 'width:5em' });
         var np = el('input', { type: 'checkbox', checked: c.notify_prev.on, style: 'width:auto' }), npt = timeInput('npt', c.notify_prev.time);
         var nt = el('input', { type: 'checkbox', checked: c.notify_today.on, style: 'width:auto' }), ntt = timeInput('ntt', c.notify_today.time);
         var e2 = el('p', { class: 'error', role: 'alert', hidden: true });
         body.appendChild(el('form', { class: 'form', onsubmit: function (e) {
           e.preventDefault(); e2.hidden = true;
-          api('rooms_cfg_save', { body: { advance_months: +adv.value, open: opn.value, close: cls.value, small_hint_pax: +hnt.value || 0, notify_prev: { on: np.checked, time: timeVal(npt) }, notify_today: { on: nt.checked, time: timeVal(ntt) } } }).then(function () { toast('予約の決まりを保存しました'); refresh(); }).catch(function (x) { e2.textContent = x.message; e2.hidden = false; });
+          api('rooms_cfg_save', { body: { advance_months: +adv.value, open: opn.value, close: cls.value, notify_prev: { on: np.checked, time: timeVal(npt) }, notify_today: { on: nt.checked, time: timeVal(ntt) } } }).then(function () { toast('予約の決まりを保存しました'); refresh(); }).catch(function (x) { e2.textContent = x.message; e2.hidden = false; });
         } },
           el('div', { class: 'row' }, el('label', null, '予約できる先の期間', adv), el('label', null, '使える時間（一般の社員）', el('span', { class: 'row-inline' }, opn, '〜', cls))),
-          el('label', null, '小さい部屋をお勧めする人数（これ以下で大きい部屋を予約するとき、案内を出す。0 なら出さない）', hnt),
           el('label', { class: 'check' }, np, ' 前日に、その日の予約をSlackに知らせる　', npt),
           el('label', { class: 'check' }, nt, ' 当日の朝に、その日の予約をSlackに知らせる　', ntt),
           el('p', { class: 'hint', text: '通知は、cron の「notify」が動いているときに送られます。管理者は、営業時間の外・休業日・先の月にも予約できます。' }),

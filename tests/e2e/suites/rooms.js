@@ -71,7 +71,6 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   await y.click('.rm-pick:has-text("大会議室")'); await y.waitForTimeout(300);
   ok('別の部屋（大会議室）なら、同じ時間でも予約できる', (await y.locator('.rm-msg').innerText()).includes('空いています') && !(await y.locator('.modal button[type=submit]').isDisabled()));
   await y.fill('input[name=pax]', '3'); await y.waitForTimeout(300);
-  ok('大会議室を少人数で使おうとすると、応接室をお勧めする案内が出る（予約はできる）', (await y.locator('.rm-form .rm-hint:not([hidden])').innerText()).includes('応接室がお勧め') && !(await y.locator('.modal button[type=submit]').isDisabled()));
   await y.click('.rm-quick button:has-text("午後")'); ok('「午後」で、13:00〜18:00 になる', (await y.inputValue('select[name=start]')) === '13:00' && (await y.inputValue('select[name=end]')) === '18:00');
   // 先の月（3か月より先）
   const far = await y.evaluate(async () => { const f = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); for (let i = 130; i < 160; i++) { const d = new Date(Date.now() + i * 864e5), s = f(d); if (d.getDay() === 0 || d.getDay() === 6) continue; const j = await (await fetch('api.php?action=rooms_list&from=' + s + '&to=' + s)).json(); if (!(s in j.closed)) return s; } return ''; });
@@ -134,7 +133,7 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   ok('部屋の定員を変えると、保存される（予約の人数の検査にも使われる）', r2.rooms.find(r => r.name === '応接室').capacity === 8 && !(await api(y, 'room_booking_save', { room_id: small.id, date: open[2], start: '09:00', end: '10:00', title: '8名の会議', kind: 'meeting', pax: 8 })).error);
   await a.waitForSelector('#set-rooms .rm-adm-row'); const row3 = a.locator('#set-rooms .rm-adm-row').nth(1); await row3.locator('input[type=number]').fill('6'); await row3.locator('button[type=submit]').click(); await a.waitForTimeout(700);
   const cfg0 = (await get(a, 'rooms_list&from=' + open[0] + '&to=' + open[0])).cfg;
-  ok('予約の決まりの初期値: 3か月先・9:00〜18:00・前日17:00と当日8:30に通知・4名以下で応接室を案内', cfg0.advance_months === 3 && cfg0.open === '09:00' && cfg0.close === '18:00' && cfg0.notify_prev.time === '17:00' && cfg0.notify_today.time === '08:30' && cfg0.small_hint_pax === 4, cfg0);
+  ok('予約の決まりの初期値: 3か月先・9:00〜18:00・前日17:00と当日8:30に通知', cfg0.advance_months === 3 && cfg0.open === '09:00' && cfg0.close === '18:00' && cfg0.notify_prev.time === '17:00' && cfg0.notify_today.time === '08:30', cfg0);
   const cf = await api(a, 'rooms_cfg_save', Object.assign({}, cfg0, { advance_months: 6, open: '08:30' }));
   ok('決まりを保存できる（先の月数・使える時間）。おかしな値は保存できない', cf.cfg.advance_months === 6 && cf.cfg.open === '08:30' && !!(await api(a, 'rooms_cfg_save', Object.assign({}, cfg0, { open: '09:10' }))).error && !!(await api(y, 'rooms_cfg_save', cfg0)).error);
   await api(a, 'rooms_cfg_save', cfg0);
