@@ -23,6 +23,7 @@ const openAdd = async (pg, sel) => { if (!(await pg.locator(sel + ' .todo-add in
   await p.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL', key: 'ｌ', bubbles: true }))); await p.waitForSelector('.kanban'); ok('日本語入力（全角の ｌ）でも動く', (await mode()) === 'リスト');
   await openAdd(p, '#todo-mgr'); await p.focus('#todo-mgr .todo-add input[type=text]'); await p.keyboard.type('cl'); ok('入力欄に打っている文字では、動かない', (await mode()) === 'リスト' && (await p.inputValue('#todo-mgr .todo-add input[type=text]')) === 'cl'); await p.fill('#todo-mgr .todo-add input[type=text]', ''); await p.evaluate(() => document.activeElement.blur());
   await p.keyboard.press('Control+c'); ok('Ctrl+C（コピー）は邪魔しない', (await mode()) === 'リスト');
+  await p.evaluate(() => document.activeElement && document.activeElement.blur()); // 入力欄に、カーソルが残っていると、c は文字として入ってしまう
   await p.keyboard.press('c'); await p.waitForSelector('.cal');
   // ---- まとめの行を押す
   await p.selectOption('#who-sel', 'all'); await p.waitForSelector('.ms-table tbody tr.pick'); const rowsN = await p.locator('.ms-table tbody tr').count();

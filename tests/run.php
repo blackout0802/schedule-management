@@ -1175,9 +1175,10 @@ check('更新履歴の削除: 削除のあとの新しい記録は、これま�
 
 
 // ---- 変更履歴（管理者）の削除 ----
+// （記録のたびに、1/40 の確率で、365日より古い履歴が自動で消える。テストが揺れないよう、いちばん古い履歴も 365日より新しくしておく）
 q('DELETE FROM audit_log');
 $au0 = function () { return (int)row('SELECT COUNT(*) AS c FROM audit_log')['c']; };
-foreach ([[400, '古い履歴A'], [100, '古い履歴B'], [10, '新しい履歴C'], [1, '新しい履歴D']] as [$ago, $lbl]) {
+foreach ([[200, '古い履歴A'], [100, '古い履歴B'], [10, '新しい履歴C'], [1, '新しい履歴D']] as [$ago, $lbl]) {
     q('INSERT INTO audit_log (at, actor_id, actor_name, type, action, label, target_name, detail) VALUES (?,?,?,?,?,?,?,?)', [date('Y-m-d H:i:s', time() - $ago * 86400), null, 'テスト', 'event', 'add', $lbl, '', '']);
 }
 $auOne = (int)row('SELECT id FROM audit_log WHERE label = ?', ['新しい履歴D'])['id'];
@@ -1185,7 +1186,7 @@ check('変更履歴の削除: 1件だけ消せる', [audit_delete('one', $auOne)
 $lastRec = row("SELECT label, detail, type, action FROM audit_log ORDER BY id DESC LIMIT 1");
 check('変更履歴の削除: 消したことが、新しい履歴として残る（中身は残さない）', [$lastRec['label'], $lastRec['type'], $lastRec['action'], strpos($lastRec['detail'], '新しい履歴D') === false, strpos($lastRec['detail'], '1件') !== false], ['変更履歴を削除', 'security', 'delete', true, true]);
 check('変更履歴の削除: 存在しない番号は、何も消さず、記録も増やさない', [audit_delete('one', 999999), $au0()], [0, 4]);
-check('変更履歴の削除: 90日より前を消す（400日前・100日前が消える）', [audit_delete('older', 90), array_column(rows("SELECT label FROM audit_log WHERE label NOT LIKE '変更履歴を削除'"), 'label')], [2, ['新しい履歴C']]);
+check('変更履歴の削除: 90日より前を消す（200日前・100日前が消える）', [audit_delete('older', 90), array_column(rows("SELECT label FROM audit_log WHERE label NOT LIKE '変更履歴を削除'"), 'label')], [2, ['新しい履歴C']]);
 $beforeAll = $au0();
 check('変更履歴の削除: すべて削除し、削除の記録だけが残る', [audit_delete('all'), $au0(), row('SELECT label FROM audit_log')['label']], [$beforeAll, 1, '変更履歴を削除']);
 check('変更履歴の削除: 知らないモードは、何もしない', audit_delete('x'), 0);
@@ -1677,11 +1678,8 @@ q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALU
 q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES ('大会議室', '大', 16, '', 9, 1)");
 q("INSERT INTO rooms (name, short, capacity, equipment, sort_order, active) VALUES ('小さな部屋', '小', 5, '', 10, 1)");
 rooms_migrate_v25(); rooms_migrate_v25();
-check('会議室: 古い初期値の部屋は、応接室（4名）・大会議室（8名）に直る。名前を変えた部屋はそのまま', [
-    row("SELECT name || '/' || short || '/' || capacity AS x FROM rooms WHERE sort_order = 8")['x'],
-    row("SELECT capacity AS x FROM rooms WHERE sort_order = 9")['x'] . '',
-    row("SELECT name || '/' || capacity AS x FROM rooms WHERE sort_order = 10")['x'],
-], ['応接室/応/4', '8', '小さな部屋/5']);
+$m25 = function ($o) { $r = row('SELECT name, short, capacity FROM rooms WHERE sort_order = ?', [$o]); return $r['name'] . '/' . $r['short'] . '/' . $r['capacity']; }; // 文字をつなぐのは PHP で（MariaDB では || が「または」になる）
+check('会議室: 古い初期値の部屋は、応接室（4名）・大会議室（8名）に直る。名前を変えた部屋はそのまま', [$m25(8), $m25(9), $m25(10)], ['応接室/応/4', '大会議室/大/8', '小さな部屋/小/5']);
 q('DELETE FROM rooms WHERE sort_order >= 8');
 
 // v1.55.0: 大会議室(8名) → 会議室(6名)、応接室(4名) → 3名。初期の設備名は消し、自分で書いた設備は残す。名前を変えた部屋は触らない
