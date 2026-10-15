@@ -749,6 +749,19 @@ save_memo($doc, $a);
 check('日報: 1つの入力欄に保存して読み出せる（日付の行・転記の印・ToDoの印が残る）', get_memo_state($a)['html'], $doc);
 check('日報: 構造化されていれば、引き継ぎ元（seed）は付かない', isset(get_memo_state($a)['seed']), false);
 check('日報: 他の人の日報は空（本人だけ）', [get_memo_state($b)['html'], get_memo_state($admin)['html']], ['', '']);
+// 日報の雛形（本人が決める）
+$tpl = '<div>こんにちは。</div><div><br></div><div data-md="cur" data-date="2026-03-02">【3/2　本日の予定】</div><div><br></div><div data-todo="5" data-st="todo">消える項目</div><div><br></div><div data-md="next" data-date="2026-03-03">【3/3　明日の予定】</div><div><br></div><div>以上。</div>';
+check('日報の雛形: 初めは無い（標準の雛形を使う）', get_memo_state($a)['tpl'], '');
+$tsaved = memo_template_save($tpl, $a);
+check('日報の雛形: 保存して読み出せる。項目の印（ToDoの印）は持ち込まない。日付の行の印は残る', [get_memo_state($a)['tpl'] === $tsaved, strpos($tsaved, 'data-todo') === false, strpos($tsaved, 'data-md="cur"') !== false, strpos($tsaved, '本日の予定') !== false], [true, true, true, true]);
+check('日報の雛形: 他の人には、見えない（本人ごと）', [get_memo_state($b)['tpl'], get_memo_state($admin)['tpl']], ['', '']);
+$badT = [];
+foreach (['<div>日付の行がない</div>', '<div data-md="cur" data-date="2026-03-02">【3/2】</div><div>次回の行がない</div>', '<div data-md="cur" data-date="2026-03-02">【3/2】</div><div data-md="next" data-date="2026-03-03">【3/3】</div><div>' . str_repeat('あ', 2000) . '</div>'] as $bad) {
+    try { memo_template_save($bad, $a); $badT[] = 'ok'; } catch (RuntimeException $x) { $badT[] = 'ng'; }
+}
+check('日報の雛形: 日付の行が2つ無い・長すぎるものは、保存できない（いまの雛形は、そのまま）', [$badT, get_memo_state($a)['tpl'] === $tsaved], [['ng', 'ng', 'ng'], true]);
+memo_template_save('', $a);
+check('日報の雛形: 空で保存すると、標準の雛形に戻る', get_memo_state($a)['tpl'], '');
 check('日報: 不正な印は捨てる（日付・種類・転記）', sanitize_memo_html('<div data-md="evil" data-date="2026-01-01">a</div><div data-md="cur" data-date="x">b</div><div data-tr="2">c</div>'), '<div>a</div><div>b</div><div>c</div>');
 check('日報: s や br には印が付かない', sanitize_memo_html('<s data-md="cur" data-date="2026-01-01">t</s>'), '<s>t</s>');
 check('日報: 長すぎると拒否', $thrown(function () use ($a) { save_memo(str_repeat('あ', MEMO_MAX_CHARS + 1), $a); }), true);

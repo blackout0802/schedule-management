@@ -2328,20 +2328,55 @@
   }
 
   /* 日報の雛形（初めて開いたとき・「雛形に戻す」）。seed があれば、以前の版の内容を引き継ぐ */
-  var memoKeepLabels = {}; // 「雛形に戻す」で、書き換えた見出しの言葉を残す
   function memoTemplate(info, seed) {
+    if (S.memo && S.memo.tpl) { // 自分で決めた雛形がある: 日付だけ、いまの出勤日にして使う
+      var tf = memoBuild(S.memo.tpl);
+      Array.prototype.forEach.call(tf.childNodes, function (n) {
+        var md = n.nodeType === 1 && n.getAttribute('data-md');
+        if (md === 'cur' || md === 'next') { var iso = md === 'cur' ? info.cur : info.next; n.setAttribute('data-date', iso); n.textContent = mHeadText(iso, mHeadLabel(n)); }
+      });
+      return tf;
+    }
     var frag = document.createDocumentFragment(), add = function (t) { frag.appendChild(mDiv(t)); };
     var addHtml = function (h) { Array.prototype.forEach.call(memoBuild(h).childNodes, function (n) { frag.appendChild(n); }); };
     ['お疲れ様です。', '業務終了しました。', '', '以下、本日の業務報告です。', ''].forEach(add);
-    frag.appendChild(mHeadDiv('cur', info.cur, memoKeepLabels.cur)); add('');
+    frag.appendChild(mHeadDiv('cur', info.cur)); add('');
     if (seed && seed.cur) addHtml(seed.cur);
     add('');
-    frag.appendChild(mHeadDiv('next', info.next, memoKeepLabels.next)); add('');
+    frag.appendChild(mHeadDiv('next', info.next)); add('');
     if (seed && seed.next) addHtml(seed.next);
     add('');
     add('以上となります。'); add('よろしくお願いいたします。');
     if (seed && seed.old && seed.old.replace(/<[^>]*>/g, '').trim()) { add(''); add('（以前のメモ）'); addHtml(seed.old); }
     return frag;
+  }
+  /* いまの文面から、項目（当日・次回出勤日の下の行）を除いたもの = 雛形 */
+  function memoTemplateHtml() {
+    var skip = [];
+    ['cur', 'next'].forEach(function (k) { var h = mHead(k); if (h) skip = skip.concat(mBlock(h).items); });
+    var tmp = document.createElement('div');
+    Array.prototype.forEach.call(memoEd.children, function (d) {
+      if (skip.indexOf(d) >= 0 || d.hasAttribute('data-tr') || d.hasAttribute('data-todo')) return;
+      var c = d.cloneNode(true);
+      ['data-tr', 'data-todo', 'data-st'].forEach(function (a) { c.removeAttribute(a); });
+      tmp.appendChild(c);
+    });
+    return linesToSaveHtml(memoLines(tmp));
+  }
+  function openMemoTemplate() {
+    var msg = el('p', { class: 'hint', role: 'status' });
+    function save(html, ok) {
+      api('memo_template_save', { body: { html: html } }).then(function (j) { S.memo.tpl = j.tpl; msg.textContent = ok; toast(ok); }).catch(function (x) { msg.textContent = x.message; });
+    }
+    var ov = openModal('日報の雛形', el('div', { class: 'form' },
+      el('p', { text: '「雛形に戻す」で戻る文面を、自分の文面に決められます。' + (S.memo && S.memo.tpl ? 'いまは、自分で決めた雛形を使っています。' : 'いまは、標準の雛形（お疲れ様です。〜よろしくお願いいたします。）です。') }),
+      el('p', { class: 'hint', text: 'まず、メモ欄で、挨拶・締めの文・見出しの言葉（予定・To Do）などを、好きな文面に書き換えてください。そのあと「いまの文面を雛形にする」を押すと、当日・次回出勤日の項目を除いた文面が、雛形として保存されます（日付は、使うときに自動で入ります）。初めて日報を開くときにも、この雛形が入ります。' }),
+      msg,
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn primary', type: 'button', text: 'いまの文面を雛形にする', onclick: function () { if (!memoEd) return; save(memoTemplateHtml(), '雛形を保存しました'); } }),
+        el('button', { class: 'btn', type: 'button', text: '標準の雛形に戻す', title: '自分で決めた雛形を消す', onclick: function () { save('', '標準の雛形に戻しました'); } }),
+        el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
+    ov.outsideClose = true;
   }
   function memoInit(html, info, seed) {
     memoEd.textContent = '';
@@ -2443,7 +2478,7 @@
       memoBusy = false;
       var first = !S.memo;
       if (first) { S.memo = j; renderMemo(); return; }
-      S.memo.history = j.history;
+      S.memo.history = j.history; S.memo.tpl = j.tpl;
       if (S.memo.cur === j.cur && S.memo.next === j.next) return;
       S.memo.cur = j.cur; S.memo.next = j.next; S.memo.today = j.today;
       if (memoEd && memoReconcile(j)) memoChanged();
@@ -2490,12 +2525,11 @@
       tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
       tool('テキストでコピー', '文字だけでコピー（取り消し線は線の文字で表す）', function () { copyMemo(true); })));
     box.appendChild(el('div', { class: 'memo-bar' },
-      tool('雛形に戻す', '日報を、お疲れ様です〜よろしくお願いいたします、の雛形に置き換える', function () {
+      tool('雛形に戻す', '日報を、雛形（標準は、お疲れ様です〜よろしくお願いいたします。「雛形の設定」で、自分の文面にできる）に置き換える', function () {
         if (memoLines(memoEd).length && !window.confirm('いまの日報を、雛形で置き換えます（当日・次回出勤日の項目は空になります）。よろしいですか？')) return;
-        var hc = mHead('cur'), hn = mHead('next');
-        memoKeepLabels = { cur: hc ? mHeadLabel(hc) : undefined, next: hn ? mHeadLabel(hn) : undefined };
-        memoInit('', S.memo, null); memoKeepLabels = {}; memoSig = memoCurSig(); memoChanged();
+        memoInit('', S.memo, null); memoSig = memoCurSig(); memoChanged();
       }, 'ghost'),
+      tool('雛形の設定', '「雛形に戻す」で戻る文面を、自分の文面に決める', openMemoTemplate, 'ghost'),
       tool('過去の日報', '日が進んだときの、前の日の日報の控えを見る', openMemoHistory, 'ghost')));
     if (!S.memo) { box.appendChild(el('p', { class: 'hint', text: '読み込み中…' })); memoRefreshDays(true); return; }
     memoStatusEl = el('span', { class: 'memo-status', role: 'status' });

@@ -783,7 +783,7 @@ function get_memo_state(array $user): array
     }
     $r = row('SELECT body FROM memos WHERE owner_id = ?', [$user['id']]);
     $html = $r ? sanitize_memo_html((string)$r['body']) : '';
-    $out = ['today' => $today, 'cur' => $days[0], 'next' => $days[1], 'html' => $html, 'history' => memo_history_days($user)];
+    $out = ['today' => $today, 'cur' => $days[0], 'next' => $days[1], 'html' => $html, 'history' => memo_history_days($user), 'tpl' => memo_template_get($user)];
     if (strpos($html, 'data-md="cur"') === false) {
         $seed = ['cur' => '', 'next' => '', 'old' => $html];
         foreach (['cur', 'next'] as $k) {
@@ -794,6 +794,37 @@ function get_memo_state(array $user): array
         $out['seed'] = $seed;
     }
     return $out;
+}
+
+/* 日報の雛形（本人が決める）。「雛形に戻す」と、初めて開いたときに使う文面。app_meta に、本人ごとに1つ（memo_tpl_<社員番号>）。
+ * 項目（当日・次回出勤日の下の行）は含めない。日付の行（data-md）は、2つ必要（日付は、使うときに入れ替わる）。 */
+const MEMO_TPL_MAX = 1900; // 文字数（app_meta の値は 2000 文字まで）
+
+function memo_template_get(array $user): string
+{
+    $r = row('SELECT meta_value FROM app_meta WHERE meta_key = ?', ['memo_tpl_' . (int)$user['id']]);
+    return $r ? sanitize_memo_html((string)$r['meta_value']) : '';
+}
+
+/** 雛形を保存する（空にすると、標準の雛形に戻る）。保存した雛形を返す */
+function memo_template_save(string $html, array $user): string
+{
+    $key = 'memo_tpl_' . (int)$user['id'];
+    $clean = trim($html) === '' ? '' : sanitize_memo_html($html);
+    $clean = preg_replace('#\s+data-(todo|st|tr)="[^"]*"#', '', $clean); // 項目の印は、雛形に持ち込まない
+    if ($clean !== '') {
+        if (substr_count($clean, 'data-md="cur"') !== 1 || substr_count($clean, 'data-md="next"') !== 1) {
+            throw new RuntimeException('日付の行（「【10/15　予定・To Do】」）が、当日・次回出勤日の2つ必要です。');
+        }
+        if (mb_strlen($clean) > MEMO_TPL_MAX) {
+            throw new RuntimeException('雛形が長すぎます。挨拶・締めの文を短くしてください。');
+        }
+    }
+    q('DELETE FROM app_meta WHERE meta_key = ?', [$key]);
+    if ($clean !== '') {
+        q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', [$key, $clean]);
+    }
+    return $clean;
 }
 
 /** 日報を保存する。日が進んでいたら（当日の日付が変わったら）、前の日報を、その日の控えとして残す */

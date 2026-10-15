@@ -39,6 +39,7 @@ bash tests/e2e/run.sh --list       # テストの一覧
 | `who` `sum` `kind2` `imp` `col` `rec` `hol` `seg` `dp` | 表示する人・月のまとめ・休みと業務の見え方・重要・色・繰り返し・祝日・週をまたぐ帯 |
 | `dnd` `kb` `th` `tdlink` `tm` | ToDoのカンバン・カレンダーへのドラッグ・完了で取り消し線 |
 | `memo4` `memo5` | 日報（日付の自動入れ替え・転記・貼り付け・過去の日報） |
+| `memotpl` | 日報の雛形を自分の文面に決める（保存・「雛形に戻す」・標準に戻す） |
 | `tdshare` `tdc` `tdimg` | 業務ToDoの共有・コメント・画像の添付 |
 | `lk` `sp` `famoff` `fldel` `flog` `dup` | 共有リンク（会社用・家族用）・家族の更新履歴・予定の複製 |
 | `bk` `bk2` `au` `auddel` `sl` `sc` | バックアップ（手動・自動・アラート）・変更履歴・Slack通知 |

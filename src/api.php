@@ -545,6 +545,17 @@ function handle_api(): void
             }
             api_out(['ok' => true, 'saved_at' => date('H:i')]);
 
+        case 'memo_template_save':
+            if (!isset($in['html']) || !is_string($in['html'])) {
+                api_fail('雛形の内容がありません。');
+            }
+            try {
+                $tpl = memo_template_save($in['html'], $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'tpl' => $tpl]);
+
         case 'memo_history':
             $h = memo_history_get((string)($_GET['day'] ?? ''), $user);
             if ($h === null) {
