@@ -1615,6 +1615,14 @@ check('会議室: 非公開でも、本人と管理者には、全部見える�
 $bk1r = row('SELECT * FROM room_bookings WHERE id = ?', [$bk1['id']]);
 check('会議室: 変更・取り消しできるのは、予約した本人と管理者だけ', [rooms_can_edit($bk1r, $a, $rn), rooms_can_edit($bk1r, $b, $rn), rooms_can_edit($bk1r, $admin, $rn)], [true, false, true]);
 check('会議室: 終わった予約は、本人も管理者も、変更・取り消しできない', [rooms_is_past($bk1r, strtotime('2031-03-13 11:59:00')), rooms_is_past($bk1r, strtotime('2031-03-13 12:00:00')), rooms_is_past($bk1r, strtotime('2031-03-14 08:00:00')), rooms_can_edit($bk1r, $a, strtotime('2031-03-13 12:30:00')), rooms_can_edit($bk1r, $admin, strtotime('2031-03-14 09:00:00'))], [false, true, true, false, false]);
+// 管理者は、終わった予約も取り消せる（変更はできない）
+$endedB = rooms_can_delete($bk1r, $a, strtotime('2031-03-13 12:30:00'));
+check('会議室: 終わった予約は、本人は取り消せず、管理者は取り消せる（変更は、管理者もできない）', [$endedB, rooms_can_delete($bk1r, $admin, strtotime('2031-03-14 09:00:00')), rooms_can_edit($bk1r, $admin, strtotime('2031-03-14 09:00:00')), rooms_can_delete($bk1r, $b, strtotime('2031-03-13 10:30:00')), rooms_can_delete($bk1r, $a, strtotime('2031-03-13 10:30:00'))], [false, true, false, false, true]);
+$cAdPast = room_booking_for_client(row('SELECT b.*, u.name AS owner_name FROM room_bookings b JOIN users u ON u.id = b.owner_id WHERE b.id = ?', [$bk1r['id']]), $admin, strtotime('2031-03-14 09:00:00'));
+check('会議室: 管理者には、終わった予約も「取り消せる」と渡す（変更はできない）', [$cAdPast['past'], $cAdPast['editable'], $cAdPast['deletable']], [true, false, true]);
+$pastSnap = $bk1r; $pastSnap['id'] = 99901; $pastSnap['bdate'] = '2020-01-06';
+$pastTry = []; foreach ([$a, $admin] as $who) { try { $pr = undo_room_restore($pastSnap, $who); $pastTry[] = 'ok'; q('DELETE FROM room_bookings WHERE id = ?', [$pastSnap['id']]); } catch (RuntimeException $x) { $pastTry[] = 'ng'; } }
+check('会議室: 終わった予約を管理者が取り消したときの「元に戻す」は、管理者だけが戻せる', $pastTry, ['ng', 'ok']);
 // 取り消し・元に戻す
 $snapR = $bk1r; rooms_delete($bk1r);
 check('会議室: 取り消すと、予約はなくなる', row('SELECT 1 AS x FROM room_bookings WHERE id = ?', [$snapR['id']]), null);

@@ -129,6 +129,26 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   // ---- 管理者
   const a = await login(b, 'admin@example.com', 'adminpass1');
   ok('管理者は、休業日・営業時間の外にも予約できる（サーバー）', !!(await api(a, 'room_booking_save', { room_id: big.id, date: closedDay, start: '08:00', end: '09:30', title: '管理者の臨時', kind: 'other', pax: 2 })).booking);
+  // ---- 管理者は、終わった予約も取り消せる（本人・一般の社員は、取り消せない）
+  const yid = env.sql("SELECT id FROM users WHERE email = 'yamada@example.com'");
+  const pastD = ymd(new Date(Date.now() - 3 * 864e5));
+  env.sql(`INSERT INTO room_bookings (room_id, bdate, start_time, end_time, title, kind, pax, owner_id, is_private, created_at, updated_at) VALUES (${small.id}, '${pastD}', '10:00', '11:00', '過去の予約（整理用）', 'meeting', 2, ${yid}, 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00')`);
+  const pastId = +env.sql("SELECT id FROM room_bookings WHERE title = '過去の予約（整理用）'");
+  ok('サーバー: 本人でも、終わった予約は取り消せない', (await api(y, 'room_booking_delete', { id: pastId })).error.includes('終了した予約'));
+  await a.goto(BASE + 'index.php#rooms'); await a.waitForSelector('.cal .week'); await showMonth(a, pastD); await a.waitForSelector('.bar.rm:has-text("過去の予約（整理用）")');
+  await bar(a, '過去の予約（整理用）').click(); await a.waitForSelector('.modal .rm-view');
+  ok('管理者が、終わった予約を開くと、「変更できない・管理者は取り消せる」の案内と、取り消しのボタンが出る（変更の入力欄は出ない）', (await a.locator('.modal').innerText()).includes('管理者は、取り消せます') && (await a.locator('.modal button:has-text("予約を取り消す")').count()) === 1 && (await a.locator('.modal input[name=title]').count()) === 0);
+  await a.click('.modal button:has-text("予約を取り消す")'); await a.waitForSelector('.toast .toast-act');
+  ok('管理者が取り消すと、終わった予約も消え、「元に戻す」が出る', (await a.locator('.bar.rm:has-text("過去の予約（整理用）")').count()) === 0 && (await a.locator('.toast.with-action').innerText()).includes('予約を取り消しました'));
+  await a.click('.toast .toast-act'); await a.waitForSelector('.bar.rm:has-text("過去の予約（整理用）")');
+  ok('「元に戻す」で、終わった予約も戻る（管理者）', true);
+  await a.reload(); await a.waitForSelector('.cal .week'); await showMonth(a, pastD); await a.waitForSelector('.bar.rm:has-text("過去の予約（整理用）")');
+  await bar(a, '過去の予約（整理用）').click(); await a.waitForSelector('.modal .rm-view'); await a.click('.modal button:has-text("予約を取り消す")'); await a.waitForSelector('.toast .toast-act');
+  env.sql(`INSERT INTO room_bookings (room_id, bdate, start_time, end_time, title, kind, pax, owner_id, is_private, created_at, updated_at) VALUES (${small.id}, '${pastD}', '10:00', '11:00', '過去の予約（本人用）', 'meeting', 2, ${yid}, 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00')`);
+  await y.goto(BASE + 'index.php#rooms'); await y.waitForSelector('.cal .week'); await showMonth(y, pastD); await y.waitForSelector('.bar.rm:has-text("過去の予約（本人用）")');
+  await bar(y, '過去の予約（本人用）').click(); await y.waitForSelector('.modal .rm-view');
+  ok('本人（一般の社員）が、終わった予約を開いても、取り消しのボタンは出ない', (await y.locator('.modal button:has-text("予約を取り消す")').count()) === 0 && (await y.locator('.modal').innerText()).includes('変更も取り消しもできません'));
+  await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
   await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-rooms .rm-adm-row');
   ok('設定のページに、「会議室の設定」（管理者のみ）が出る。部屋が2つ並ぶ', (await a.locator('#set-rooms .rm-adm-row').count()) >= 3 && (await a.locator('#set-rooms').innerText()).includes('予約の決まり'));
   ok('管理者でない人には、会議室の設定が出ない', await (async () => { await y.goto(BASE + 'index.php#settings'); await y.waitForSelector('.settings-page'); return (await y.locator('#set-rooms').count()) === 0; })());

@@ -899,8 +899,8 @@ function handle_api(): void
             if (!$b) {
                 api_fail('予約が見つかりません。', 404);
             }
-            if (!rooms_can_edit($b, $user)) {
-                api_fail(rooms_is_past($b) ? '終了した予約は、取り消せません。' : 'この予約を取り消せるのは、予約した本人と管理者だけです。', 403);
+            if (!rooms_can_delete($b, $user)) {
+                api_fail(rooms_is_past($b) ? '終了した予約は、取り消せません（管理者は取り消せます）。' : 'この予約を取り消せるのは、予約した本人と管理者だけです。', 403);
             }
             $undo = undo_stash('room_booking', $b); // 取り消した直後なら、「元に戻す」で戻せるように、控える
             rooms_delete($b);

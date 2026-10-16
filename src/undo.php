@@ -107,7 +107,7 @@ function undo_room_restore(array $snap, array $user): array
     if (row('SELECT 1 AS x FROM room_bookings WHERE id = ?', [$snap['id']])) {
         throw new RuntimeException('この予約は、すでにあります。');
     }
-    if (rooms_is_past($snap)) {
+    if (rooms_is_past($snap) && !is_admin($user)) {
         throw new RuntimeException('終了した予約は、戻せません。');
     }
     $c = rooms_conflict((int)$snap['room_id'], $snap['bdate'], room_min($snap['start_time']), room_min($snap['end_time']));

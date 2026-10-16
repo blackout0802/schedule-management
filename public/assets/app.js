@@ -3602,26 +3602,30 @@
       el('label', { class: 'check rm-priv' }, priv, '非公開にする（他の人には「予約済」とだけ見える。用件・人数・予約した人は、本人と管理者だけに見える）'),
       msg, err,
       el('div', { class: 'actions' },
-        b ? el('button', { class: 'btn danger left', type: 'button', text: '予約を取り消す', onclick: function () {
-          api('room_booking_delete', { body: { id: b.id } }).then(function (j) {
-            ov.close(); roomsLoad(true);
-            toastUndo('予約を取り消しました', function () { api('room_booking_restore', { body: { undo: j.undo } }).then(function () { toast('予約を元に戻しました'); roomsLoad(true); }).catch(fail); });
-          }).catch(fail);
-        } }) : null,
+        b ? el('button', { class: 'btn danger left', type: 'button', text: '予約を取り消す', onclick: function () { roomDelete(b, ov); } }) : null,
         el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), okBtn));
     var ov = openModal(b ? '予約の内容' : '会議室を予約する', form);
     refreshDay();
   }
   /* 見るだけの予約（他の人の予約・終わった予約・非公開の予約） */
+  /* 予約を取り消す（取り消した直後なら、「元に戻す」で戻せる） */
+  function roomDelete(b, ov) {
+    api('room_booking_delete', { body: { id: b.id } }).then(function (j) {
+      ov.close(); roomsLoad(true);
+      toastUndo('予約を取り消しました', function () { api('room_booking_restore', { body: { undo: j.undo } }).then(function () { toast('予約を元に戻しました'); roomsLoad(true); }).catch(fail); });
+    }).catch(fail);
+  }
   function openRoomView(b) {
     var r = roomOf(b.room_id);
     var rows = [['部屋', r.name], ['日付', mdw(b.date)], ['時間', b.start + '–' + b.end + '（' + durText(hmMin(b.end) - hmMin(b.start)) + '）']];
     if (!b.masked) rows.push(['用件', b.title], ['区分', ROOM_KIND_NAME[b.kind] || ''], ['人数', b.pax + '名'], ['予約した人', b.owner_name]);
-    var why = b.past ? '終わった予約は、変更も取り消しもできません。' : b.masked ? '非公開の予約です。内容は、予約した本人と管理者だけに見えます。' : '変更・取り消しができるのは、予約した本人と管理者だけです。時間を変えたいときは、予約した人に連絡してください。';
+    var why = b.past ? (b.deletable ? '終わった予約は、変更できません。管理者は、取り消せます（間違いの整理用）。' : '終わった予約は、変更も取り消しもできません。') : b.masked ? '非公開の予約です。内容は、予約した本人と管理者だけに見えます。' : '変更・取り消しができるのは、予約した本人と管理者だけです。時間を変えたいときは、予約した人に連絡してください。';
     var body = el('div', { class: 'form' },
       el('div', { class: 'rm-view rm-s' + r.slot }, roomBadge(r), el('div', null, rows.map(function (x) { return el('p', null, el('span', { class: 'muted', text: x[0] + '　' }), x[1]); }))),
       el('p', { class: 'hint', text: why }),
-      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+      el('div', { class: 'actions' },
+        b.deletable ? el('button', { class: 'btn danger left', type: 'button', text: '予約を取り消す', onclick: function () { roomDelete(b, ov); } }) : null,
+        el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     var ov = openModal('予約の内容', body);
     ov.outsideClose = true;
   }

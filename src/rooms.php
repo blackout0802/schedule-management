@@ -2,9 +2,9 @@
 // 会議室の予約。
 //
 // 決まりごと（初期値。管理者が、画面の「会議室」で変えられるのは、先の予約の月数・営業時間・通知の時刻など）:
-//   ・予約できるのは、全社員。変更・取り消しは、予約した本人と管理者だけ
+//   ・予約できるのは、全社員。変更・取り消しは、予約した本人と管理者だけ（管理者は、終わった予約の取り消しもできる）
 //   ・30分単位。平日の 9:00〜18:00 だけ（土日・祝日・会社の休業日は不可）。管理者は、時間外・休業日にも入れられる
-//   ・予約できるのは、今日から3か月先まで。当日の予約もよい。終了した予約は、変更も取り消しもできない
+//   ・予約できるのは、今日から3か月先まで。当日の予約もよい。終了した予約は、変更も取り消しもできない（管理者だけは、取り消せる）
 //   ・同じ部屋・同じ時間の二重予約は、できない。先に取った人が優先（割り込みはなし）
 //   ・人数は必須。部屋の定員を超える人数は、予約できない
 //   ・用件と区分（委員会・打ち合わせ・来客・研修・その他）は必須。「非公開」にすると、他の人には「予約済」とだけ見える
@@ -176,10 +176,16 @@ function rooms_is_past(array $b, ?int $now = null): bool
     return $b['bdate'] === $today && room_min($b['end_time']) <= (int)date('G', $now) * 60 + (int)date('i', $now);
 }
 
-/** その人が、この予約を変更・取り消せるか（予約した本人と管理者。終わった予約は、だれもできない） */
+/** その人が、この予約を変更できるか（予約した本人と管理者。終わった予約は、だれもできない） */
 function rooms_can_edit(array $b, array $user, ?int $now = null): bool
 {
     return ((int)$b['owner_id'] === (int)$user['id'] || is_admin($user)) && !rooms_is_past($b, $now);
+}
+
+/** 取り消せるか。本人は、終わるまで。管理者は、終わった予約も取り消せる（間違いの整理用。変更はできない） */
+function rooms_can_delete(array $b, array $user, ?int $now = null): bool
+{
+    return is_admin($user) || rooms_can_edit($b, $user, $now);
 }
 
 /** 同じ部屋・同じ日・重なる時間の予約 */
@@ -344,7 +350,7 @@ function room_booking_for_client(array $b, array $user, ?int $now = null): array
         'title' => $mask ? '予約済' : $b['title'], 'kind' => $mask ? 'other' : $b['kind'], 'pax' => $mask ? null : (int)$b['pax'],
         'owner_id' => $mask ? null : (int)$b['owner_id'], 'owner_name' => $mask ? '' : ($b['owner_name'] ?? ''),
         'private' => (int)$b['is_private'] === 1, 'masked' => $mask, 'mine' => $mine,
-        'past' => rooms_is_past($b, $now), 'editable' => rooms_can_edit($b, $user, $now),
+        'past' => rooms_is_past($b, $now), 'editable' => rooms_can_edit($b, $user, $now), 'deletable' => rooms_can_delete($b, $user, $now),
     ];
 }
 
