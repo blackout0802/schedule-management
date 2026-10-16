@@ -36,11 +36,12 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
 
   // ---- ページを開く
   const segTxt0 = await y.locator('.seg').first().innerText();
-  ok('業務版の切り替えは、「カレンダー／会議室予約／リスト」。「休み表」はなくなり、右上の会議室ボタンもない', segTxt0.includes('会議室予約') && !segTxt0.includes('休み表') && (await y.locator('.rooms-btn').count()) === 0 && (await y.locator('header button[aria-label="会議室の予約"]').count()) === 0, segTxt0);
+  ok('業務版の切り替えは、「会議室予約／カレンダー／リスト」。「休み表」はなくなり、右上の会議室ボタンもない', segTxt0.includes('会議室予約') && !segTxt0.includes('休み表') && (await y.locator('.rooms-btn').count()) === 0 && (await y.locator('header button[aria-label="会議室の予約"]').count()) === 0, segTxt0);
+  ok('切り替えの並びは、会議室予約・カレンダー・リストの順', (await y.locator('.seg').first().locator('label').allInnerTexts()).map(t => t.trim()).join(',') === '会議室予約,カレンダー,リスト', await y.locator('.seg').first().innerText());
   await y.click('.seg label:has-text("会議室予約")'); await y.waitForSelector('.cal .week'); await y.waitForSelector('#rooms-body .month-sum');
   ok('「会議室予約」で、会議室のページが開く（URL は #rooms）。上の帯はカレンダーと同じで、「会議室予約」が選ばれている', (await y.url()).endsWith('#rooms') && (await y.locator('.seg label:has(input:checked)').innerText()).includes('会議室予約') && (await y.locator('.tabs .tab').count()) === 2 && (await y.locator('.brand .ver').count()) === 1);
   ok('カレンダーと同じ作り: 月の移動（‹ ›・今日）・曜日の行・日付のマス', (await y.locator('.toolbar h2').innerText()).includes('年') && (await y.locator('.toolbar > button').count()) === 3 && (await y.locator('.cal-dow .dow').count()) === 7 && (await y.locator('.cal .week .cell').count()) >= 28);
-  ok('会議室のページに、「大・応で分ける」「まとめて」の切り替えと、「＋ 会議室を予約」ボタンは、ない。切り替えは「カレンダー／会議室予約／リスト」の3つ', (await y.locator('.rm-seg').count()) === 0 && (await y.locator('button:has-text("会議室を予約")').count()) === 0 && (await y.locator('.seg label').count()) === 3);
+  ok('会議室のページに、「大・応で分ける」「まとめて」の切り替えと、「＋ 会議室を予約」ボタンは、ない。切り替えは「会議室予約／カレンダー／リスト」の3つ', (await y.locator('.rm-seg').count()) === 0 && (await y.locator('button:has-text("会議室を予約")').count()) === 0 && (await y.locator('.seg label').count()) === 3 && (await y.locator('.seg label').allInnerTexts()).map(t => t.trim()).join(',') === '会議室予約,カレンダー,リスト');
   const legTxt = await y.locator('.legend').innerText();
   ok('凡例に、会議室（6名）・応接室（3名）が出る。設備は出ない', legTxt.includes('会議室（6名）') && legTxt.includes('応接室（3名）') && !legTxt.includes('プロジェクター') && !legTxt.includes('モニター'), legTxt);
   ok('部屋の色: 会議室は青（色番号0）・応接室はオレンジ（色番号1）', (await y.locator('.legend .rm-s0').count()) === 1 && (await y.locator('.legend .rm-s1').count()) === 1);

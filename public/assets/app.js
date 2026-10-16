@@ -739,7 +739,7 @@
       todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
       SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
-        [['cal', 'カレンダー']].concat(!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : [], [['list', 'リスト']]).map(function (m) {
+        (!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
         })),
       todoOnly && !SHARE && S.view === 'team' ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
@@ -3482,7 +3482,7 @@
       el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { go(monthShift(rm.month, 1)); } }),
       el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: function () { go(monthFirst(new Date())); } }),
       el('span', { class: 'spacer', style: 'flex:1' }), el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
-      el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' }, [['cal', 'カレンダー'], ['rooms', '会議室予約'], ['list', 'リスト']].map(function (m) {
+      el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' }, [['rooms', '会議室予約'], ['cal', 'カレンダー'], ['list', 'リスト']].map(function (m) {
         return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: m[0] === 'rooms', onchange: function () { if (m[0] !== 'rooms') { S.mode = m[0]; store('sched.mode', m[0]); S.view = 'team'; store('sched.view', 'team'); leaveSettings(); } } }), m[1]);
       }))));
     host.appendChild(el('div', { class: 'view-banner team', style: 'margin-top:8px', text: '会議室の予約: カレンダーの日付を押すと、その日に予約できます。色つきの帯をおすと、予約の内容を見られます。' }));
