@@ -285,19 +285,21 @@ $todoP = save_todo($td2, $a, null);
 check('ToDo: プライベートは分類が空になる', $todoP['tag'], '');
 check('ToDo: 不正な種類を拒否', validate_todo_input(['kind' => 'off', 'title' => 'x'])[1] !== null, true);
 check('ToDo: 空の内容を拒否', validate_todo_input(['kind' => 'work', 'title' => '  '])[1] !== null, true);
-check('ToDo: 本人の画面(プライベート版)には全部出る', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '歯医者の予約']);
+// ToDoの一覧は、業務版（業務だけ）・プライベート版（プライベートだけ）で分かれる。ここは、種類を問わず、並び順どおりに全部見る
+$todosAll = function (array $u) { return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows('SELECT * FROM todos WHERE owner_id = ? AND done_at IS NULL ORDER BY sort_order, id', [$u['id']])))); };
+check('ToDo: プライベート版には、プライベートのToDoだけが出る（業務のToDoは、業務版）', [array_column(list_todos($a, 'me'), 'title'), array_column($todosAll($a), 'title')], [['歯医者の予約'], ['見積書を作る', '歯医者の予約']]);
 check('ToDo: 業務版にはプライベートのToDoを出さない', array_column(list_todos($a, 'team'), 'title'), ['見積書を作る']);
 check('ToDo: 他の社員・管理者には見えない', [list_todos($b, 'me'), list_todos($admin, 'me')], [[], []]);
 check('ToDo: 他人のToDoは取得できない', [find_todo((int)$todoA['id'], $b), find_todo((int)$todoA['id'], $admin)], [null, null]);
 // 並べ替え
 [$tdx] = validate_todo_input(['kind' => 'work', 'title' => '3つ目', 'tag' => 'その他']); $todoC = save_todo($tdx, $a, null);
-check('ToDo: 追加した順に並ぶ', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '歯医者の予約', '3つ目']);
+check('ToDo: 追加した順に並ぶ', array_column($todosAll($a), 'title'), ['見積書を作る', '歯医者の予約', '3つ目']);
 reorder_todos([(int)$todoC['id'], (int)$todoA['id'], (int)$todoP['id']], $a);
-check('ToDo: 並べ替えが保存される', array_column(list_todos($a, 'me'), 'title'), ['3つ目', '見積書を作る', '歯医者の予約']);
+check('ToDo: 並べ替えが保存される', array_column($todosAll($a), 'title'), ['3つ目', '見積書を作る', '歯医者の予約']);
 reorder_todos([(int)$todoA['id'], (int)$todoC['id']], $a); // 業務版のように、プライベートが見えていない並べ替え
-check('ToDo: 見えていない項目の位置は動かさない', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
+check('ToDo: 見えていない項目の位置は動かさない', array_column($todosAll($a), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
 reorder_todos([(int)$todoA['id'], (int)$todoC['id']], $b); // 他人は動かせない
-check('ToDo: 他人の並べ替えは効かない', array_column(list_todos($a, 'me'), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
+check('ToDo: 他人の並べ替えは効かない', array_column($todosAll($a), 'title'), ['見積書を作る', '3つ目', '歯医者の予約']);
 q('DELETE FROM todos WHERE id = ?', [$todoC['id']]);
 // 日付へドラッグ → カレンダーの予定になる（ToDoは消えず、自動で「進行中」になる）
 $dd = date('Y-m-d', strtotime('+90 day'));
@@ -305,7 +307,7 @@ $ev = schedule_todo($todoA, $dd, $a);
 check('ToDo→予定: 業務の予定として作られる', [$ev['kind'], $ev['title'], $ev['tag'], $ev['start_date'], $ev['end_date'], (int)$ev['owner_id']], ['work', '見積書を作る', '個人作業', $dd, $dd, (int)$a['id']]);
 check('ToDo→予定: ToDoは残り、自動で進行中になる', todo_status_of(find_todo((int)$todoA['id'], $a)), 'doing');
 check('ToDo→予定: 予定はToDoと結びつく', (int)row('SELECT todo_id FROM events WHERE id = ?', [$ev['id']])['todo_id'], (int)$todoA['id']);
-check('ToDo→予定: リストのToDoに、置いた日が付く', array_column(array_filter(list_todos($a, 'me'), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched'), [$dd]);
+check('ToDo→予定: リストのToDoに、置いた日が付く', array_column(array_filter($todosAll($a), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched'), [$dd]);
 check('ToDo→予定: 全社員に見える', in_array('見積書を作る', $titles(list_events($b, $dd, $dd, 'team')), true), true);
 check('ToDo→予定: 予定は、完了していないので取り消し線なし', array_column(array_filter(list_events($a, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [false]);
 set_todo_status(find_todo((int)$todoA['id'], $a), 'done');
@@ -359,27 +361,27 @@ check('予定→ToDo: 他人の予定は戻せない', $thrown(function () use (
 [$dB] = validate_todo_input(['kind' => 'work', 'title' => '完了テストB']); $tdB = save_todo($dB, $a, null);
 [$dP] = validate_todo_input(['kind' => 'private', 'title' => '完了テスト私用']); $tdP = save_todo($dP, $a, null);
 set_todo_done($tdA, true); set_todo_done($tdP, true);
-check('完了: 完了にすると、未完了のリストから消える', in_array('完了テストA', array_column(list_todos($a, 'me'), 'title'), true), false);
-check('完了: 完了リストに入り、完了日時が付く', [array_column(list_done_todos($a, 'me'), 'title'), list_done_todos($a, 'me')[0]['done_at'] !== null], [['完了テスト私用', '完了テストA'], true]);
+check('完了: 完了にすると、未完了のリストから消える', in_array('完了テストA', array_column($todosAll($a), 'title'), true), false);
+check('完了: 完了リストに入り、完了日時が付く（業務版は業務、プライベート版はプライベートだけ）', [array_column(list_done_todos($a, 'me'), 'title'), array_column(list_done_todos($a, 'team'), 'title'), list_done_todos($a, 'me')[0]['done_at'] !== null], [['完了テスト私用'], ['完了テストA'], true]);
 check('完了: 業務版の完了リストには業務のToDoだけ', array_column(list_done_todos($a, 'team'), 'title'), ['完了テストA']);
 check('完了: 他の社員には完了リストも見えない', [list_done_todos($b, 'me'), list_done_todos($admin, 'me')], [[], []]);
 check('完了: 完了したToDoは予定にできない', $thrown(function () use ($tdA, $a) { schedule_todo(find_todo((int)$tdA['id'], $a), '2026-12-01', $a); }), true);
 reorder_todos([(int)$tdA['id'], (int)$tdB['id']], $a);
 check('完了: 並べ替えは未完了だけが対象', find_todo((int)$tdA['id'], $a)['done_at'] !== null, true);
 set_todo_done(find_todo((int)$tdA['id'], $a), false);
-$act = array_column(list_todos($a, 'me'), 'title');
+$act = array_column($todosAll($a), 'title');
 check('完了: 未完了に戻すと、リストの末尾に入る', end($act), '完了テストA');
-check('完了: 戻すと完了リストから消える', in_array('完了テストA', array_column(list_done_todos($a, 'me'), 'title'), true), false);
+check('完了: 戻すと完了リストから消える', in_array('完了テストA', array_column(list_done_todos($a, 'team'), 'title'), true), false);
 check('完了: 業務版で完了を一括削除しても、プライベートの完了は残る', [clear_done_todos($a, 'team'), array_column(list_done_todos($a, 'me'), 'title')], [0, ['完了テスト私用']]);
 set_todo_done(find_todo((int)$tdB['id'], $a), true);
-check('完了: 一括削除（プライベート版）で全て消える', [clear_done_todos($a, 'me'), list_done_todos($a, 'me')], [2, []]);
-foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
+check('完了: 一括削除は、見ている版の分だけ（プライベート版はプライベート、業務版は業務）', [clear_done_todos($a, 'me'), list_done_todos($a, 'team') !== [], clear_done_todos($a, 'team'), list_done_todos($a, 'me'), list_done_todos($a, 'team')], [1, true, 1, [], []]);
+foreach ($todosAll($a) as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
 
 // ---- ToDoのカンバン（状態: 未着手・進行中・完了） ----
 [$kA] = validate_todo_input(['kind' => 'work', 'title' => 'カンバンA']); $kbA = save_todo($kA, $a, null);
 [$kB] = validate_todo_input(['kind' => 'work', 'title' => 'カンバンB']); $kbB = save_todo($kB, $a, null);
 [$kC] = validate_todo_input(['kind' => 'private', 'title' => 'カンバンC']); $kbC = save_todo($kC, $a, null);
-$stOf = function (array $u) { $m = []; foreach (list_todos($u, 'me') as $t) { $m[$t['title']] = $t['status']; } foreach (list_done_todos($u, 'me') as $t) { $m[$t['title']] = $t['status']; } return $m; };
+$stOf = function (array $u) { $m = []; foreach (array_merge(list_todos($u, 'me'), list_todos($u, 'team'), list_done_todos($u, 'me'), list_done_todos($u, 'team')) as $t) { $m[$t['title']] = $t['status']; } return $m; };
 check('カンバン: 新しいToDoは未着手', $stOf($a)['カンバンA'], 'todo');
 set_todo_status($kbA, 'doing');
 check('カンバン: 進行中にできる（未完了のリストに残る）', [$stOf($a)['カンバンA'], find_todo((int)$kbA['id'], $a)['done_at']], ['doing', null]);
@@ -392,12 +394,12 @@ check('カンバン: 進行中から未着手へ戻せる', $stOf($a)['カンバ
 set_todo_status(find_todo((int)$kbB['id'], $a), 'doing');
 set_todo_status(find_todo((int)$kbC['id'], $a), 'doing');
 reorder_todos([(int)$kbC['id'], (int)$kbB['id']], $a);
-$doingOrder = array_column(array_filter(list_todos($a, 'me'), function ($t) { return $t['status'] === 'doing'; }), 'title');
+$doingOrder = array_column(array_filter($todosAll($a), function ($t) { return $t['status'] === 'doing'; }), 'title');
 check('カンバン: 進行中の列の並べ替え', array_values($doingOrder), ['カンバンC', 'カンバンB']);
 check('カンバン: 業務版は業務の進行中だけ', array_column(array_filter(list_todos($a, 'team'), function ($t) { return $t['status'] === 'doing'; }), 'title'), ['カンバンB']);
 check('カンバン: 進行中のToDoも予定にできる（ToDoは残り、進行中のまま）', (function () use ($kbB, $a) { schedule_todo(find_todo((int)$kbB['id'], $a), '2026-12-02', $a); return todo_status_of(find_todo((int)$kbB['id'], $a)); })(), 'doing');
-check('カンバン: 他の人のToDoは見えない・操作できない', [find_todo((int)$kbC['id'], $b), array_column(list_todos($b, 'me'), 'title')], [null, []]);
-foreach (list_todos($a, 'me') as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
+check('カンバン: 他の人のToDoは見えない・操作できない', [find_todo((int)$kbC['id'], $b), array_column($todosAll($b), 'title')], [null, []]);
+foreach ($todosAll($a) as $leftover) { q('DELETE FROM todos WHERE id = ?', [$leftover['id']]); }
 q("DELETE FROM events WHERE title = 'カンバンB'");
 
 // ---- 月のまとめ（出勤日・休みの日数） ----
@@ -1224,7 +1226,7 @@ check('業務のToDoの共有: 他の人は、変更できない（持ち主だ�
 q('UPDATE users SET active = 0 WHERE id = ?', [(int)$b['id']]);
 check('業務のToDoの共有: 利用停止の社員のToDoは、出ない', array_column(list_others_todos($a)['todos'], 'title'), []);
 q('UPDATE users SET active = 1 WHERE id = ?', [(int)$b['id']]);
-check('業務のToDoの共有: 自分のToDo一覧（list_todos）は、これまで通り自分の分だけ', [array_column(list_todos($a, 'team'), 'title'), array_column(list_todos($a, 'me'), 'title')], [['山田の業務ToDo'], ['山田の業務ToDo', '山田のプライベートToDo']]);
+check('業務のToDoの共有: 自分のToDo一覧（list_todos）は、版ごとに、自分の分だけ', [array_column(list_todos($a, 'team'), 'title'), array_column(list_todos($a, 'me'), 'title')], [['山田の業務ToDo'], ['山田のプライベートToDo']]);
 
 
 // ---- ToDoのコメント ----

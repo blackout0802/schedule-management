@@ -1,4 +1,5 @@
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
+const openSeries = require('../lib/series');
 const BASE = 'http://127.0.0.1:8099/';
 let fails = 0;
 const ok = (name, cond) => { console.log((cond ? 'OK  ' : 'NG  ') + name); if (!cond) fails++; };
@@ -26,7 +27,7 @@ async function login(browser, email, pw) {
   ok('ログインしてカレンダーが出る', await y.page.locator('.cal').count() === 1);
 
   // 繰り返し業務の例を一括登録
-  await y.page.click('.toolbar button:has-text("繰り返し業務")');
+  await openSeries(y.page);
   await y.page.click('text=よくある月次業務の例（6件）をまとめて登録');
   await y.page.waitForSelector('.card .name >> text=請求処理');
   ok('6件のルールが登録される', await y.page.locator('.modal .card .name').count() === 6);

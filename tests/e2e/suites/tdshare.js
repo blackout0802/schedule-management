@@ -10,8 +10,8 @@ const addTodo = async (p, text) => { if (!(await p.locator('#todo-mgr .todo-add 
   await addTodo(y, '山田の共有ToDo');
   await y.click('.tab[data-view=me]'); await y.waitForTimeout(500);
   await y.click('.toolbar .seg label:has-text("リスト")').catch(() => {}); await y.waitForSelector('#todo-mgr');
-  await y.click('#todo-mgr .todo-add-btn').catch(() => {}); ok('プライベート版の追加欄に、種類の説明（自分だけ／全員に見える）が出る', (await y.locator('#todo-mgr .todo-add select').innerText()).includes('全員に見える'));
-  await y.selectOption('#todo-mgr .todo-add select', 'private'); await y.fill('#todo-mgr .todo-add input[type=text]', '山田のひみつToDo'); await y.click('#todo-mgr .todo-add button[type=submit]'); await y.waitForSelector('#todo-mgr .kb-card:has-text("山田のひみつToDo")');
+  await y.click('#todo-mgr .todo-add-btn').catch(() => {}); ok('プライベート版の追加欄には、種類の選択はない（プライベートのToDoだけ）', (await y.locator('#todo-mgr .todo-add select').count()) === 0);
+  await y.fill('#todo-mgr .todo-add input[type=text]', '山田のひみつToDo'); await y.click('#todo-mgr .todo-add button[type=submit]'); await y.waitForSelector('#todo-mgr .kb-card:has-text("山田のひみつToDo")');
   // 鈴木（別の社員）
   const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await openList(s);
   const txt = () => s.locator('#todo-mgr').innerText();

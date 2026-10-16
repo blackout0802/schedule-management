@@ -45,8 +45,10 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   // ---- プライベート版: 種類の選択 ----
   await p.keyboard.press('Escape'); await p.click('.tab[data-view=me]'); await p.waitForTimeout(500);
   await p.keyboard.press('d'); await p.waitForSelector('#todo-panel.open'); await p.click('#todo-panel .todo-add-btn');
-  ok('プライベート版: 入力欄に、種類（プライベート／業務）の選択がある', await p.locator('#todo-panel .todo-add select').count() === 1);
-  await p.fill('#todo-panel .todo-add input[type=text]', '業務のToDo'); await p.selectOption('#todo-panel .todo-add select', 'work'); await p.press('#todo-panel .todo-add input[type=text]', 'Enter');
-  await p.waitForSelector('#todo-panel .tp-card.work:has-text("業務のToDo")'); ok('種類を選んで追加できる', true);
+  ok('プライベート版: 入力欄に、種類の選択はない（プライベート版では、プライベートのToDoを追加する）', await p.locator('#todo-panel .todo-add select').count() === 0);
+  await p.fill('#todo-panel .todo-add input[type=text]', '私用のToDo'); await p.press('#todo-panel .todo-add input[type=text]', 'Enter');
+  await p.waitForSelector('#todo-panel .tp-card.private:has-text("私用のToDo")'); ok('プライベート版で追加したToDoは、プライベートのToDoになる', true);
+  await p.keyboard.press('Escape'); await p.click('.tab[data-view=team]'); await p.waitForTimeout(900); await p.keyboard.press('Escape'); await p.waitForTimeout(500); await p.keyboard.press('d'); await p.waitForSelector('#todo-panel.open');
+  ok('業務版には、プライベートのToDoは出ない（ToDoは、業務とプライベートで分かれている）', (await p.locator('#todo-panel .tp-card:has-text("私用のToDo")').count()) === 0 && (await p.locator('#todo-panel .tp-card:has-text("パネルから")').count()) === 1);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

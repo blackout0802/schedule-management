@@ -1,5 +1,6 @@
 // 繰り返し業務の「毎回ToDoにも入れる」: 画面のチェック・実施日が近い回だけToDoに入る・期限日はその回の日付・完了で取り消し線・件数が増えない
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
+const openSeries = require('../lib/series');
 const BASE = 'http://127.0.0.1:8099/';
 let fails = 0;
 const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.stringify(x === undefined ? '' : x).slice(0, 300)); if (!c) fails++; };
@@ -10,7 +11,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
   // 画面から登録する（毎月、今日から3日後の日に）
   const d3 = new Date(Date.now() + 3 * 864e5).getDate();
-  await p.click('button:has-text("繰り返し")'); await p.waitForSelector('.modal');
+  await openSeries(p);
   await p.click('.modal button:has-text("ルールを追加"), .modal button:has-text("追加")'); await p.waitForSelector('.modal input[name=title]');
   ok('ルールの画面に「毎回、ToDoリストにも入れる」のチェックがある', await p.locator('.modal input[name=todo_auto]').count() === 1);
   await p.fill('.modal input[name=title]', '毎月のToDo連動チェック'); await p.fill('.modal input[name=p_day]', String(d3)); await p.selectOption('.modal select[name=shift]', 'none');
@@ -32,7 +33,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('ToDoを消しても、作り直されない', (await p.locator('#todo-mgr .kb-card:has-text("毎月のToDo連動チェック")').count()) === n1 - 1);
   // ルール一覧の目印
   await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal');
-  await p.click('button:has-text("繰り返し")'); await p.waitForSelector('.modal');
+  await openSeries(p);
   await p.waitForSelector('.modal .pill:has-text("ToDo連動")', { timeout: 8000 }).catch(() => {});
   ok('ルールの一覧に「ToDo連動」の目印が出る', (await p.locator('.modal').innerText()).includes('ToDo連動'), (await p.locator('.modal').innerText()).slice(0, 200));
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);

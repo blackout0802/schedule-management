@@ -1,4 +1,5 @@
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
+const openSeries = require('../lib/series');
 const BASE = 'http://127.0.0.1:8099/';
 let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
 const pad = n => (n < 10 ? '0' : '') + n; const today = new Date(); const ds = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
@@ -32,7 +33,7 @@ async function login(b, vp, mobile) {
   await p.waitForFunction(() => { const b = Array.from(document.querySelectorAll('.bar')).find(x => x.textContent.includes('時刻テスト')); return b && !b.textContent.includes('-18:00'); }, null, { timeout: 8000 }).catch(() => {}); // 保存後のカレンダーの描き直しを待つ
   ok('終了時刻を空にできる', (await p.locator('.bar:has-text("時刻テスト")').first().innerText()).includes('09:30') && !(await p.locator('.bar:has-text("時刻テスト")').first().innerText()).includes('-18:00'));
   // 繰り返しの設定
-  await p.click('.toolbar >> text=繰り返し業務'); await p.waitForSelector('.modal'); await p.click('.modal >> text=＋ 新しいルール').catch(() => {});
+  await openSeries(p); await p.click('.modal >> text=＋ 新しいルール').catch(() => {});
   const nt = await p.locator('.modal input[name=start_time]').count(); ok('繰り返しのルール画面にも同じ時刻欄がある', nt === 0 || await p.locator('.modal input[name=start_time]').first().getAttribute('type') === 'text', nt);
   // スマホ（指で操作する端末）では標準の時刻選択
   const m = await login(b, { width: 390, height: 800 }, true); await m.keyboard.press('n'); await m.waitForSelector('.modal');

@@ -435,18 +435,24 @@ function list_others_todos(array $user, int $doneLimit = 30): array
     ];
 }
 
-/** 未完了のToDo。@param string $view 'team' なら業務のToDoだけ */
-function list_todos(array $user, string $view): array
+/** 業務版は業務のToDoだけ、プライベート版はプライベートのToDoだけ（分けて見せる） */
+function todo_view_kind(string $view): string
 {
-    $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY sort_order, id';
-    return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']]))));
+    return $view === 'team' ? 'work' : 'private';
 }
 
-/** 完了したToDo（新しい順）。業務版では業務のToDoだけ */
+/** 未完了のToDo。@param string $view 'team' なら業務のToDoだけ、'me' ならプライベートのToDoだけ */
+function list_todos(array $user, string $view): array
+{
+    $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NULL AND kind = ? ORDER BY sort_order, id';
+    return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id'], todo_view_kind($view)]))));
+}
+
+/** 完了したToDo（新しい順）。業務版は業務のToDoだけ、プライベート版はプライベートのToDoだけ */
 function list_done_todos(array $user, string $view, int $limit = 100): array
 {
-    $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : '') . ' ORDER BY done_at DESC, id DESC LIMIT ' . (int)$limit;
-    return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id']]))));
+    $sql = 'SELECT * FROM todos WHERE owner_id = ? AND done_at IS NOT NULL AND kind = ? ORDER BY done_at DESC, id DESC LIMIT ' . (int)$limit;
+    return todo_with_event_dates(todo_with_comment_stats(array_map('todo_for_client', rows($sql, [$user['id'], todo_view_kind($view)]))));
 }
 
 /** 完了にする／未完了に戻す。戻したToDoは、リストの末尾に入る */
@@ -480,12 +486,13 @@ function set_todo_status(array $todo, string $status): array
     return row('SELECT * FROM todos WHERE id = ?', [$todo['id']]);
 }
 
-/** 完了したToDoをまとめて消す。業務版では業務のものだけ */
+/** 完了したToDoをまとめて消す。業務版は業務のものだけ、プライベート版はプライベートのものだけ */
 function clear_done_todos(array $user, string $view): int
 {
-    todo_detach_events('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
-    todo_comments_purge('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
-    $st = q('DELETE FROM todos WHERE owner_id = ? AND done_at IS NOT NULL' . ($view === 'team' ? " AND kind = 'work'" : ''), [$user['id']]);
+    $k = todo_view_kind($view);
+    todo_detach_events('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL AND kind = ?', [$user['id'], $k]);
+    todo_comments_purge('SELECT id FROM todos WHERE owner_id = ? AND done_at IS NOT NULL AND kind = ?', [$user['id'], $k]);
+    $st = q('DELETE FROM todos WHERE owner_id = ? AND done_at IS NOT NULL AND kind = ?', [$user['id'], $k]);
     return $st->rowCount();
 }
 

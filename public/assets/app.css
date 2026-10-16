@@ -213,6 +213,8 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .todo-done summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
 .todo-done .todo-item { margin-bottom: 6px; }
 .layout.list-mode #todo { display: none; }
+.layout.no-memo .side { display: none; } /* プライベート版には、日報メモは出さない（日報は業務） */
+.layout.list-mode.no-memo { grid-template-columns: minmax(0, 1fr); }
 .todo-mgr { margin-bottom: 14px; }
 .list-h { margin: 6px 0 8px; font-size: 16px; }
 .list { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }

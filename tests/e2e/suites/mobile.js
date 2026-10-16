@@ -18,8 +18,8 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   const top = await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height);
   ok('上の帯は2行（タイトル／設定／ユーザー と 業務版・プライベート版）で、90px以内', top <= 90, top);
   ok('上の帯は、画面に張り付かない（スクロールで消える）', await p.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position) === 'static');
-  const rows = await p.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { seg: r('.toolbar .seg').top, rec: r('.toolbar > .btn:last-child').top, who: r('#who-sel').top }; });
-  ok('表示する人・カレンダー／会議室予約／リスト が、同じ1行に並ぶ（繰り返しは、足りなければ次の行）', Math.abs(rows.seg - rows.who) < 8, rows);
+  const rows = await p.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { seg: r('.toolbar .seg').top, who: r('#who-sel').top }; });
+  ok('表示する人・カレンダー／会議室予約／リスト が、同じ1行に並ぶ', Math.abs(rows.seg - rows.who) < 8, rows);
   ok('長い説明の帯（view-banner）は、スマホでは出さない', await p.evaluate(() => getComputedStyle(document.querySelector('.view-banner')).display) === 'none');
   // 6週ある月でも、1画面
   let guard = 0; while ((await p.locator('.week').count()) < 6 && guard++ < 14) { await p.tap('button[aria-label="次の月"]'); await p.waitForTimeout(250); }
@@ -68,6 +68,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.addStyleTag({ content: '* { letter-spacing: .25em !important; }' });
   const wide = async (n) => { const r = await p.evaluate(() => { const vw = innerWidth; return { sw: document.documentElement.scrollWidth, vw, n: Array.from(document.querySelectorAll('body *')).filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > vw + 1 && getComputedStyle(e).position !== 'fixed'; }).length }; }); ok(n + ': 文字幅が広くても、画面より横に広がらない', r.sw <= r.vw && r.n === 0, r); };
   await wide('カレンダー');
+  await p.tap('.tab[data-view=team]'); await p.waitForTimeout(400);
   await p.tap('label:has-text("リスト")'); await p.waitForSelector('.kanban'); await wide('ToDo');
   await p.tap('.pane-seg label:has-text("日報メモ")'); await p.waitForSelector('#memo .memo-editor', { state: 'visible' }); await wide('日報メモ');
   const small = async (n) => { const r = await p.evaluate(() => Array.from(document.querySelectorAll('input:not([type=radio]):not([type=checkbox]):not([type=hidden]), select, textarea, [contenteditable=true]')).filter(e => e.getBoundingClientRect().width > 0 && parseFloat(getComputedStyle(e).fontSize) < 16).map(e => e.tagName + '.' + (e.className || e.name || ''))); ok(n + ': 入力欄の文字は、すべて16px以上（iPhone が勝手に拡大しない）', r.length === 0, r); };

@@ -742,10 +742,9 @@
         [['cal', 'カレンダー']].concat(!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : [], [['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
         })),
-      todoOnly && !SHARE ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
+      todoOnly && !SHARE && S.view === 'team' ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
         return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'pane', checked: (S.pane || 'todo') === m[0], onchange: function () { S.pane = m[0]; var lay = document.querySelector('.layout'); if (lay) lay.setAttribute('data-pane', m[0]); } }), m[1]);
-      })) : null,
-      SHARE ? null : el('button', { class: 'btn', type: 'button', title: '毎月くり返す業務を登録・変更する（請求処理、棚卸し、25日の提出など）', onclick: function () { openSeriesDialog(); } }, '↻ 繰り返し', el('span', { class: 'lbl', text: '業務' }))
+      })) : null
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
       text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
@@ -1059,7 +1058,7 @@
     var bb = backupBanner();
     if (bb) board.appendChild(bb);
     var lay = document.querySelector('.layout');
-    if (lay) { lay.classList.toggle('list-mode', S.mode === 'list'); lay.setAttribute('data-pane', S.pane || 'todo'); }
+    if (lay) { lay.classList.toggle('no-memo', !SHARE && S.view === 'me'); lay.classList.toggle('list-mode', S.mode === 'list'); lay.setAttribute('data-pane', S.pane || 'todo'); }
     syncTodoHover();
     if (S.mode === 'list') { renderListView(board, mgrKeep); return; }
     var todayStr = ymd(new Date());
@@ -1084,6 +1083,7 @@
     if (!FAMILY && !NARROW()) tips.push('ショートカット: ? を押すと、キーの一覧が出ます。');
     if (NARROW()) tips.push('カレンダーを左右にスワイプすると、前の月・次の月に切り替わります。');
     if (POLL_MS && !FAMILY) tips.push('他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に、自動で反映されます。');
+    if (!SHARE && S.view === 'me') return; // プライベート版は、カレンダーの下（凡例・月のまとめ）を出さない
     board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
       personColorOn() ? personLegend() : [el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
         el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み')],
@@ -1435,7 +1435,8 @@
           var pf = { title: title.value, tag: tag.value, start_time: timeVal(st), end_time: timeVal(et) };
           ov.close(); openSeriesForm(null, function () { load(); }, pf);
         }));
-        repeatHint.appendChild(document.createTextNode(' すると、自動で毎月入ります。'));
+        repeatHint.appendChild(document.createTextNode(' すると、自動で毎月入ります。 '));
+        repeatHint.appendChild(linkTo('登録済みの繰り返しを見る・変える', function () { ov.close(); openSeriesDialog(); }));
       }
       repeatHint.hidden = !repeatHint.firstChild;
     }
@@ -1605,14 +1606,12 @@
     var input = el('input', { type: 'text', maxlength: '100', placeholder: 'やることを入力して Enter', 'aria-label': 'ToDoの内容', value: d.v,
       oninput: function () { d.v = input.value; },
       onkeydown: function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeTodoAdd(); } } });
-    var kindSel = S.view === 'me' ? el('select', { 'aria-label': 'ToDoの種類', onchange: function () { d.k = kindSel.value; } }, el('option', { value: 'private', text: 'プライベート（自分だけ）' }), el('option', { value: 'work', text: '業務（全員に見える）' })) : null;
-    if (kindSel && d.k) kindSel.value = d.k;
     var form = el('form', { class: 'todo-add', 'data-add-owner': owner, onsubmit: function (e) {
       e.preventDefault();
       if (!input.value.trim()) return;
-      api('todo_save', { body: { title: input.value, kind: kindSel ? kindSel.value : 'work', due: dueIn.value } }).then(function () { d.v = ''; d.due = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
+      api('todo_save', { body: { title: input.value, kind: S.view === 'me' ? 'private' : 'work', due: dueIn.value } }).then(function () { d.v = ''; d.due = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
     } }, input,
-      el('div', { class: 'todo-add-row' }, kindSel, dueIn, el('span', { class: 'spacer' }),
+      el('div', { class: 'todo-add-row' }, dueIn, el('span', { class: 'spacer' }),
         el('button', { class: 'btn small ghost', type: 'button', text: 'キャンセル', onclick: closeTodoAdd }),
         el('button', { class: 'btn primary small', type: 'submit', text: '追加' })));
     if (refocus || S.addFocus === owner) { S.addFocus = null; setTimeout(function () { input.focus(); }, 0); }
@@ -1632,7 +1631,7 @@
     var over = overdueCount(S.todos);
     box.appendChild(el('h2', null, 'ToDo' + (S.todos.length ? '（' + S.todos.length + '）' : ''), over ? el('span', { class: 'pill due over', style: 'margin-left:8px;font-size:12px', text: '期限切れ ' + over, title: '期限日を過ぎた ToDo の数' }) : null));
     if (full) {
-      box.appendChild(helpText((S.view === 'team' ? '業務のToDoです（全員に見えます。変えられるのは持ち主だけです）。' : 'プライベートのToDoは、あなただけに見えます（種類が「業務」のToDoは、全員に見えます）。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。'));
+      box.appendChild(helpText((S.view === 'team' ? '業務のToDoです（全員に見えます。変えられるのは持ち主だけです）。' : 'プライベートのToDoです（あなただけに見えます。業務のToDoは、業務版にあります）。') + 'カードをドラッグして、列（未着手・進行中・完了）を移せます。カードを画面の右端まで持っていくと、カレンダーが開いて、日付に落として予定にできます。カレンダーの予定を画面の右端へ持っていくと、ToDoに戻せます。スマホでは、カードのボタン（列の移動・「日付」）を使います。'));
       if (S.view === 'team') box.appendChild(todoWhoBar());
       box.appendChild(renderKanban(refocus));
     } else {
