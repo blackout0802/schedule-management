@@ -93,11 +93,12 @@ $hasZip = class_exists('ZipArchive');
       <p class="error">このサーバーでは zip を扱えません（PHPのZip拡張がありません）。更新ファイルは FTP で直接アップロードしてください。</p>
     <?php else: ?>
     <p class="hint">渡された更新用の zip（<code>update-….zip</code>）を選んでください。GitHub の「Download ZIP」で取得した zip もそのまま使えます。<code>config.php</code>（データベースの設定）などは、上書きされません。</p>
-    <form method="post" enctype="multipart/form-data" class="form">
+    <form method="post" enctype="multipart/form-data" class="form" id="upload-form">
       <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
       <input type="hidden" name="action" value="upload">
-      <label>更新用の zip<input type="file" name="zip" accept=".zip,application/zip" required></label>
-      <div class="actions"><button class="btn primary" type="submit">更新する</button></div>
+      <label>更新用の zip<input type="file" name="zip" accept=".zip,application/zip" required id="upload-file"></label>
+      <p class="hint" id="upload-note" role="status">ファイルを選ぶと、そのまま更新を始めます。</p>
+      <div class="actions"><button class="btn primary" type="submit" id="upload-btn">更新する</button></div>
     </form>
     <?php endif; ?>
   </section>
@@ -132,6 +133,18 @@ if (reopen) { // 更新できたら、数秒後に自動で、新しい画面を
     if (left <= 0) { clearInterval(tick); location.href = 'index.php'; return; }
     note.textContent = left + '秒後に、自動で開き直します。';
   }, 1000);
+}
+var uf = document.getElementById('upload-form'), ufile = document.getElementById('upload-file');
+if (uf && ufile) { // ファイルを選んだら、そのまま更新を始める（zip 以外は、始めずに知らせる。二重に送らない）
+  var sending = false;
+  uf.addEventListener('submit', function () { sending = true; document.getElementById('upload-btn').disabled = true; });
+  ufile.addEventListener('change', function () {
+    var note = document.getElementById('upload-note'), f = ufile.files && ufile.files[0];
+    if (!f || sending) return;
+    if (!/\.zip$/i.test(f.name)) { note.textContent = 'zip のファイルを選んでください（' + f.name + ' は、zip ではありません）。'; ufile.value = ''; return; }
+    note.textContent = '「' + f.name + '」で更新しています。しばらくお待ちください…';
+    if (uf.requestSubmit) uf.requestSubmit(); else uf.submit();
+  });
 }
 var rf = document.getElementById('restore-form');
 if (rf) rf.addEventListener('submit', function (e) { if (!window.confirm('選んだ時点の状態に戻します。よろしいですか？')) e.preventDefault(); });
