@@ -388,8 +388,8 @@ function handle_api(): void
                 api_fail('ToDoが見つかりません。', 404);
             }
             $st = (string)($in['status'] ?? '');
-            if (!in_array($st, ['todo', 'doing', 'done'], true)) {
-                api_fail('状態は「未着手・進行中・完了」のどれかです。');
+            if (!in_array($st, ['todo', 'doing', 'hold', 'done'], true)) {
+                api_fail('状態は「未着手・進行中・保留・完了」のどれかです。');
             }
             set_todo_status($t, $st);
             if ($st !== 'done' && is_array($in['ids'] ?? null)) {
@@ -636,7 +636,8 @@ function handle_api(): void
             }
             $undo = undo_stash('event', $e); // 消した直後なら、「元に戻す」で戻せるように、控える
             delete_event($e);
-            api_out(['ok' => true, 'undo' => $undo]);
+            $forgot = !empty($in['forget_log']) ? family_log_forget_event((int)$e['owner_id'], (int)$e['id']) : 0; // 家族の更新履歴にも残さない
+            api_out(['ok' => true, 'undo' => $undo, 'forgot' => $forgot]);
 
         case 'event_restore': // 消した予定を戻す（「元に戻す」）
             $snap = undo_take((string)($in['undo'] ?? ''), 'event');

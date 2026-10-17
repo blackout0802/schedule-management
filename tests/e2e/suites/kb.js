@@ -11,12 +11,13 @@ const openAdd = async (pg, sel) => { if (!(await pg.locator(sel + ' .todo-add in
 (async () => {
   const b = await chromium.launch();
   const p = await login(b, 'yamada@example.com', 'yamadapass1');
+  await p.evaluate(() => localStorage.setItem('sched.doneOpen', 'true')); await p.reload(); await p.waitForSelector('.cal'); // 完了は、ふだんは畳んである。このテストは、開いた状態で確かめる
   await p.click('.toolbar .seg label:has-text("リスト")'); await p.waitForSelector('.kanban');
   for (const t of ['A', 'B', 'C', 'D']) { await openAdd(p, '#todo-mgr'); await p.fill('#todo-mgr .todo-add input[type=text]', t); await p.click('#todo-mgr .todo-add button[type=submit]'); await p.waitForSelector('#todo-mgr .kb-card:has-text("' + t + '")'); }
   const col = (s) => `.kanban .kb-col.${s}`;
   const titles = (s) => p.locator(col(s) + ' .kb-card .t-title').allInnerTexts();
   const J = x => JSON.stringify(x);
-  ok('3つの列（未着手・進行中・完了）がある', J(await p.locator('.kanban .kb-col h3').allInnerTexts()).includes('未着手') && await p.locator('.kanban .kb-col').count() === 3);
+  ok('4つの列（未着手・進行中・完了・保留）がある', J(await p.locator('.kanban .kb-col h3').allInnerTexts()).includes('未着手') && await p.locator('.kanban .kb-col').count() === 4);
   ok('追加したToDoは未着手に並ぶ', J(await titles('todo')) === '["A","B","C","D"]', await titles('todo'));
   // ドラッグで進行中へ
   await p.locator(col('todo') + ' .kb-card:has-text("A")').dragTo(p.locator(col('doing')));

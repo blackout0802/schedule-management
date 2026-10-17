@@ -19,6 +19,7 @@ const styleOf = (p, sel) => p.locator(sel).first().getAttribute('style');
   const b = await chromium.launch();
   const today = ymd(new Date());
   const y = await login(b, 'yamada@example.com', 'yamadapass1'); const s = await login(b, 'suzuki@example.com', 'suzukipass1'); const a = await login(b, 'admin@example.com', 'adminpass1');
+  await a.evaluate(() => localStorage.setItem('sched.span', '"week"')); // 1日に入りきる数は決まっている（月表示は4つまで）ので、週表示（12まで）で確かめる
   await api(y, 'event_save', { kind: 'work', title: 'PC検証会議', tag: '打ち合わせ', start: today, end: today });
   await api(s, 'event_save', { kind: 'work', title: 'PC検証B', tag: '打ち合わせ', start: today, end: today });
   await api(y, 'event_save', { kind: 'off', title: '', tag: '有給', start: today, end: today });

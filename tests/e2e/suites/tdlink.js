@@ -10,6 +10,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.fill('input[name=email]', 'yamada@example.com'); await p.fill('input[name=password]', 'yamadapass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]);
   await p.waitForSelector('.cal');
+  await p.evaluate(() => localStorage.setItem('sched.doneOpen', 'true')); await p.reload(); await p.waitForSelector('.cal'); // 完了は、ふだんは畳んである。このテストは、開いた状態で確かめる
   const ver = await p.locator('.brand .ver').innerText();
   ok('スケジュール管理の右横にバージョンが出る', /^v\d+\.\d+\.\d+$/.test(ver), ver);
   // ToDoを作る（API）

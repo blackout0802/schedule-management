@@ -234,7 +234,14 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .kanban { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .kb-col { background: var(--surface-2); border-radius: 10px; padding: 10px; display: grid; gap: 7px; align-content: start; min-height: 160px; }
 .kb-col h3 { margin: 0; font-size: 13px; display: flex; justify-content: space-between; }
-.kb-col.doing h3 { color: var(--work); } .kb-col.done h3 { color: var(--off); }
+.kb-col.doing h3 { color: var(--work); } .kb-col.done h3 { color: var(--off); } .kb-col.hold h3 { color: var(--muted); }
+.kb-stack { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.kb-stack .kb-col { min-height: 0; }
+.kb-col.collapsed { padding: 6px 10px; min-height: 0; }
+.kb-fold { border: 0; background: transparent; padding: 2px 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; text-align: left; }
+.kb-fold:hover { text-decoration: underline; }
+.pill.hold { background: var(--surface-2); color: var(--muted); }
+.kb-col.hold .kb-card { opacity: .9; }
 .kb-col .cnt { font-size: 12px; color: var(--muted); font-weight: var(--fw); }
 .kb-col.drop { outline: 2px dashed var(--work); outline-offset: -2px; background: var(--work-soft); }
 .kb-card { flex-direction: column; border-left-width: 4px; }
@@ -245,13 +252,14 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .kb-tabs { display: none; }
 @media (max-width: 760px) {
   .kanban { display: block; }
-  .kb-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 10px 10px 0 0; border-bottom: 0; overflow: hidden; }
+  .kb-tabs { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 10px 10px 0 0; border-bottom: 0; overflow: hidden; }
   .kb-tab { border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 10px 0; font-weight: 600; font-size: 13px; color: var(--muted); cursor: pointer; }
   .kb-tab[aria-selected=true] { color: var(--work); border-bottom-color: var(--work); }
   .kb-tab.done[aria-selected=true] { color: var(--off); border-bottom-color: var(--off); }
   .kb-col { display: none; border-radius: 0 0 10px 10px; min-height: 220px; }
   .kb-col h3 { display: none; }
-  .kanban[data-tab=todo] .kb-col.todo, .kanban[data-tab=doing] .kb-col.doing, .kanban[data-tab=done] .kb-col.done { display: grid; }
+  .kb-stack { display: contents; }
+  .kanban[data-tab=todo] .kb-col.todo, .kanban[data-tab=doing] .kb-col.doing, .kanban[data-tab=done] .kb-col.done, .kanban[data-tab=hold] .kb-col.hold { display: grid; }
 }
 
 /* 社員の一覧は、スマホ幅では1人ずつのカードにする（表のままだと、文字が縦に潰れる） */
@@ -841,11 +849,10 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .span-sw button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); }
 .span-sw button + button { border-left: .5px solid var(--line); }
 .span-sw button[aria-pressed="true"] { background: var(--work-soft); color: var(--work); font-weight: 700; }
-.cal.wk .week { min-height: min(64vh, 560px); }
-.cal.wk .bar { height: auto; min-height: 22px; line-height: 1.45; padding: 3px 7px; white-space: normal; overflow: visible; overflow-wrap: anywhere; font-size: 12.5px; }
-.cal.wk .bar.rm::before, .cal.wk .bar.off.pc::before { vertical-align: 0; }
-.cal.wk .cell .num { height: 24px; font-size: 13px; }
-@media (max-width: 640px) { .cal.wk .week { min-height: 58vh; } .cal.wk .bar { font-size: 11.5px; padding: 2px 4px; } }
+/* 1日の高さは固定。入りきらない予定は「他 n件」 */
+.week .more { position: relative; z-index: 2; margin: 1px 3px; padding: 0 6px; height: 20px; line-height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; overflow: hidden; white-space: nowrap; }
+.week .more:hover { background: var(--surface-2); color: var(--ink); }
+@media (max-width: 640px) { .week .more { height: 14px; line-height: 14px; font-size: 10.5px; margin-top: 0; margin-bottom: 0; padding: 0 4px; } }
 
 /* ---------- 会議室の予約（v1.51）----------
    部屋ごとに、色と一文字（会・応 など）を決めて、カレンダー・まとめの表・予約の画面の、すべてで同じ見た目にする。

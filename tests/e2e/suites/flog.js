@@ -29,7 +29,7 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const M = `${t.g
   ok('「確認した」で、目印が消える', await f.locator('.bar.upd').count() === 0 && (await f.locator('.upd-banner').innerText()).includes('新しい更新はありません'));
   await f.reload(); await f.waitForSelector('.upd-banner'); ok('再読み込みしても、確認済みのまま（ブラウザに記憶）', await f.locator('.bar.upd').count() === 0);
   // 削除 → 履歴に「削除」
-  await y.locator('.bar.private:has-text("家族で食事")').first().click(); await y.waitForSelector('.modal'); await y.click('.modal button:has-text("削除")'); await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForTimeout(500);
+  await y.locator('.bar.private:has-text("家族で食事")').first().click(); await y.waitForSelector('.modal'); await y.uncheck('.modal input[name=forget_log]'); await y.click('.modal button:has-text("削除")'); // 履歴に残す（初めは、「残さない」にチェックが入っている） await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForTimeout(500);
   await f.waitForSelector('.upd-banner.has', { timeout: 20000 }); await f.waitForTimeout(4000); await f.click('.upd-banner button:has-text("更新履歴を見る")'); await f.waitForSelector('.log-list');
   const lt2 = await f.locator('.log-list').innerText(); ok('削除も「削除」として履歴に残る', /削除[\s\S]*家族で食事/.test(lt2), lt2);
   await f.click('.modal button:has-text("閉じる")');
@@ -39,5 +39,13 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const M = `${t.g
   ok('家族に共有していない予定は、履歴にも出ない（サーバーの応答にも含まれない）', !api.includes('ひみつの予定'), api.slice(0, 200));
   // 会社用リンクには履歴は無い
   const cpath = await y.evaluate(async () => 'x'); 
+  // 削除のとき「家族の更新履歴にも残さない」（プライベートの予定は、初めからチェックが入っている）: 履歴にも、取消線にも、残らない
+  await addPriv('テストで入れた予定', '08');
+  await y.locator('.bar.private:has-text("テストで入れた予定")').first().click(); await y.waitForSelector('.modal');
+  ok('削除の画面に、「削除するとき、家族の更新履歴にも残さない」がある。プライベートの予定は、初めからチェックが入っている', (await y.locator('.modal input[name=forget_log]').count()) === 1 && (await y.locator('.modal input[name=forget_log]').isChecked()));
+  await y.click('.modal button:has-text("削除")'); await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForTimeout(500);
+  const lg = await f.evaluate(async () => (await (await fetch('share_api.php?t=' + new URL(location.href).searchParams.get('t') + '&action=log')).text()));
+  const evs = await f.evaluate(async () => { const d = new Date(); const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); return await (await fetch('share_api.php?t=' + new URL(location.href).searchParams.get('t') + '&action=events&from=' + m + '-01&to=' + m + '-28')).text(); });
+  ok('チェックを入れて削除した予定は、家族の更新履歴にも、「削除された予定」の取消線にも、残らない', !lg.includes('テストで入れた予定') && !evs.includes('テストで入れた予定'), [lg.slice(0, 200)]);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

@@ -971,14 +971,15 @@
       g.contL = g.s === 0 && g.ev.start < ymd(days[0]) && shownOn(g.ev, ymd(addDays(days[0], -1)));
       g.contR = g.e === 6 && g.ev.end > ymd(days[6]) && shownOn(g.ev, ymd(addDays(days[6], 1)));
     });
-    segs.sort(function (a, b) { return a.s - b.s || (b.e - b.s) - (a.e - a.s) || a.ev.id - b.ev.id; });
-    var ends = [];
-    segs.forEach(function (g) {
-      var l = 0;
-      while (ends[l] !== undefined && ends[l] >= g.s) l++;
-      g.lane = l; ends[l] = g.e;
-    });
-    return { segs: segs, lanes: ends.length };
+    /* 段（レーン）への並べ方: 完了していない予定を上に、完了したもの（ToDoが完了した予定）を、同じ日の中で、必ず下にする */
+    var byPos = function (x, y) { return x.s - y.s || (y.e - y.s) - (x.e - x.s) || x.ev.id - y.ev.id; };
+    var open = segs.filter(function (g) { return !g.ev.done; }).sort(byPos), fin = segs.filter(function (g) { return g.ev.done; }).sort(byPos);
+    var occ = [], top = [0, 0, 0, 0, 0, 0, 0];
+    var fits = function (l, g) { for (var c = g.s; c <= g.e; c++) if (occ[l] && occ[l][c]) return false; return true; };
+    var put = function (g, min) { var l = min; while (!fits(l, g)) l++; occ[l] = occ[l] || []; for (var c = g.s; c <= g.e; c++) occ[l][c] = true; g.lane = l; };
+    open.forEach(function (g) { put(g, 0); for (var c = g.s; c <= g.e; c++) top[c] = Math.max(top[c], g.lane + 1); });
+    fin.forEach(function (g) { var min = 0; for (var c = g.s; c <= g.e; c++) min = Math.max(min, top[c]); put(g, min); });
+    return { segs: open.concat(fin), lanes: occ.length };
   }
 
   function barFor(g, days) {
@@ -1169,9 +1170,10 @@
 
   function renderWeek(days, todayStr) {
     var pack = weekSegments(days);
-    var wk = S.span === 'week'; // 週表示: 1週間だけを、大きく（予定は、折り返して全文を出す）
-    var L = Math.max(pack.lanes, wk ? 1 : NARROW() ? 2 : 3); // スマホでは、予定のない週を低くして、1画面に収める
-    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + (wk ? '28px repeat(' + L + ',auto)' : NARROW() ? '20px repeat(' + L + ',19px)' : '24px repeat(' + L + ',22px)') + ' minmax(6px,1fr)' });
+    var wk = S.span === 'week'; // 週表示: 1週間だけを、大きく（予定の帯の高さは、月表示と同じ）
+    /* 1日の高さは、予定の数に関わらず、固定（予定が増えても、高さは変わらない）。入りきらない予定は、「他 n件」にまとめて、押すと、その日の一覧が開く */
+    var VIS = wk ? (NARROW() ? 8 : 12) : (NARROW() ? 2 : 4), LH = NARROW() ? 19 : 22, HEAD = NARROW() ? 20 : 24, MORE = NARROW() ? 14 : 22, L = VIS;
+    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + HEAD + 'px repeat(' + VIS + ',' + LH + 'px) ' + MORE + 'px' });
     days.forEach(function (d, c) {
       var s = ymd(d), hol = S.holidays[s];
       var cls = 'cell' + (!wk && d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
@@ -1179,7 +1181,16 @@
         style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
         el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
     });
-    pack.segs.forEach(function (g) { week.appendChild(barFor(g, days)); });
+    var hidden = [0, 0, 0, 0, 0, 0, 0];
+    pack.segs.forEach(function (g) {
+      if (g.lane < VIS) { week.appendChild(barFor(g, days)); return; }
+      for (var c = g.s; c <= g.e; c++) hidden[c]++;
+    });
+    hidden.forEach(function (n, c) {
+      if (!n) return;
+      var ds = ymd(days[c]);
+      week.appendChild(el('button', { type: 'button', class: 'more', style: 'grid-column:' + (c + 1) + ';grid-row:' + (VIS + 2), title: 'この日の予定を、すべて見る', text: '他 ' + n + '件', onclick: function (ev) { ev.stopPropagation(); openDayPopup(ds); } }));
+    });
 
     // ドロップ先: ポインタのある列が、その日になる（バーの上でも同じ）
     var colAt = function (ev) {
@@ -1539,10 +1550,13 @@
         load();
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     };
+    /* 家族に共有している予定を消すと、家族用の画面に「削除された予定」が取消線で残り、更新履歴にも出る。消すときに、「家族の更新履歴にも残さない」を選べる（プライベートの予定は、初めから選んである） */
+    var shareable = !!ev && ev.owner_id === S.me.user.id && ev.family_shared !== false && !ev.recurring;
+    var forgetCb = shareable ? el('input', { type: 'checkbox', name: 'forget_log', checked: ev.kind === 'private', style: 'width:auto' }) : null;
     var del = ev ? el('button', { class: 'btn danger left', type: 'button', text: '削除', onclick: function () {
-      api('event_delete', { body: { id: ev.id } }).then(function (j) {
+      api('event_delete', { body: { id: ev.id, forget_log: !!(forgetCb && forgetCb.checked) } }).then(function (j) {
         ov.close(); load();
-        var msg = ev.recurring ? 'この回を削除しました（毎月の繰り返し自体は残ります）' : '予定を削除しました';
+        var msg = ev.recurring ? 'この回を削除しました（毎月の繰り返し自体は残ります）' : '予定を削除しました' + (j.forgot ? '（家族の更新履歴にも残していません）' : '');
         if (!j.undo) { toast(msg); return; }
         toastUndo(msg, function () { api('event_restore', { body: { undo: j.undo } }).then(function () { toast('予定を元に戻しました'); load(); loadTodos(); }).catch(fail); });
       }).catch(fail);
@@ -1565,6 +1579,7 @@
       ev && ev.todo_id ? todoStateBox(ev, ev.owner_id === S.me.user.id) : null,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
       err,
+      forgetCb ? el('label', { class: 'check', title: '家族用の画面の「更新履歴」と、取消線の「削除された予定」に、この予定を残しません。テストで入れた予定などを消すときに' }, forgetCb, '削除するとき、家族の更新履歴にも残さない') : null,
       el('div', { class: 'actions' }, del,
         ev ? el('button', { class: 'btn', type: 'button', text: '複製', title: 'この予定を、他の日にも作る', onclick: function () { ov.close(); openDuplicateDialog(ev); } }) : null,
         ev && canReturnToTodo(ev) ? el('button', { class: 'btn', type: 'button', text: 'ToDoに戻す', title: '日付のない ToDo に戻す', onclick: function () { ov.close(); returnEventToTodo(ev.id, null, false); } }) : null,
@@ -1710,7 +1725,7 @@
   }
 
   /* ---------- ToDoのカンバン（リストタブ） ---------- */
-  var KANBAN = [['todo', '未着手'], ['doing', '進行中'], ['done', '完了']];
+  var KANBAN = [['todo', '未着手'], ['doing', '進行中'], ['done', '完了'], ['hold', '保留']]; // 完了は、ふだんは畳んで、押すと開く。保留は、完了の下
 
   /* ToDoを、列 status の targetId の前（after なら後ろ）へ移す。targetId が null なら列の末尾 */
   function moveTodo(id, status, targetId, after) {
@@ -1745,7 +1760,7 @@
     if (ids) body.ids = ids;
     api('todo_status', { body: body }).then(function () {
       if (status === 'done' && before !== 'done') toast('完了にしました: ' + t.title);
-      else if (status !== before) toast((status === 'doing' ? '進行中にしました: ' : '未着手に戻しました: ') + t.title);
+      else if (status !== before) toast((status === 'doing' ? '進行中にしました: ' : status === 'hold' ? '保留にしました: ' : '未着手に戻しました: ') + t.title);
       if (t.sched && (status === 'done' || before === 'done')) load(); // カレンダーに置いたToDoは、完了で取り消し線、戻すと線が消える
       loadTodos();
       syncMemoTodos();
@@ -1755,8 +1770,9 @@
   function kanbanCard(t, status) {
     var move = function (label, title, to) { return el('button', { class: 'btn small ghost', type: 'button', text: label, title: title, onclick: function (e) { e.stopPropagation(); moveTodo(t.id, to, null, false); } }); };
     var acts = [];
-    if (status === 'todo') acts.push(move('進行中へ ▶', '進行中にする', 'doing'));
-    if (status === 'doing') { acts.push(move('◀ 未着手', '未着手に戻す', 'todo')); acts.push(move('完了 ✓', '完了にする', 'done')); }
+    if (status === 'todo') { acts.push(move('進行中へ ▶', '進行中にする', 'doing')); acts.push(move('保留', '保留にする（しばらく、手をつけない）', 'hold')); }
+    if (status === 'doing') { acts.push(move('◀ 未着手', '未着手に戻す', 'todo')); acts.push(move('完了 ✓', '完了にする', 'done')); acts.push(move('保留', '保留にする（しばらく、手をつけない）', 'hold')); }
+    if (status === 'hold') { acts.push(move('◀ 未着手', '未着手に戻す', 'todo')); acts.push(move('進行中へ ▶', '進行中にする', 'doing')); }
     if (status === 'done') acts.push(move('◀ 戻す', '未着手に戻す', 'todo'));
     if (status !== 'done') {
       acts.push(el('button', { class: 'btn small ghost', type: 'button', text: '日付', title: '日付を選んで、カレンダーの予定にする', onclick: function (e) { e.stopPropagation(); openTodoScheduleDialog(t); } }));
@@ -1934,7 +1950,7 @@
         var typed = ta.value;
         body.textContent = '';
         body.appendChild(el('dl', { class: 'detail' }, el('dt', { text: '内容' }), el('dd', { text: t.title }),
-          el('dt', { text: '状態' }), el('dd', { text: j.todo.status === 'done' ? '完了' : j.todo.status === 'doing' ? '進行中' : '未着手' }),
+          el('dt', { text: '状態' }), el('dd', { text: j.todo.status === 'done' ? '完了' : j.todo.status === 'doing' ? '進行中' : j.todo.status === 'hold' ? '保留' : '未着手' }),
           t.tag ? el('dt', { text: '分類' }) : null, t.tag ? el('dd', { text: t.tag }) : null,
           !mine && t.note ? el('dt', { text: 'メモ' }) : null, !mine && t.note ? el('dd', { text: t.note, style: 'white-space:pre-wrap' }) : null));
         if (!mine) body.appendChild(el('p', { class: 'hint', text: '業務のToDoは全員に見えます。変えられるのは' + t.owner_name + 'さんだけですが、コメントは誰でも付けられます。' }));
@@ -1978,7 +1994,7 @@
   }
   function renderKanban(refocus) {
     var tab = store('sched.kbTab');
-    if (tab !== 'todo' && tab !== 'doing' && tab !== 'done') tab = S.todos.some(function (t) { return t.status === 'doing'; }) || !S.todos.length ? 'doing' : 'todo'; // 選んだことがなければ、進行中があれば進行中、なければ未着手
+    if (tab !== 'todo' && tab !== 'doing' && tab !== 'done' && tab !== 'hold') tab = S.todos.some(function (t) { return t.status === 'doing'; }) || !S.todos.length ? 'doing' : 'todo'; // 選んだことがなければ、進行中があれば進行中、なければ未着手
     var wrap = el('div', { class: 'kanban', 'data-tab': tab });
     // スマホ幅では、列を並べず、状態をタブで切り替える（幅が広いときは隠れる）
     var tabs = el('div', { class: 'kb-tabs', role: 'tablist', 'aria-label': 'ToDoの状態' });
@@ -1991,19 +2007,26 @@
         } }));
     });
     wrap.appendChild(tabs);
+    /* 完了は、ふだんは畳んでおく（見出しを押すと開く。開閉は覚える）。スマホは、タブで選んだときに開く */
+    var doneOpen = store('sched.doneOpen') === true || isPhone();
+    var stack = el('div', { class: 'kb-stack' }); // 右の列: 完了（畳める）の下に、保留
     KANBAN.forEach(function (c) {
       var status = c[0], items = status === 'done' ? S.done : S.todos.filter(function (t) { return t.status === status; });
       var oth = othersIn(status);
-      var col = el('div', { class: 'kb-col ' + status, 'data-status': status },
-        el('h3', null, c[1], el('span', { class: 'cnt', text: String(items.length + oth.length) })));
-      items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
-      if (!items.length && !oth.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : 'ToDoはありません。' }));
-      if (oth.length) { // 業務版: 他の人の業務のToDo（見るだけ）
+      var collapsed = status === 'done' && !doneOpen;
+      var cnt = el('span', { class: 'cnt', text: String(items.length + oth.length) });
+      var head = status === 'done'
+        ? el('h3', null, el('button', { type: 'button', class: 'kb-fold', 'aria-expanded': collapsed ? 'false' : 'true', title: collapsed ? '完了したToDoを開く' : '完了したToDoを畳む', onclick: function () { store('sched.doneOpen', collapsed); renderTodo(); } }, (collapsed ? '▸ ' : '▾ ') + c[1]), cnt)
+        : el('h3', null, c[1], cnt);
+      var col = el('div', { class: 'kb-col ' + status + (collapsed ? ' collapsed' : ''), 'data-status': status }, head);
+      if (!collapsed) items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
+      if (!collapsed && !items.length && !oth.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : status === 'hold' ? 'ここへドラッグすると保留になります。' : 'ToDoはありません。' }));
+      if (!collapsed && oth.length) { // 業務版: 他の人の業務のToDo（見るだけ）
         col.appendChild(el('div', { class: 'kb-others-h', text: '他の人のToDo' }));
         oth.forEach(function (t) { col.appendChild(othersCard(t)); });
       }
       if (status === 'todo') col.appendChild(todoAddControl('mgr', refocus)); // 未着手の一番下に「＋ 追加」
-      if (status === 'done' && items.length) {
+      if (status === 'done' && items.length && !collapsed) {
         col.appendChild(el('button', { class: 'btn small danger', type: 'button', text: '完了をすべて削除', onclick: function () {
           if (!window.confirm('完了したToDo ' + S.done.length + '件を、すべて削除します。元に戻せません。よろしいですか？')) return;
           api('todo_clear_done', { body: { view: S.view } }).then(function (j) { toast(j.deleted + '件を削除しました'); loadTodos(); }).catch(fail);
@@ -2021,8 +2044,9 @@
         if (p.t === 'event') { eventToKanban(p.id, status, null, false); return; }
         moveTodo(p.id, status, null, false);
       });
-      wrap.appendChild(col);
+      (status === 'done' || status === 'hold' ? stack : wrap).appendChild(col);
     });
+    wrap.appendChild(stack);
     return wrap;
   }
 
@@ -2060,7 +2084,7 @@
       el('input', { type: 'checkbox', class: 't-check', 'aria-label': '完了にする', title: '完了にする（リストから消えて、「完了」に移ります）', onchange: function () { setDone(t, true); } }),
       el('div', { class: 't-body' },
         el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
-          t.status === 'doing' ? el('span', { class: 'pill doing', text: '進行中' }) : null,
+          t.status === 'doing' ? el('span', { class: 'pill doing', text: '進行中' }) : t.status === 'hold' ? el('span', { class: 'pill hold', text: '保留' }) : null,
           t.kind === 'private' ? el('span', { class: 'pill private', text: 'プライベート' }) : (t.tag ? el('span', { class: 'pill', text: t.tag }) : null), dueBadge(t)),
         el('div', { class: 't-actions' },
           btn('日付', '日付を選んで予定にする', function () { openTodoScheduleDialog(t); }),
@@ -2215,7 +2239,7 @@
     if (!m) return '';
     if ((m.md === 'cur' || m.md === 'next') && /^\d{4}-\d{2}-\d{2}$/.test(m.date || '')) return ' data-md="' + m.md + '" data-date="' + m.date + '"';
     var a = '';
-    if (/^\d+$/.test(m.todo || '')) { a += ' data-todo="' + m.todo + '"'; if (/^(todo|doing|done)$/.test(m.st)) a += ' data-st="' + m.st + '"'; }
+    if (/^\d+$/.test(m.todo || '')) { a += ' data-todo="' + m.todo + '"'; if (/^(todo|doing|hold|done)$/.test(m.st)) a += ' data-st="' + m.st + '"'; }
     if (m.tr) a += ' data-tr="1"';
     return a;
   }
@@ -2760,7 +2784,7 @@
     ov.outsideClose = true;
   }
   /* ToDoから置いた予定の詳細で、元のToDoの状態（未着手・進行中・完了）を見る／変える。変えると、ToDoの一覧・日報・カレンダーの取り消し線にも反映される */
-  var TD_STATE_NAME = { todo: '未着手', doing: '進行中', done: '完了' };
+  var TD_STATE_NAME = { todo: '未着手', doing: '進行中', hold: '保留', done: '完了' };
   function todoStateBox(ev, canChange) {
     var cur = ev.todo_status || (ev.done ? 'done' : 'todo');
     var box = el('div', { class: 'td-state', role: 'group', 'aria-label': 'ToDoの状態' });

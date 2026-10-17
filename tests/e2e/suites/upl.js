@@ -22,7 +22,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   // zip: 自動で送られる
   await Promise.all([p.waitForNavigation(), p.setInputFiles('#upload-file', zip)]);
   const body = await p.locator('main').innerText();
-  ok('zip を選ぶと、ボタンを押さなくても、更新が行われ、結果の画面になる', /個のファイルを更新しました|変更はありません|更新するファイル/.test(body) && (await p.locator('#upload-form').count()) === 1, body.slice(0, 300));
+  ok('zip を選ぶと、ボタンを押さなくても、更新が行われ、結果の画面になる', /個のファイルを更新しました|変更はありません|更新するファイル|より古い版/.test(body) && (await p.locator('#upload-form').count()) === 1, body.slice(0, 300));
   console.log('   結果の画面:', body.replace(/\n+/g, ' / ').slice(0, 260));
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -126,7 +126,7 @@ function event_for_client(array $e, array $user, ?array $colorsMap = null): arra
         'important' => (int)($e['important'] ?? 0) === 1,
         'todo_id' => ($e['todo_id'] ?? null) !== null ? (int)$e['todo_id'] : null, // ToDoをカレンダーに置いた予定
         'done' => ($e['todo_done_at'] ?? null) !== null, // 元のToDoが完了（カレンダーでは取り消し線）
-        'todo_status' => ($e['todo_id'] ?? null) === null ? null : (($e['todo_done_at'] ?? null) !== null ? 'done' : ((int)($e['todo_doing'] ?? 0) === 1 ? 'doing' : 'todo')), // 元のToDoの状態（予定の詳細で、変えられる）
+        'todo_status' => ($e['todo_id'] ?? null) === null ? null : (($e['todo_done_at'] ?? null) !== null ? 'done' : ((int)($e['todo_doing'] ?? 0) === 1 ? 'doing' : ((int)($e['todo_doing'] ?? 0) === 2 ? 'hold' : 'todo'))), // 元のToDoの状態（予定の詳細で、変えられる）
         'owner_name' => $e['owner_name'] ?? '',
         'recurring' => $e['series_id'] !== null,
         'series_id' => $e['series_id'] !== null ? (int)$e['series_id'] : null,
@@ -295,13 +295,14 @@ function move_event(array $e, string $newStart): array
     return $after;
 }
 
-/** ToDoの状態: todo（未着手）/ doing（進行中）/ done（完了） */
+/** ToDoの状態: todo（未着手）/ doing（進行中）/ hold（保留）/ done（完了）。進行中・保留は、todos.doing の値（1・2）で持つ */
 function todo_status_of(array $t): string
 {
     if (($t['done_at'] ?? null) !== null) {
         return 'done';
     }
-    return (int)($t['doing'] ?? 0) === 1 ? 'doing' : 'todo';
+    $d = (int)($t['doing'] ?? 0);
+    return $d === 1 ? 'doing' : ($d === 2 ? 'hold' : 'todo');
 }
 
 function todo_for_client(array $t): array
@@ -468,7 +469,7 @@ function set_todo_done(array $todo, bool $done): array
 }
 
 /**
- * ToDoの状態を変える（カンバンの列の移動）。todo=未着手 / doing=進行中 / done=完了。
+ * ToDoの状態を変える（カンバンの列の移動）。todo=未着手 / doing=進行中 / hold=保留 / done=完了。
  * 完了から戻すときは、リストの末尾に入る（並びは、続けて reorder_todos で決める）
  */
 function set_todo_status(array $todo, string $status): array
@@ -482,7 +483,7 @@ function set_todo_status(array $todo, string $status): array
     if ($todo['done_at'] !== null) {
         $todo = set_todo_done($todo, false);
     }
-    q('UPDATE todos SET doing = ? WHERE id = ?', [$status === 'doing' ? 1 : 0, $todo['id']]);
+    q('UPDATE todos SET doing = ? WHERE id = ?', [$status === 'doing' ? 1 : ($status === 'hold' ? 2 : 0), $todo['id']]);
     return row('SELECT * FROM todos WHERE id = ?', [$todo['id']]);
 }
 
@@ -702,7 +703,7 @@ function sanitize_memo_html(string $html): string
             }
             if (preg_match('#data-todo\\s*=\\s*["\']?(\\d{1,10})#i', $m[3], $a)) {
                 $attrs .= ' data-todo="' . (int)$a[1] . '"';
-                if (preg_match('#data-st\\s*=\\s*["\']?(todo|doing|done)\\b#i', $m[3], $b)) {
+                if (preg_match('#data-st\\s*=\\s*["\']?(todo|doing|hold|done)\\b#i', $m[3], $b)) {
                     $attrs .= ' data-st="' . strtolower($b[1]) . '"';
                 }
             }
@@ -1139,6 +1140,12 @@ function family_event_log(int $ownerId, int $limit = 100): array
  * 削除された予定の「取消線」表示（家族が確認するまで残る）も、この記録から作っているので、記録といっしょに消える。
  * 予定そのものは消えない。
  */
+/** その予定についての、家族用の更新履歴（追加・変更・削除）を、すべて消す（予定を削除するときに、「家族の更新履歴にも残さない」を選んだとき）。家族の画面の「削除された予定」の取消線も、なくなる */
+function family_log_forget_event(int $ownerId, int $eventId): int
+{
+    return q('DELETE FROM event_log WHERE owner_id = ? AND event_id = ?', [$ownerId, $eventId])->rowCount();
+}
+
 function family_log_delete(int $ownerId, ?int $id): int
 {
     if ($id === null) {

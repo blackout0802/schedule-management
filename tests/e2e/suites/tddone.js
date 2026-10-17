@@ -9,6 +9,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   p.on('pageerror', e => console.log('PAGEERR', String(e))); p.on('dialog', d => d.accept());
   await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', 'yamada@example.com'); await p.fill('input[name=password]', 'yamadapass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
+  await p.evaluate(() => localStorage.setItem('sched.doneOpen', 'true')); await p.reload(); await p.waitForSelector('.cal'); // 完了は、ふだんは畳んである。このテストは、開いた状態で確かめる
   await p.click('.seg label:has-text("リスト")'); await p.waitForSelector('.memo-single'); await p.waitForSelector('#todo-mgr');
   const add = async (t) => { await p.click('#todo-mgr .todo-add-btn').catch(() => {}); await p.fill('#todo-mgr .todo-add input[type=text]', t); await p.click('#todo-mgr .todo-add button[type=submit]'); await p.waitForSelector('#todo-mgr .kb-card:has-text("' + t + '")'); };
   const memoItems = () => p.evaluate(() => { const h = document.querySelector('.memo-single div[data-md=cur]'); const out = []; let d = h.nextElementSibling; while (d && !d.textContent.trim()) d = d.nextElementSibling; while (d && d.textContent.trim() && !d.hasAttribute('data-md')) { out.push(d.textContent + (d.querySelector('s') ? '[s]' : '') + (d.hasAttribute('data-todo') ? '[t]' : '')); d = d.nextElementSibling; } return out; });

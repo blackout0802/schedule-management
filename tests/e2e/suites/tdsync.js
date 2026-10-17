@@ -9,6 +9,7 @@ const L = (x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0
   const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
   await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', 'yamada@example.com'); await p.fill('input[name=password]', 'yamadapass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
+  await p.evaluate(() => localStorage.setItem('sched.doneOpen', 'true')); await p.reload(); await p.waitForSelector('.cal'); // 完了は、ふだんは畳んである。このテストは、開いた状態で確かめる
   const now = new Date(); const ym = L(now).slice(0, 7);
   const list = () => p.evaluate(async () => { const j = await (await fetch('api.php?action=todo_list&view=team')).json(); return j.todos.concat(j.done); });
   // 1) カレンダーで予定を作り、ToDoにも入れる → 件名を直すと、ToDoの件名も変わる
