@@ -51,7 +51,9 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await cardB.dragTo(p.locator('.memo-single div[data-md=cur]'));
   await p.waitForTimeout(600);
   let c1 = await blk('cur');
-  ok('ドロップすると、当日の項目に1行入る', c1.length === 1 && c1[0].t === '請求書の確認' && c1[0].todo, c1);
+  const B = a => a.filter(x => x.t === '請求書の確認'); // 先に完了にした「見積書を作る」は、完了のときに、日報の当日にも、取り消し線で入っている
+  ok('完了にしたToDo（見積書を作る）は、日報の当日にも、取り消し線つきで入っている', c1.some(x => x.t === '見積書を作る' && x.s && x.todo), c1);
+  ok('ドロップすると、当日の項目に1行入る', B(c1).length === 1 && B(c1)[0].todo, c1);
   let n1 = await blk('next');
   ok('取り消し線のない項目は、次回出勤日に転記される', n1.length === 1 && n1[0].t === '請求書の確認' && n1[0].tr, n1);
   // 次回出勤日の見出しの行へ（完了済みのカード）
@@ -66,12 +68,12 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.locator('.kb-card:has-text("請求書の確認") button:has-text("完了")').click();
   await p.waitForTimeout(900);
   c1 = await blk('cur'); n1 = await blk('next');
-  ok('完了にすると、当日の行に取り消し線が付き、次回出勤日への転記は無くなる', c1.length === 1 && c1[0].s && !n1.some(x => x.t === '請求書の確認' && x.tr), [c1, n1]);
+  ok('完了にすると、当日の行に取り消し線が付き、次回出勤日への転記は無くなる', B(c1).length === 1 && B(c1)[0].s && !n1.some(x => x.t === '請求書の確認' && x.tr), [c1, n1]);
   // 戻すと線が消えて、また転記される
   await p.locator('.kb-card:has-text("請求書の確認") button:has-text("戻す")').click();
   await p.waitForTimeout(900);
   c1 = await blk('cur'); n1 = await blk('next');
-  ok('未完了に戻すと、線が消えて、また転記される', c1.length === 1 && !c1[0].s && n1.some(x => x.t === '請求書の確認' && x.tr), [c1, n1]);
+  ok('未完了に戻すと、線が消えて、また転記される', B(c1).length === 1 && !B(c1)[0].s && n1.some(x => x.t === '請求書の確認' && x.tr), [c1, n1]);
   // 保存されている（リロード）
   await p.waitForTimeout(1200);
   await p.reload(); await p.waitForSelector('.memo-single');
@@ -86,7 +88,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   const t = await p.locator('.memo-single').innerText();
   ok('手で入れた行も保存される', t.includes('手で入れた行'), t);
   const m1h = await p.locator('.memo-single').innerHTML();
-  ok('Enterで増えた行には、ToDoの印が付かない', !/data-todo="\d+"[^>]*>手で入れた行/.test(m1h) && (m1h.match(/data-todo/g) || []).length === 3, m1h);
+  ok('Enterで増えた行には、ToDoの印が付かない', !/data-todo="\d+"[^>]*>手で入れた行/.test(m1h) && (m1h.match(/data-todo/g) || []).length === 4, m1h); // 見積（当日・次回）と請求書（当日・転記）の4つ
   await p.screenshot({ path: 'tdlink-list.png', fullPage: true });
   ok('JSエラーなし', errs.length === 0, errs);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);

@@ -346,7 +346,7 @@
      入力欄に文字を打っているとき、ダイアログを開いているとき、Ctrl・Alt・Command を押しているときは、動かさない。
      日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
   var SHORTCUTS = [
-    ['c', 'カレンダーを表示'], ['r', '会議室予約を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月に戻る（今日）'], ['← / →', '前の月 / 次の月'],
+    ['c', 'カレンダーを表示'], ['r', '会議室予約を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月・今週に戻る（今日）'], ['w', '月表示・週表示の切り替え（カレンダー）'], ['← / →', '前の月・週 / 次の月・週'],
     ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['s', 'システム更新（管理者のみ）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
   ];
   function shortcutKey(e) {
@@ -379,6 +379,7 @@
     else if (k === 'r' && !SHARE && S.view === 'team') openRoomsPage();
     else if (k === 'l' && !FAMILY) setMode('list');
     else if (k === 't') goToday();
+    else if (k === 'w' && S.mode === 'cal' && S.page === 'main') setSpan(S.span === 'week' ? 'month' : 'week');
     else if (k === 'ArrowLeft') navMonth(-1);
     else if (k === 'ArrowRight') navMonth(1);
     else if (k === '?') openShortcuts();
@@ -684,7 +685,29 @@
   function whoName() { var id = whoId(); var u = S.me.users.filter(function (x) { return x.id === id; })[0]; return u ? u.name : ''; }
 
   /* 月の移動・今日・版（業務／プライベート）・「表示する人」の切り替え。ボタンとショートカットキーの両方から使う */
-  function navMonth(delta, slide) { var d = new Date(S.year, S.month - 1 + delta, 1); S.year = d.getFullYear(); S.month = d.getMonth() + 1; S.slide = slide ? (delta > 0 ? 'next' : 'prev') : ''; renderToolbar(); load(); }
+  /* 月表示・週表示。週表示は、日曜はじまりの1週間（S.wk = その週の日曜日）を、大きく出す。読み込む範囲は、その週の木曜日がある月のカレンダー（週は、必ず、その中に入る） */
+  function sundayOf(d) { return addDays(d, -d.getDay()); }
+  function syncMonthFromWeek() { var th = addDays(parse(S.wk), 4); S.year = th.getFullYear(); S.month = th.getMonth() + 1; }
+  function initSpan(now) { S.span = store('sched.span') === 'week' ? 'week' : 'month'; S.wk = ymd(sundayOf(now)); if (S.span === 'week') syncMonthFromWeek(); }
+  function setSpan(sp) {
+    if (S.span === sp) return;
+    if (sp === 'week') { // 見ている月に今日があれば、今日の週。なければ、月の最初の週
+      var t = new Date(), inMonth = t.getFullYear() === S.year && t.getMonth() + 1 === S.month;
+      S.wk = ymd(sundayOf(inMonth ? t : new Date(S.year, S.month - 1, 1)));
+    }
+    S.span = sp; store('sched.span', sp);
+    if (sp === 'week') syncMonthFromWeek();
+    renderToolbar(); load();
+  }
+  function weekTitle() {
+    var a = parse(S.wk), z = addDays(a, 6), same = a.getMonth() === z.getMonth();
+    return (NARROW() ? '' : a.getFullYear() + '年') + (a.getMonth() + 1) + '月' + a.getDate() + '日〜' + (same ? '' : (z.getMonth() + 1) + '月') + z.getDate() + '日';
+  }
+  function navMonth(delta, slide) {
+    if (S.span === 'week') { S.wk = ymd(addDays(parse(S.wk), 7 * delta)); syncMonthFromWeek(); }
+    else { var d = new Date(S.year, S.month - 1 + delta, 1); S.year = d.getFullYear(); S.month = d.getMonth() + 1; }
+    S.slide = slide ? (delta > 0 ? 'next' : 'prev') : ''; renderToolbar(); load();
+  }
 
   /* スマホ: カレンダーを、左右にスワイプして、月を切り替える（左へ＝次の月、右へ＝前の月）。
      縦のスクロール・日付のタップ・入力中・ダイアログを開いている間は、動かさない */
@@ -704,7 +727,7 @@
     if (Date.now() - sw.at > 800 || Math.abs(dx) < Math.max(56, window.innerWidth * 0.16) || Math.abs(dy) > Math.abs(dx) * 0.6) return;
     navMonth(dx < 0 ? 1 : -1, true);
   }, { passive: true });
-  function goToday() { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; renderToolbar(); load(); }
+  function goToday() { var n = new Date(); S.year = n.getFullYear(); S.month = n.getMonth() + 1; if (S.span === 'week') { S.wk = ymd(sundayOf(n)); syncMonthFromWeek(); } renderToolbar(); load(); }
   /* 業務版とプライベート版の切り替え。画面を作り直さず、前に読んだ内容（なければ空の枠）をすぐに出して、あとから最新に差し替える */
   function setView(v) {
     if (S.view === v) return;
@@ -725,10 +748,13 @@
     tb.textContent = '';
     var todoOnly = !SHARE && S.mode === 'list'; // リストは、ToDoだけ（月の移動・表示する人は要らない）
     tb.appendChild(el('div', { class: 'toolbar' + (todoOnly ? ' todo-only' : '') },
-      todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': '前の月', title: '前の月（←）', text: '‹', onclick: function () { navMonth(-1); } }),
-      el('h2', { text: todoOnly ? 'ToDo' + (S.view === 'team' ? '（業務）' : '（プライベート）') : S.year + '年' + S.month + '月' }),
-      todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': '次の月', title: '次の月（→）', text: '›', onclick: function () { navMonth(1); } }),
-      todoOnly ? null : el('button', { class: 'btn', type: 'button', title: '今月へ戻る（t）', text: '今日', onclick: goToday }),
+      todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': S.span === 'week' ? '前の週' : '前の月', title: (S.span === 'week' ? '前の週' : '前の月') + '（←）', text: '‹', onclick: function () { navMonth(-1); } }),
+      el('h2', { text: todoOnly ? 'ToDo' + (S.view === 'team' ? '（業務）' : '（プライベート）') : S.span === 'week' ? weekTitle() : S.year + '年' + S.month + '月' }),
+      todoOnly ? null : el('button', { class: 'btn', type: 'button', 'aria-label': S.span === 'week' ? '次の週' : '次の月', title: (S.span === 'week' ? '次の週' : '次の月') + '（→）', text: '›', onclick: function () { navMonth(1); } }),
+      todoOnly ? null : el('button', { class: 'btn', type: 'button', title: (S.span === 'week' ? '今週へ' : '今月へ') + '戻る（t）', text: '今日', onclick: goToday }),
+      todoOnly ? null : el('span', { class: 'span-sw', role: 'group', 'aria-label': '月表示・週表示（w）' }, [['month', '月'], ['week', '週']].map(function (m) {
+        return el('button', { type: 'button', 'aria-pressed': S.span === m[0] ? 'true' : 'false', title: m[0] === 'week' ? '週表示（w）' : '月表示（w）', text: m[1], onclick: function () { setSpan(m[0]); } });
+      })),
       el('span', { class: 'spacer', style: 'flex:1' }),
       el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
       SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' },
@@ -1076,19 +1102,19 @@
     syncTodoHover();
     if (S.mode === 'list') { renderListView(board, mgrKeep); return; }
     var todayStr = ymd(new Date());
-    var r = gridRange();
+    var r = S.span === 'week' ? { start: parse(S.wk), end: addDays(parse(S.wk), 6) } : gridRange();
     var days = [];
     for (var d = r.start; d <= r.end; d = addDays(d, 1)) days.push(d);
 
     var head = el('div', { class: 'cal-dow' });
     DOW.forEach(function (w, i) { head.appendChild(el('div', { class: 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), text: w })); });
-    var weeks = el('div', { class: 'cal-weeks', role: 'grid', 'aria-label': S.year + '年' + S.month + '月のカレンダー' });
+    var weeks = el('div', { class: 'cal-weeks', role: 'grid', 'aria-label': (S.span === 'week' ? weekTitle() + 'の週' : S.year + '年' + S.month + '月') + 'のカレンダー' });
 
     for (var w = 0; w < days.length; w += 7) {
       weeks.appendChild(renderWeek(days.slice(w, w + 7), todayStr));
     }
     var slide = S.slide; S.slide = '';
-    board.appendChild(el('div', { class: 'cal-wrap' + (slide ? ' slide-' + slide : '') }, el('div', { class: 'cal', style: offdayPref().color ? '--offday-bg:' + offdayBg(offdayPref().color) : null }, head, weeks)));
+    board.appendChild(el('div', { class: 'cal-wrap' + (slide ? ' slide-' + slide : '') }, el('div', { class: 'cal' + (S.span === 'week' ? ' wk' : ''), style: offdayPref().color ? '--offday-bg:' + offdayBg(offdayPref().color) : null }, head, weeks)));
     /* 使い方の説明は、画面に並べず、「ⓘ 使い方」のダイアログにまとめる */
     var tips = [];
     if (!FAMILY) tips.push('繰り返しの業務は「↻」付き・色は文字の色で区別します（標準）。色は、右上の「設定」→「予定の色」で変えられます。');
@@ -1143,11 +1169,12 @@
 
   function renderWeek(days, todayStr) {
     var pack = weekSegments(days);
-    var L = Math.max(pack.lanes, NARROW() ? 2 : 3); // スマホでは、予定のない週を低くして、1画面に収める
-    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + (NARROW() ? '20px repeat(' + L + ',19px)' : '24px repeat(' + L + ',22px)') + ' minmax(6px,1fr)' });
+    var wk = S.span === 'week'; // 週表示: 1週間だけを、大きく（予定は、折り返して全文を出す）
+    var L = Math.max(pack.lanes, wk ? 1 : NARROW() ? 2 : 3); // スマホでは、予定のない週を低くして、1画面に収める
+    var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + (wk ? '28px repeat(' + L + ',auto)' : NARROW() ? '20px repeat(' + L + ',19px)' : '24px repeat(' + L + ',22px)') + ' minmax(6px,1fr)' });
     days.forEach(function (d, c) {
       var s = ymd(d), hol = S.holidays[s];
-      var cls = 'cell' + (d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
+      var cls = 'cell' + (!wk && d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
         style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
         el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
@@ -1559,6 +1586,15 @@
     }).catch(fail);
   }
   var todoSeq = 0;
+  /* ToDoを完了にしたら、日報の当日の項目にも、取り消し線つきで入れる（すでに日報に入っていれば、取り消し線にするだけ。syncMemoTodos が行う）。
+     「いま新しく完了になったもの」だけが対象（前回の読み込みで、完了に入っていなかったもの）。業務のToDoだけ（日報は業務） */
+  function memoAddDone() {
+    var seen = S.doneSeen || (S.doneSeen = {}), prev = seen[S.view], now = {};
+    (S.done || []).forEach(function (t) { now[t.id] = true; });
+    seen[S.view] = now;
+    if (!prev || S.view !== 'team' || !memoEd || !S.memo) return;
+    S.done.forEach(function (t) { if (!prev[t.id] && t.kind === 'work') memoAddTodo(t, 'cur', true); });
+  }
   function applyTodos(j) { S.todos = j.todos; S.done = j.done || []; S.others = j.others || { todos: [], done: [] }; S.revTd = j.rev; }
 
   /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
@@ -1584,6 +1620,7 @@
 
   /* 細い欄（カレンダーの横）と、リストタブの管理画面の両方を描く */
   function renderTodo() {
+    memoAddDone(); // 完了になったToDoは、日報にも（取り消し線つきで）入れる
     var tp = document.getElementById('todo-panel');
     if (tp && !tp.classList.contains('away') && !S.drag) renderTodoPanel(tp);
     var side = document.getElementById('todo');
@@ -2423,18 +2460,19 @@
   function syncMemoTodos() { if (memoEd && applyTodoState()) memoChanged(); }
 
   /* ToDoを、日報に1行入れる。which = 'cur'（当日・初期値）か 'next'（次回出勤日）。完了なら取り消し線つき */
-  function memoAddTodo(t, which) {
-    if (!memoEd) { toast('日報が読み込まれていません'); return; }
+  function memoAddTodo(t, which, quiet) { // quiet = 完了にしたときの自動の追加（案内は出さない）
+    if (!memoEd) { if (!quiet) toast('日報が読み込まれていません'); return; }
     var h = mHead(which || 'cur');
-    if (!h) { toast('日報に「【日付】」の行がありません。「雛形に戻す」で入れ直せます'); return; }
+    if (!h) { if (!quiet) toast('日報に「【日付】」の行がありません。「雛形に戻す」で入れ直せます'); return; }
     var blk = mBlock(h), st = t.status || 'todo';
-    if (blk.items.some(function (d) { return d.getAttribute('data-todo') === String(t.id); })) { toast('「' + t.title + '」は、すでに' + (which === 'next' ? '次回出勤日' : '当日') + 'の日報に入っています'); return; }
+    var has = quiet ? !!memoEd.querySelector(':scope > div[data-todo="' + String(t.id) + '"]') : blk.items.some(function (d) { return d.getAttribute('data-todo') === String(t.id); });
+    if (has) { if (!quiet) toast('「' + t.title + '」は、すでに' + (which === 'next' ? '次回出勤日' : '当日') + 'の日報に入っています'); return; } // 自動の追加は、日報のどこかに入っていれば足さない（取り消し線は、syncMemoTodos が付ける）
     var d = document.createElement('div');
     d.setAttribute('data-todo', String(t.id)); d.setAttribute('data-st', st);
     if (st === 'done') { var sEl = document.createElement('s'); sEl.textContent = t.title; d.appendChild(sEl); } else d.appendChild(document.createTextNode(t.title));
     memoEd.insertBefore(d, blk.items.length ? blk.after : blk.ref);
     memoChanged();
-    toast('日報（' + (which === 'next' ? '次回出勤日' : '当日') + '）に入れました: ' + t.title + (st === 'done' ? '（完了・取り消し線）' : ''));
+    toast(quiet ? '日報（当日）にも、取り消し線で入れました: ' + t.title : '日報（' + (which === 'next' ? '次回出勤日' : '当日') + '）に入れました: ' + t.title + (st === 'done' ? '（完了・取り消し線）' : ''));
   }
 
   /* 取り消し線の切り替え。何も選んでいなければ、カーソルのある行全体に付ける */
@@ -3726,7 +3764,7 @@
       S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
       document.title = m.title;
       var now = new Date();
-      S.year = now.getFullYear(); S.month = now.getMonth() + 1;
+      S.year = now.getFullYear(); S.month = now.getMonth() + 1; initSpan(now);
       renderShell(); load(); startAutoRefresh();
     }).catch(function (e) { if (window.console) console.error(e); root.textContent = 'このリンクは無効です。共有してくれた方に確認してください。'; });
     return;
@@ -3735,7 +3773,7 @@
     S.me = me;
     csrf = me.csrf;
     var now = new Date();
-    S.year = now.getFullYear(); S.month = now.getMonth() + 1;
+    S.year = now.getFullYear(); S.month = now.getMonth() + 1; initSpan(now);
     S.view = store('sched.view') === 'me' ? 'me' : 'team';
     if (/[?&]view=team(&|$)/.test(location.search)) { // 通知のリンクから開いたときは、必ず業務版
       S.view = 'team'; store('sched.view', 'team');

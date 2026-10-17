@@ -835,6 +835,18 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .toast .toast-act { border: 0; background: transparent; color: var(--bg); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 2px 4px; white-space: nowrap; }
 
 
+/* ---------- 週表示（v1.64）----------
+   カレンダーの「月 / 週」の切り替え。週表示は、1週間だけを大きく出し、予定は折り返して全文を見せる。 */
+.span-sw { display: inline-flex; border: .5px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.span-sw button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); }
+.span-sw button + button { border-left: .5px solid var(--line); }
+.span-sw button[aria-pressed="true"] { background: var(--work-soft); color: var(--work); font-weight: 700; }
+.cal.wk .week { min-height: min(64vh, 560px); }
+.cal.wk .bar { height: auto; min-height: 22px; line-height: 1.45; padding: 3px 7px; white-space: normal; overflow: visible; overflow-wrap: anywhere; font-size: 12.5px; }
+.cal.wk .bar.rm::before, .cal.wk .bar.off.pc::before { vertical-align: 0; }
+.cal.wk .cell .num { height: 24px; font-size: 13px; }
+@media (max-width: 640px) { .cal.wk .week { min-height: 58vh; } .cal.wk .bar { font-size: 11.5px; padding: 2px 4px; } }
+
 /* ---------- 会議室の予約（v1.51）----------
    部屋ごとに、色と一文字（会・応 など）を決めて、カレンダー・まとめの表・予約の画面の、すべてで同じ見た目にする。
    色は、予定の区分（業務・休み・プライベート）とは別に、部屋のためだけに使う。 */
