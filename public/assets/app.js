@@ -712,7 +712,7 @@
     if (S.page !== 'main' || SHARE) { renderShell(); load(); return; }
     document.querySelectorAll('.tabs .tab').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-view') === v ? 'true' : 'false'); });
     var c = S.cache[evKey(evParams())];
-    if (c) applyEvents(c); else { S.events = []; S.summary = null; }
+    if (c) applyEvents(c); else { S.events = []; S.roomBk = []; S.summary = null; }
     var t = S.tdCache[v];
     if (t) applyTodos(t); else { S.todos = []; S.done = []; S.others = { todos: [], done: [] }; }
     renderToolbar(); renderBoard(); renderTodo();
@@ -770,7 +770,7 @@
   }
   function evKey(p) { return [p.view, p.from, p.to, p.who || ''].join('|'); }
   function applyEvents(c) {
-    S.events = c.events; S.holidays = c.holidays; S.summary = c.summary; buildLeaveIdx(); S.revEv = c.rev;
+    S.events = c.events; S.holidays = c.holidays; S.summary = c.summary; S.roomBk = c.rooms || []; if (c.roomDefs) S.roomsMeta = c.roomDefs; buildLeaveIdx(); S.revEv = c.rev;
   }
 
   var loadSeq = 0;
@@ -784,7 +784,7 @@
       if (seq !== loadSeq) return;
       var j = r[0];
       if (r[1]) setUpdateLog(r[1]);
-      var c = { events: FAMILY ? j.events.filter(function (e) { return !(e.deleted && ackIds().indexOf(e.log_id) >= 0); }) : j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev };
+      var c = { events: FAMILY ? j.events.filter(function (e) { return !(e.deleted && ackIds().indexOf(e.log_id) >= 0); }) : j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev, rooms: j.rooms || [], roomDefs: j.room_defs || null };
       S.loading = false;
       applyEvents(c); S.cache[evKey(params)] = c; renderBoard();
       if (!SHARE) memoRefreshDays(); // 休みなどが変わると、出勤日（日報の日）も変わる
@@ -797,7 +797,7 @@
     var p = evParams(other);
     api('events', { params: p, quiet: true }).then(function (j) {
       if (seq !== loadSeq) return;
-      S.cache[evKey(p)] = { events: j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev };
+      S.cache[evKey(p)] = { events: j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev, rooms: j.rooms || [], roomDefs: j.room_defs || null };
     }).catch(function () { /* 裏の読み込みは、失敗しても何もしない */ });
     api('todo_list', { params: { view: other }, quiet: true }).then(function (j) { S.tdCache[other] = j; }).catch(function () { });
   }
@@ -922,9 +922,18 @@
   function canReturnToTodo(e) { return e.editable && e.kind !== 'off' && !e.recurring && e.owner_id === S.me.user.id; }
 
   /* 1週間分の、連続する同じ予定を1本のバーにまとめる */
+  /* カレンダーに出す予定: 予定のほかに、会議室の予約（業務版。予約した人・参加者・全社のとき全員の予約）。予約は、kind が 'room' の予定として扱う */
+  function calEvents() {
+    if (SHARE || S.view !== 'team' || !S.roomBk || !S.roomBk.length) return S.events;
+    if (S._rbSrc !== S.roomBk) {
+      S._rbEv = S.roomBk.map(function (b) { return { id: 1000000000 + b.id, kind: 'room', rb: b, start: b.date, end: b.date, start_time: b.start, end_time: b.end, title: b.title, tag: '', owner_id: b.owner_id, owner_name: b.owner_name, editable: false, note: '' }; });
+      S._rbSrc = S.roomBk;
+    }
+    return S.events.concat(S._rbEv);
+  }
   function weekSegments(days) {
     var segs = [];
-    S.events.forEach(function (e) {
+    calEvents().forEach(function (e) {
       var cur = null;
       for (var c = 0; c < 7; c++) {
         if (shownOn(e, ymd(days[c]))) { if (cur) cur.e = c; else { cur = { ev: e, s: c, e: c }; segs.push(cur); } } else cur = null;
@@ -948,6 +957,11 @@
 
   function barFor(g, days) {
     var e = g.ev;
+    if (e.kind === 'room') { // 会議室の予約の帯（会議室予約のページと同じ見た目: 部屋の色・頭に部屋の一文字）
+      var rbar = roomsBar(e.rb, allView(), function () { if (NARROW()) openDayPopup(e.start); else openRoomView(e.rb); });
+      rbar.style.gridColumn = (g.s + 1) + ' / ' + (g.e + 2); rbar.style.gridRow = String(g.lane + 2);
+      return rbar;
+    }
     var bar = el('div', { role: 'button', tabindex: '0', class: 'bar ' + e.kind + pcClass(e) + (e.recurring ? ' rec' : '') + (e.important ? ' imp' : '') + (FAMILY && S.updIds && S.updIds[e.id] ? ' upd' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : '') + (g.contL ? ' cl' : '') + (g.contR ? ' cr' : ''),
       style: 'grid-column:' + (g.s + 1) + ' / ' + (g.e + 2) + ';grid-row:' + (g.lane + 2) + eventColorStyle(e),
       text: (g.contL ? '… ' : '') + eventLabel(e, e.start === ymd(days[g.s]), NARROW()), title: (e.deleted ? '削除された予定: ' : '') + eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''),
@@ -1580,7 +1594,7 @@
 
   function setMode(m) {
     S.mode = m; store('sched.mode', m);
-    if (m !== 'list') { var c = S.cache[evKey(evParams())]; if (c) applyEvents(c); else S.events = []; } // 表示する人が違うと、読み込む予定も違う
+    if (m !== 'list') { var c = S.cache[evKey(evParams())]; if (c) applyEvents(c); else { S.events = []; S.roomBk = []; } } // 表示する人が違うと、読み込む予定も違う
     renderToolbar(); renderBoard(); if (m !== 'list') load();
   }
 
@@ -2667,10 +2681,17 @@
   /* 日付を押したときの、その日の予定の一覧（スマホ・タッチ操作・共有リンクのとき）。予定を押すと詳細／編集 */
   function useDayPopup() { return !!SHARE || NARROW() || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
   function openDayPopup(ds) {
-    var list = S.events.filter(function (e) { return shownOn(e, ds); });
+    var list = calEvents().filter(function (e) { return shownOn(e, ds); });
     list.sort(function (a, b) { return (a.kind === 'off' ? 0 : 1) - (b.kind === 'off' ? 0 : 1) || (a.start_time || '').localeCompare(b.start_time || '') || a.id - b.id; });
     var hol = S.holidays[ds];
     var items = list.map(function (e) {
+      if (e.kind === 'room') { // 会議室の予約
+        var rr = roomOf(e.rb.room_id), subr = [rr.name, e.rb.start + '–' + e.rb.end];
+        if (e.rb.owner_name) subr.push('予約: ' + e.rb.owner_name);
+        if (e.rb.participants && e.rb.participants.length) subr.push('参加: ' + e.rb.participants.map(function (u) { return u.name; }).join('・'));
+        return el('button', { type: 'button', class: 'day-item rm rm-s' + rr.slot, 'data-rs': rr.short, onclick: function () { ov.close(); openRoomView(e.rb); } },
+          el('span', { class: 'di-title', text: e.rb.title }), el('span', { class: 'di-sub', text: subr.join('　') }));
+      }
       var sub = [];
       if (e.kind === 'work' && !FAMILY && e.owner_name) sub.push(e.owner_name);
       if (e.tag && e.kind !== 'off') sub.push(e.tag); // 休みは、見出しに分類が入っている
@@ -3357,7 +3378,7 @@
   function minHm(m) { return pad(Math.floor(m / 60)) + ':' + pad(m % 60); }
   function durText(m) { return (m >= 60 ? Math.floor(m / 60) + '時間' : '') + (m % 60 ? (m % 60) + '分' : ''); }
   function openRoomsPage() { location.hash = 'rooms'; }
-  function roomAll() { return S.rm && S.rm.data ? S.rm.data.rooms : []; }
+  function roomAll() { return S.rm && S.rm.data ? S.rm.data.rooms : (S.roomsMeta || []); }
   function roomList() { return roomAll().filter(function (r) { return r.active; }); }
   function roomOf(id) { return roomAll().filter(function (r) { return r.id === id; })[0] || { id: id, name: '（なくなった部屋）', short: '？', capacity: 0, slot: 0, equipment: '' }; }
   function roomBadge(r, small) { return el('span', { class: 'rb rm-s' + r.slot + (small ? ' sm' : ''), title: r.name, text: r.short }); }
@@ -3376,6 +3397,7 @@
       rm.extra = []; rm.extraDays = {}; rm.extraClosed = {};
       S.revEv = r[0].rev;
       roomsDraw();
+      if (rm.openId) { var ob = r[0].bookings.filter(function (x) { return x.id === rm.openId; })[0]; rm.openId = null; if (ob) openRoomBooking({ booking: ob }); } // カレンダーの帯から来たときは、その予約を開く
     }).catch(function (e) { if (!quiet) fail(e); });
   }
   function roomsBookingsOn(date) {
@@ -3414,14 +3436,17 @@
     var first = parse(month), last = parse(monthLast(month));
     return { start: addDays(first, -first.getDay()), end: addDays(last, 6 - last.getDay()) };
   }
-  function roomsBar(b) {
-    var r = roomOf(b.room_id);
-    var label = (NARROW() ? '' : b.start + '-' + b.end + ' ') + b.title;
-    return el('div', { role: 'button', tabindex: '0', class: 'bar rm rm-s' + r.slot + (b.past ? ' past' : '') + (b.mine ? ' mine' : ''), 'data-rs': r.short,
-      title: r.name + '　' + b.start + '–' + b.end + '　' + b.title + (b.masked ? '' : (b.owner_name ? '　' + b.owner_name : '') + (b.pax ? '　' + b.pax + '名' : '') + (b.private ? '　（非公開）' : '')),
+  /* 予約の帯。withOwner = 先頭に予約した人の姓（全社の表示）。onOpen = 押したときの動き（初めは、予約の画面） */
+  function roomsBar(b, withOwner, onOpen) {
+    var r = roomOf(b.room_id), open = onOpen || function () { openRoomBooking({ booking: b }); };
+    var who = withOwner && b.owner_name ? ownerShort({ owner_id: b.owner_id, owner_name: b.owner_name }) + '｜' : '';
+    var label = who + (NARROW() ? '' : b.start + '-' + b.end + ' ') + b.title;
+    var parts = b.participants && b.participants.length ? '　参加: ' + b.participants.map(function (u) { return u.name; }).join('・') : '';
+    return el('div', { role: 'button', tabindex: '0', class: 'bar rm rm-s' + r.slot + (b.past ? ' past' : '') + (b.mine ? ' mine' : '') + (b.invited ? ' invited' : ''), 'data-rs': r.short,
+      title: r.name + '　' + b.start + '–' + b.end + '　' + b.title + (b.masked ? '' : (b.owner_name ? '　予約: ' + b.owner_name : '') + parts + (b.pax ? '　' + b.pax + '名' : '') + (b.private ? '　（非公開）' : '')),
       text: label,
-      onclick: function (ev) { ev.stopPropagation(); openRoomBooking({ booking: b }); },
-      onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openRoomBooking({ booking: b }); } } });
+      onclick: function (ev) { ev.stopPropagation(); open(); },
+      onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); open(); } } });
   }
   function roomsDayClick(ds) {
     var rm = S.rm, c = rm.data.cfg, t = ymd(new Date()), admin = roomIsAdmin(), why = roomsClosedReason(ds);
@@ -3460,12 +3485,13 @@
         el('td', { class: 'ttl', text: b.title + (b.private && !b.masked ? '（非公開）' : '') }),
         el('td', { class: 'opt', text: b.masked ? '' : ROOM_KIND_NAME[b.kind] || '' }),
         el('td', { class: 'opt', text: b.owner_name ? b.owner_name + (b.mine ? '（自分）' : '') : '' }),
+        el('td', { class: 'opt ppl', text: (b.participants || []).map(function (u) { return u.name; }).join('・') }),
         el('td', { class: 'n opt', text: b.pax ? b.pax + '名' : '' }));
     });
     return el('section', { class: 'month-sum', 'aria-label': mo + '月の会議室の予約' },
       el('h3', null, mo + '月の予約（' + bs.length + '件）', el('span', { class: 'ms-biz', text: stats })),
       bs.length ? el('div', { class: 'scroll-x' }, el('table', { class: 'ms-table rm-table' },
-        el('thead', null, el('tr', null, ['日付', '時間', '部屋', '用件', '区分', '予約した人', '人数'].map(function (h) { return el('th', { scope: 'col', class: h === '区分' || h === '予約した人' || h === '人数' ? 'opt' : null, text: h }); }))),
+        el('thead', null, el('tr', null, ['日付', '時間', '部屋', '用件', '区分', '予約した人', '参加者', '人数'].map(function (h) { return el('th', { scope: 'col', class: h === '区分' || h === '予約した人' || h === '参加者' || h === '人数' ? 'opt' : null, text: h }); }))),
         el('tbody', null, rows)))
         : el('p', { class: 'muted', style: 'margin:4px 0', text: 'この月の予約はありません。カレンダーの日付を押すと、予約できます。' }));
   }
@@ -3538,6 +3564,12 @@
     var kind = el('select', { name: 'kind' }, Object.keys(ROOM_KIND_NAME).map(function (k) { return el('option', { value: k, text: ROOM_KIND_NAME[k], selected: (b ? b.kind : 'meeting') === k }); }));
     var pax = el('input', { type: 'number', name: 'pax', min: '1', max: '999', required: true, inputmode: 'numeric', value: b ? String(b.pax) : '', placeholder: '人数' });
     var priv = el('input', { type: 'checkbox', name: 'private', checked: !!(b && b.private), style: 'width:auto' });
+    var npre = el('input', { type: 'checkbox', name: 'notify_pre', checked: b ? !!b.notify_pre : true, style: 'width:auto' });
+    var ownerId = b ? b.owner_id : S.me.user.id, chosen = {};
+    (b && b.participants || []).forEach(function (u) { chosen[u.id] = true; });
+    var partBox = el('div', { class: 'rm-parts' }, S.me.users.filter(function (u) { return u.id !== ownerId; }).map(function (u) {
+      return el('label', { class: 'check rm-part' }, el('input', { type: 'checkbox', value: String(u.id), checked: !!chosen[u.id], style: 'width:auto', onchange: function () { chosen[u.id] = this.checked; } }), ' ' + u.name);
+    }));
     var msg = el('p', { class: 'rm-msg', role: 'status', 'aria-live': 'polite' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var okBtn = el('button', { class: 'btn primary', type: 'submit', text: b ? '変更を保存' : '予約する' });
@@ -3548,7 +3580,7 @@
       bt._status = status;
       return bt;
     });
-    function val() { return { id: b ? b.id : null, room_id: roomId, date: date.value, start: st.value, end: et.value, title: title.value.trim(), kind: kind.value, pax: pax.value === '' ? '' : +pax.value, private: priv.checked }; }
+    function val() { return { id: b ? b.id : null, room_id: roomId, date: date.value, start: st.value, end: et.value, title: title.value.trim(), kind: kind.value, pax: pax.value === '' ? '' : +pax.value, private: priv.checked, notify_pre: npre.checked, participants: Object.keys(chosen).filter(function (k) { return chosen[k]; }).map(Number) }; }
     function conflictOf(rid, v) {
       return roomsBookingsOn(v.date).filter(function (x) { return x.room_id === rid && (!b || x.id !== b.id) && hmMin(x.start) < hmMin(v.end) && hmMin(x.end) > hmMin(v.start); })[0];
     }
@@ -3599,7 +3631,9 @@
       el('div', { class: 'rm-quick' }, el('span', { class: 'hint', text: '時間帯：' }), quick('午前 ' + c.open.replace(/^0/, '') + '–12:00', c.open, noon), quick('午後 13:00–' + c.close.replace(/^0/, ''), pm, c.close), quick('終日', c.open, c.close)),
       el('div', { class: 'row' }, el('label', null, '開始', st), el('label', null, '終了', et)),
       el('div', { class: 'row' }, el('label', null, '区分', kind), el('label', null, '人数', pax)),
-      el('label', { class: 'check rm-priv' }, priv, '非公開にする（他の人には「予約済」とだけ見える。用件・人数・予約した人は、本人と管理者だけに見える）'),
+      S.me.users.length > 1 ? el('div', { class: 'rm-partwrap' }, el('div', { class: 'rm-partlbl', text: '参加者（選んだ人のカレンダーにも、この予約が出ます）' }), partBox) : null,
+      el('label', { class: 'check rm-priv' }, npre, '開始の1時間前に、Slackで知らせる'),
+      el('label', { class: 'check rm-priv' }, priv, '非公開にする（他の人には「予約済」とだけ見える。用件・人数・予約した人は、本人・管理者・参加者だけに見える）'),
       msg, err,
       el('div', { class: 'actions' },
         b ? el('button', { class: 'btn danger left', type: 'button', text: '予約を取り消す', onclick: function () { roomDelete(b, ov); } }) : null,
@@ -3619,12 +3653,15 @@
     var r = roomOf(b.room_id);
     var rows = [['部屋', r.name], ['日付', mdw(b.date)], ['時間', b.start + '–' + b.end + '（' + durText(hmMin(b.end) - hmMin(b.start)) + '）']];
     if (!b.masked) rows.push(['用件', b.title], ['区分', ROOM_KIND_NAME[b.kind] || ''], ['人数', b.pax + '名'], ['予約した人', b.owner_name]);
+    if (!b.masked && b.participants && b.participants.length) rows.push(['参加者', b.participants.map(function (u) { return u.name; }).join('・')]);
+    if (!b.masked && (b.mine || b.invited || roomIsAdmin()) && !b.past) rows.push(['1時間前の通知', b.notify_pre ? 'Slackで知らせる' : '知らせない']);
     var why = b.past ? (b.deletable ? '終わった予約は、変更できません。管理者は、取り消せます（間違いの整理用）。' : '終わった予約は、変更も取り消しもできません。') : b.masked ? '非公開の予約です。内容は、予約した本人と管理者だけに見えます。' : '変更・取り消しができるのは、予約した本人と管理者だけです。時間を変えたいときは、予約した人に連絡してください。';
     var body = el('div', { class: 'form' },
       el('div', { class: 'rm-view rm-s' + r.slot }, roomBadge(r), el('div', null, rows.map(function (x) { return el('p', null, el('span', { class: 'muted', text: x[0] + '　' }), x[1]); }))),
       el('p', { class: 'hint', text: why }),
       el('div', { class: 'actions' },
-        b.deletable ? el('button', { class: 'btn danger left', type: 'button', text: '予約を取り消す', onclick: function () { roomDelete(b, ov); } }) : null,
+        b.deletable && S.page === 'rooms' ? el('button', { class: 'btn danger left', type: 'button', text: '予約を取り消す', onclick: function () { roomDelete(b, ov); } }) : null,
+        S.page !== 'rooms' && (b.editable || b.deletable) ? el('button', { class: 'btn primary', type: 'button', text: '変更・取り消し（会議室予約のページ）', onclick: function () { ov.close(); S.rm = S.rm || { data: null, ahead: null }; S.rm.month = monthFirst(parse(b.date)); S.rm.openId = b.id; openRoomsPage(); } }) : null,
         el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     var ov = openModal('予約の内容', body);
     ov.outsideClose = true;

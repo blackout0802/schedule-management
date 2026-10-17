@@ -205,6 +205,8 @@ CREATE TABLE IF NOT EXISTS room_bookings (
   is_private INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  updated_by INTEGER NULL
+  updated_by INTEGER NULL,
+  participants TEXT NOT NULL DEFAULT '',
+  notify_pre INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS ix_room_bookings_day ON room_bookings (bdate, room_id);

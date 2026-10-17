@@ -206,6 +206,10 @@ function handle_api(): void
                 'holidays' => $holidays,
                 'rev' => $rev,
             ];
+            if ($view === 'team') { // 会議室の予約も、カレンダーに出す（全社は全部、特定の人は、その人が予約した・参加者の予約）
+                $out['rooms'] = rooms_list_for_calendar($from, $to, $user, ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0);
+                $out['room_defs'] = rooms_for_client(false);
+            }
             $sum = (string)($_GET['sum'] ?? ''); // 表示している月（YYYY-MM）。あれば、その月の自分の出勤日・休みの日数も返す
             if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $sum)) {
                 $out['summary'] = month_summary_multi(summary_users($user, $view, ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0), $sum);

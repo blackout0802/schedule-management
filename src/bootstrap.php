@@ -333,6 +333,14 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         error_log('[schedule] events.todo_id の索引を作れませんでした: ' . $e->getMessage());
     }
+    // 会議室の予約: 参加者（社員番号をカンマで並べたもの）と、開始の1時間前の Slack 通知（1=送る）
+    foreach (['participants' => "VARCHAR(300) NOT NULL DEFAULT ''", 'notify_pre' => 'TINYINT NOT NULL DEFAULT 1'] as $col => $type) {
+        try {
+            db()->query("SELECT $col FROM room_bookings LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            db()->exec('ALTER TABLE room_bookings ADD COLUMN ' . $col . ' ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? $type : ($col === 'participants' ? "TEXT NOT NULL DEFAULT ''" : 'INTEGER NOT NULL DEFAULT 1')));
+        }
+    }
     // 家族用の更新履歴に、削除された予定を「取消線」で見せるための、予定の種類と時刻
     foreach (['kind' => 'VARCHAR(10)', 'start_time' => 'VARCHAR(5)', 'end_time' => 'VARCHAR(5)'] as $col => $type) {
         try {

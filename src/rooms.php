@@ -273,6 +273,14 @@ function rooms_validate_input(array $in, array $user, ?array $existing = null, ?
     if (!isset(ROOM_KINDS[$kind])) {
         return [null, '区分（委員会・打ち合わせ・来客・研修・その他）を選んでください。'];
     }
+    // 参加者（予約した人のほかに、カレンダーにも予約を出す人）と、開始の1時間前の Slack 通知
+    $ownerId = $existing ? (int)$existing['owner_id'] : (int)$user['id'];
+    $partsIn = array_key_exists('participants', $in) ? $in['participants'] : ($existing ? $existing['participants'] : []);
+    [$pids, $perr] = rooms_participants_parse($partsIn, $ownerId);
+    if ($perr) {
+        return [null, $perr];
+    }
+    $notifyPre = array_key_exists('notify_pre', $in) ? (!empty($in['notify_pre']) ? 1 : 0) : ($existing ? (int)$existing['notify_pre'] : 1);
     $c = rooms_conflict((int)$room['id'], $date, $s, $e, $existing ? (int)$existing['id'] : 0);
     if ($c) {
         $mine = (int)$c['owner_id'] === (int)$user['id'] || is_admin($user);
@@ -281,8 +289,48 @@ function rooms_validate_input(array $in, array $user, ?array $existing = null, ?
     }
     return [[
         'room_id' => (int)$room['id'], 'bdate' => $date, 'start_time' => $st, 'end_time' => $et, 'title' => $title, 'kind' => $kind,
-        'pax' => $pax, 'is_private' => !empty($in['private']) ? 1 : 0,
+        'pax' => $pax, 'is_private' => !empty($in['private']) ? 1 : 0, 'participants' => implode(',', $pids), 'notify_pre' => $notifyPre,
     ], null];
+}
+
+const ROOM_MAX_PARTICIPANTS = 30;
+
+/**
+ * 参加者の指定（社員番号の配列、またはカンマ区切りの文字列）を検べて、番号の配列にする。予約した人自身・重複は除く。
+ * @return array [int[]|null, エラー文|null]
+ */
+function rooms_participants_parse($v, int $ownerId): array
+{
+    $list = is_array($v) ? $v : ($v === null || $v === '' ? [] : explode(',', (string)$v));
+    $ids = [];
+    foreach ($list as $x) {
+        if (!is_numeric($x) || (int)$x < 1) {
+            return [null, '参加者の指定が正しくありません。'];
+        }
+        if ((int)$x !== $ownerId) {
+            $ids[(int)$x] = true;
+        }
+    }
+    $ids = array_keys($ids);
+    if (count($ids) > ROOM_MAX_PARTICIPANTS) {
+        return [null, '参加者は、' . ROOM_MAX_PARTICIPANTS . '人までです。'];
+    }
+    if ($ids) {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $ok = rows("SELECT id FROM users WHERE active = 1 AND id IN ($ph)", $ids);
+        if (count($ok) !== count($ids)) {
+            return [null, '参加者に選べない人が含まれています。'];
+        }
+    }
+    sort($ids);
+    return [$ids, null];
+}
+
+/** 予約の参加者の番号（保存された文字列から） */
+function rooms_participant_ids(array $b): array
+{
+    $s = trim((string)($b['participants'] ?? ''));
+    return $s === '' ? [] : array_values(array_filter(array_map('intval', explode(',', $s))));
 }
 
 function rooms_audit_label(array $b, string $roomName): string
@@ -297,13 +345,17 @@ function rooms_save(array $data, array $user, ?array $existing = null): array
 {
     $now = now_str();
     if ($existing) {
-        q('UPDATE room_bookings SET room_id=?, bdate=?, start_time=?, end_time=?, title=?, kind=?, pax=?, is_private=?, updated_at=?, updated_by=? WHERE id=?', [
-            $data['room_id'], $data['bdate'], $data['start_time'], $data['end_time'], $data['title'], $data['kind'], $data['pax'], $data['is_private'], $now, (int)$user['id'], (int)$existing['id'],
+        q('UPDATE room_bookings SET room_id=?, bdate=?, start_time=?, end_time=?, title=?, kind=?, pax=?, is_private=?, participants=?, notify_pre=?, updated_at=?, updated_by=? WHERE id=?', [
+            $data['room_id'], $data['bdate'], $data['start_time'], $data['end_time'], $data['title'], $data['kind'], $data['pax'], $data['is_private'], $data['participants'], $data['notify_pre'], $now, (int)$user['id'], (int)$existing['id'],
         ]);
         $id = (int)$existing['id'];
+        // 日付・時間を変えた、または通知をオンにし直したときは、開始の1時間前の通知を、新しく送れるようにする
+        if ($existing['bdate'] !== $data['bdate'] || $existing['start_time'] !== $data['start_time'] || ((int)$existing['notify_pre'] === 0 && (int)$data['notify_pre'] === 1)) {
+            q('DELETE FROM notification_log WHERE ref = ?', ['roompre:' . $id]);
+        }
     } else {
-        q('INSERT INTO room_bookings (room_id, bdate, start_time, end_time, title, kind, pax, owner_id, is_private, created_at, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [
-            $data['room_id'], $data['bdate'], $data['start_time'], $data['end_time'], $data['title'], $data['kind'], $data['pax'], (int)$user['id'], $data['is_private'], $now, $now, (int)$user['id'],
+        q('INSERT INTO room_bookings (room_id, bdate, start_time, end_time, title, kind, pax, owner_id, is_private, participants, notify_pre, created_at, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
+            $data['room_id'], $data['bdate'], $data['start_time'], $data['end_time'], $data['title'], $data['kind'], $data['pax'], (int)$user['id'], $data['is_private'], $data['participants'], $data['notify_pre'], $now, $now, (int)$user['id'],
         ]);
         $id = (int)db()->lastInsertId();
         // 同じ瞬間に、2人が同じ枠を取ったときのための確認。あとから入った（番号が大きい）ほうを、取り消す
@@ -318,7 +370,7 @@ function rooms_save(array $data, array $user, ?array $existing = null): array
     $detail = '';
     if ($existing) {
         $diff = [];
-        foreach (['room_id' => '部屋', 'bdate' => '日付', 'start_time' => '開始', 'end_time' => '終了', 'pax' => '人数', 'is_private' => '非公開'] as $k => $label) {
+        foreach (['room_id' => '部屋', 'bdate' => '日付', 'start_time' => '開始', 'end_time' => '終了', 'pax' => '人数', 'is_private' => '非公開', 'participants' => '参加者', 'notify_pre' => '1時間前の通知'] as $k => $label) {
             if ((string)$existing[$k] !== (string)$saved[$k]) {
                 $diff[] = $label;
             }
@@ -344,14 +396,56 @@ function rooms_delete(array $b): void
 function room_booking_for_client(array $b, array $user, ?int $now = null): array
 {
     $mine = (int)$b['owner_id'] === (int)$user['id'];
-    $mask = (int)$b['is_private'] === 1 && !$mine && !is_admin($user);
+    $pids = rooms_participant_ids($b);
+    $invited = in_array((int)$user['id'], $pids, true);
+    $mask = (int)$b['is_private'] === 1 && !$mine && !is_admin($user) && !$invited; // 非公開でも、参加者には見える
     return [
         'id' => (int)$b['id'], 'room_id' => (int)$b['room_id'], 'date' => $b['bdate'], 'start' => $b['start_time'], 'end' => $b['end_time'],
         'title' => $mask ? '予約済' : $b['title'], 'kind' => $mask ? 'other' : $b['kind'], 'pax' => $mask ? null : (int)$b['pax'],
         'owner_id' => $mask ? null : (int)$b['owner_id'], 'owner_name' => $mask ? '' : ($b['owner_name'] ?? ''),
-        'private' => (int)$b['is_private'] === 1, 'masked' => $mask, 'mine' => $mine,
+        'private' => (int)$b['is_private'] === 1, 'masked' => $mask, 'mine' => $mine, 'invited' => $invited,
+        'participants' => $mask ? [] : rooms_participants_named($pids), 'notify_pre' => (int)($b['notify_pre'] ?? 1) === 1,
         'past' => rooms_is_past($b, $now), 'editable' => rooms_can_edit($b, $user, $now), 'deletable' => rooms_can_delete($b, $user, $now),
     ];
+}
+
+/** 参加者の番号 → [{id, name}] */
+function rooms_participants_named(array $ids): array
+{
+    static $names = null;
+    if ($names === null) {
+        $names = [];
+        foreach (rows('SELECT id, name FROM users') as $u) {
+            $names[(int)$u['id']] = $u['name'];
+        }
+    }
+    $out = [];
+    foreach ($ids as $id) {
+        if (isset($names[$id])) {
+            $out[] = ['id' => (int)$id, 'name' => $names[$id]];
+        }
+    }
+    return $out;
+}
+
+/**
+ * カレンダーに出す予約（業務版）。$who = 0 なら全員、社員番号なら、その人が予約した・参加者になっている予約。
+ * 非公開の予約は、本人・管理者・参加者以外には「予約済」とだけ見える。
+ */
+function rooms_list_for_calendar(string $from, string $to, array $user, int $who = 0): array
+{
+    $out = [];
+    foreach (rows('SELECT b.*, u.name AS owner_name FROM room_bookings b JOIN users u ON u.id = b.owner_id WHERE b.bdate BETWEEN ? AND ? ORDER BY b.bdate, b.start_time, b.id', [$from, $to]) as $b) {
+        if ($who > 0 && (int)$b['owner_id'] !== $who && !in_array($who, rooms_participant_ids($b), true)) {
+            continue;
+        }
+        $c = room_booking_for_client($b, $user);
+        if ($who > 0 && $c['masked']) {
+            continue; // 特定の人のカレンダーには、見られない（非公開の）予約は、出さない（その人が関わっていると分かってしまうため）
+        }
+        $out[] = $c;
+    }
+    return $out;
 }
 
 function rooms_list_bookings(string $from, string $to, array $user): array
@@ -415,6 +509,56 @@ function rooms_slack_esc(string $s): string
     return str_replace(['&', '<', '>'], ['&amp;', '&lt;', '&gt;'], $s);
 }
 
+/** Slack 用: 社員の番号 → 「<@Slack ID>」（登録がなければ名前）を、スペースで並べる */
+function rooms_slack_people(array $ids): string
+{
+    $out = [];
+    foreach ($ids as $id) {
+        $u = row('SELECT name, slack_id FROM users WHERE id = ? AND active = 1', [(int)$id]);
+        if ($u) {
+            $out[] = preg_match('/^[UW][A-Z0-9]{6,}$/', (string)$u['slack_id']) ? '<@' . $u['slack_id'] . '>' : rooms_slack_esc((string)$u['name']);
+        }
+    }
+    return implode(' ', $out);
+}
+
+/**
+ * 開始の1時間前（から、開始まで）の予約を、1件ずつ Slack に知らせる。予約ごとに「1時間前に知らせる」をオンにしたものだけ。
+ * 1つの予約につき、1回だけ（日付・時間を変えたときは、新しく送れる）。cron の notify から呼ぶ。
+ */
+function rooms_notify_pre(?int $now = null): array
+{
+    $now = $now ?? time();
+    $msg = [];
+    $rows = rows('SELECT b.*, r.name AS room_name, u.name AS owner_name, u.slack_id FROM room_bookings b JOIN rooms r ON r.id = b.room_id JOIN users u ON u.id = b.owner_id WHERE b.notify_pre = 1 AND b.bdate BETWEEN ? AND ? ORDER BY b.bdate, b.start_time, b.id',
+        [date('Y-m-d', $now), date('Y-m-d', strtotime('+1 day', $now))]);
+    foreach ($rows as $b) {
+        $start = strtotime($b['bdate'] . ' ' . $b['start_time'] . ':00');
+        if ($now < $start - 3600 || $now >= $start) {
+            continue;
+        }
+        $ref = 'roompre:' . (int)$b['id'];
+        if (!notify_once($ref)) {
+            continue;
+        }
+        $mins = max(1, (int)ceil(($start - $now) / 60));
+        $who = preg_match('/^[UW][A-Z0-9]{6,}$/', (string)$b['slack_id']) ? '<@' . $b['slack_id'] . '>' : rooms_slack_esc((string)$b['owner_name']);
+        $kind = ROOM_KINDS[$b['kind']] ?? '';
+        $private = (int)$b['is_private'] === 1;
+        $what = $private ? '予約済（非公開）' : rooms_slack_esc((string)$b['title']) . ($kind !== '' ? '（' . $kind . '）' : '');
+        $with = $private ? '' : rooms_slack_people(rooms_participant_ids($b));
+        $text = '【まもなく会議室】' . $b['start_time'] . '〜' . $b['end_time'] . '（あと' . ($mins >= 60 ? '1時間' : $mins . '分') . '）' . "\n"
+            . rooms_slack_esc((string)$b['room_name']) . '　' . $what . "\n予約: " . $who . ($with !== '' ? '　参加: ' . $with : '') . "\n" . slack_link_text();
+        $ok = slack_post($text);
+        if (!$ok && slack_enabled()) {
+            q('DELETE FROM notification_log WHERE ref = ?', [$ref]); // 送れなかったので、次回やり直せるようにする
+        } else {
+            $msg[] = '会議室の予約（1時間前）: ' . $b['bdate'] . ' ' . $b['start_time'] . ' を通知しました';
+        }
+    }
+    return $msg;
+}
+
 function rooms_notify_text(string $date, string $label): string
 {
     $lines = [];
@@ -422,7 +566,8 @@ function rooms_notify_text(string $date, string $label): string
         $who = preg_match('/^[UW][A-Z0-9]{6,}$/', (string)$b['slack_id']) ? '<@' . $b['slack_id'] . '>' : rooms_slack_esc((string)$b['owner_name']);
         $kind = ROOM_KINDS[$b['kind']] ?? '';
         $what = (int)$b['is_private'] === 1 ? '予約済（非公開）' : rooms_slack_esc((string)$b['title']) . ($kind !== '' ? '（' . $kind . '）' : '');
-        $lines[] = '• ' . $b['start_time'] . '〜' . $b['end_time'] . '　' . rooms_slack_esc((string)$b['room_name']) . '　' . $what . '　' . $who;
+        $with = (int)$b['is_private'] === 1 ? '' : rooms_slack_people(rooms_participant_ids($b));
+        $lines[] = '• ' . $b['start_time'] . '〜' . $b['end_time'] . '　' . rooms_slack_esc((string)$b['room_name']) . '　' . $what . '　' . $who . ($with !== '' ? '　参加: ' . $with : '');
     }
     return "【{$label}の会議室】" . md_ja($date) . "\n" . implode("\n", $lines) . "\n" . slack_link_text();
 }
@@ -464,5 +609,5 @@ function rooms_notify_due(?int $now = null): array
             $msg[] = "会議室の予約（{$label}）: {$n} 件を通知しました";
         }
     }
-    return $msg;
+    return array_merge($msg, rooms_notify_pre($now));
 }

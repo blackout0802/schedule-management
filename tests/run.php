@@ -1664,6 +1664,32 @@ check('会議室: 予約のない日は、通知しない', count(rooms_notify_d
 $cf = rooms_cfg(); $cf['notify_prev']['on'] = false; rooms_cfg_save($cf); q("DELETE FROM notification_log WHERE ref LIKE 'room%2031%'");
 check('会議室: 通知を止めると、送らない', count(rooms_notify_due(strtotime('2031-03-12 17:05:00'))), 0);
 $cf['notify_prev']['on'] = true; rooms_cfg_save($cf);
+// 参加者・開始の1時間前の通知
+$bid = (int)$b['id'];
+$pv = function (array $o) use ($rin, $a, $rn, $rB) { return rooms_validate_input($rin(array_merge(['room_id' => $rB, 'pax' => 2, 'date' => '2031-03-17', 'start' => '15:00', 'end' => '16:00', 'title' => '参加者つきの打ち合わせ', 'kind' => 'meeting'], $o)), $a, null, $rn); };
+check('会議室の参加者: 予約した人自身・重複は除き、番号順に保存する', [$pv(['participants' => [$bid, (int)$a['id'], $bid]])[0]['participants'], $pv([])[0]['participants'], $pv(['participants' => (string)$bid])[0]['participants']], [(string)$bid, '', (string)$bid]);
+check('会議室の参加者: 存在しない人・おかしな指定・多すぎる人数は断る', [$pv(['participants' => [999999]])[1] !== null, $pv(['participants' => ['x']])[1] !== null, $pv(['participants' => range(1000, 1031)])[1] !== null], [true, true, true]);
+check('会議室の1時間前の通知: 初めは「送る」。指定すれば「送らない」にもできる', [$pv([])[0]['notify_pre'], $pv(['notify_pre' => false])[0]['notify_pre'], $pv(['notify_pre' => true])[0]['notify_pre']], [1, 0, 1]);
+$bkP2 = rooms_save($pv(['participants' => [$bid], 'private' => true])[0], $a);
+$bkProw = row('SELECT b.*, u.name AS owner_name FROM room_bookings b JOIN users u ON u.id = b.owner_id WHERE b.id = ?', [$bkP2['id']]);
+$cOwn = room_booking_for_client($bkProw, $a, $rn); $cPart = room_booking_for_client($bkProw, $b, $rn); $cOther = room_booking_for_client($bkProw, $admin_other ?? ['id' => 987654, 'role' => 'member'], $rn);
+check('会議室の参加者: 非公開の予約でも、参加者には内容が見える。参加者でない人には「予約済」とだけ', [$cPart['masked'], $cPart['title'], $cPart['invited'], $cPart['participants'][0]['name'], $cOther['masked'], $cOther['title'], $cOther['participants']], [false, '参加者つきの打ち合わせ', true, $b['name'], true, '予約済', []]);
+check('会議室の参加者: 予約した本人には、参加者と通知の設定が渡る', [array_column($cOwn['participants'], 'id'), $cOwn['notify_pre']], [[$bid], true]);
+$calAll = rooms_list_for_calendar('2031-03-17', '2031-03-17', $b, 0);
+$calMe = rooms_list_for_calendar('2031-03-17', '2031-03-17', $b, $bid);
+$calOwner = rooms_list_for_calendar('2031-03-17', '2031-03-17', $b, (int)$a['id']);
+$calOther = rooms_list_for_calendar('2031-03-17', '2031-03-17', $a, 987654);
+check('会議室のカレンダー表示: 全社は全部。特定の人は、その人が予約した・参加者の予約だけ（参加者のカレンダーにも出る）', [count($calAll), count($calMe), count($calOwner), count($calOther)], [1, 1, 1, 0]);
+$bPre = rooms_notify_pre(strtotime('2031-03-17 13:50:00'));
+$bPre2 = rooms_notify_pre(strtotime('2031-03-17 14:05:00'));
+$bPre3 = rooms_notify_pre(strtotime('2031-03-17 14:20:00'));
+$bPre4 = rooms_notify_pre(strtotime('2031-03-17 15:05:00'));
+check('会議室の1時間前の通知: 1時間前より前は送らない・1時間前を過ぎたら1回だけ送る・開始後は送らない', [count($bPre), count($bPre2), count($bPre3), count($bPre4)], [0, 1, 0, 0]);
+$upd = $pv(['participants' => [$bid], 'private' => true, 'start' => '16:00', 'end' => '17:00']);
+check('会議室の1時間前の通知: 開始時刻を変えると、新しく送れる', (function () use ($upd, $bkP2, $a, $rn) { $ex = row('SELECT * FROM room_bookings WHERE id = ?', [$bkP2['id']]); $v = rooms_validate_input(['room_id' => $ex['room_id'], 'date' => $ex['bdate'], 'start' => '16:00', 'end' => '17:00', 'title' => $ex['title'], 'kind' => $ex['kind'], 'pax' => 2, 'private' => true, 'participants' => [], 'notify_pre' => true], $a, $ex, strtotime('2031-03-12 10:00:00')); rooms_save($v[0], $a, $ex); return count(rooms_notify_pre(strtotime('2031-03-17 15:10:00'))); })(), 1);
+q('UPDATE room_bookings SET notify_pre = 0 WHERE id = ?', [$bkP2['id']]); q("DELETE FROM notification_log WHERE ref LIKE 'roompre:%'");
+check('会議室の1時間前の通知: 予約ごとにオフにしていれば、送らない', count(rooms_notify_pre(strtotime('2031-03-17 15:10:00'))), 0);
+q('DELETE FROM room_bookings WHERE id = ?', [$bkP2['id']]);
 // 決まりの設定
 $badC = [];
 foreach ([['advance_months' => 0], ['advance_months' => 13], ['open' => '09:10'], ['open' => '19:00', 'close' => '18:00'], ['notify_prev' => ['time' => '25:00']]] as $chg) {

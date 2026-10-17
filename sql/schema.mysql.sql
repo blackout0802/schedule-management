@@ -216,5 +216,7 @@ CREATE TABLE IF NOT EXISTS room_bookings (
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
   updated_by INT UNSIGNED NULL,
+  participants VARCHAR(300) NOT NULL DEFAULT '',
+  notify_pre TINYINT NOT NULL DEFAULT 1,
   KEY ix_room_bookings_day (bdate, room_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

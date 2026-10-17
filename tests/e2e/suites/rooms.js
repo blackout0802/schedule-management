@@ -178,6 +178,56 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   ok('非公開の予約は、Slack の通知にも、件名が出ない（予約済（非公開））', l1.includes('予約済（非公開）') && !l1.includes('あした非公開の話'));
   cron(); ok('同じ通知は、2回は送らない', (log().match(/【明日の会議室】/g) || []).length === 1);
 
+  // ---- 参加者: 予約の画面で選ぶ → 参加者のカレンダー・全社のカレンダーにも、予約が出る
+  const sid = +env.sql("SELECT id FROM users WHERE email = 'suzuki@example.com'");
+  await y.goto(BASE + 'index.php#rooms'); await y.waitForSelector('.cal .week'); await showMonth(y, open[3]);
+  await y.click('.cell[data-date="' + open[3] + '"]', { position: { x: 8, y: 8 } }); await y.waitForSelector('.modal input[name=title]');
+  ok('予約の画面に、参加者（社員の選択）と、「開始の1時間前に、Slackで知らせる」（初めはオン）がある。予約した人自身は、参加者に並ばない', (await y.locator('.modal .rm-part').count()) >= 2 && (await y.locator('.modal .rm-part:has-text("山田 花子")').count()) === 0 && (await y.locator('.modal input[name=notify_pre]').isChecked()), await y.locator('.modal .rm-parts').innerText());
+  await y.fill('input[name=title]', '参加者つきの会議'); await y.click('.rm-pick:has-text("会議室")'); await y.selectOption('select[name=start]', '13:00'); await y.selectOption('select[name=end]', '14:00'); await y.fill('input[name=pax]', '3');
+  await y.check('.modal .rm-part:has-text("鈴木 一郎") input'); await y.uncheck('input[name=notify_pre]'); await y.waitForTimeout(300);
+  await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal'));
+  const withP = (await get(y, 'rooms_list&from=' + open[3] + '&to=' + open[3])).bookings.find(x => x.title === '参加者つきの会議');
+  ok('参加者と、通知のオフが保存される', !!withP && withP.participants.length === 1 && withP.participants[0].name === '鈴木 一郎' && withP.notify_pre === false, withP);
+  await showMonth(y, open[3]); await bar(y, '参加者つきの会議').click(); await y.waitForSelector('.modal');
+  ok('予約の画面を開くと、参加者の選択が入っていて、通知はオフのまま', (await y.locator('.modal .rm-part:has-text("鈴木 一郎") input').isChecked()) && !(await y.locator('.modal input[name=notify_pre]').isChecked()));
+  await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
+  const mainShow = async (pg, date) => { for (let i = 0; i < 14; i++) { const t = await pg.locator('.toolbar h2').innerText(); if (t === date.slice(0, 4) + '年' + (+date.slice(5, 7)) + '月') return true; const cur = +t.slice(0, 4) * 12 + (+t.slice(5, t.indexOf('月'))); const want = +date.slice(0, 4) * 12 + (+date.slice(5, 7)); await pg.click(cur < want ? '.toolbar button[aria-label="次の月"]' : '.toolbar button[aria-label="前の月"]'); await pg.waitForTimeout(500); } return false; };
+  const s2 = await login(b, 'suzuki@example.com', 'suzukipass1');
+  await mainShow(s2, open[3]); await s2.waitForSelector('.bar.rm:has-text("参加者つきの会議")');
+  ok('参加者（鈴木）の業務版のカレンダー（自分）に、会議室の予約が出る（部屋の色・頭に部屋の一文字）', (await s2.locator('.bar.rm:has-text("参加者つきの会議")').first().evaluate(e => getComputedStyle(e, '::before').content)) === '"会"' && (await s2.locator('.bar.rm:has-text("参加者つきの会議")').first().innerText()).includes('13:00-14:00'));
+  await s2.locator('.bar.rm:has-text("参加者つきの会議")').first().click(); await s2.waitForSelector('.modal');
+  const vt = await s2.locator('.modal').innerText();
+  ok('帯を押すと、予約の内容（用件・予約した人・参加者）が見える。変更は、予約のページで（参加者本人は変更できない）', vt.includes('参加者つきの会議') && vt.includes('山田 花子') && vt.includes('鈴木 一郎') && (await s2.locator('.modal button:has-text("変更・取り消し")').count()) === 0, vt);
+  await s2.keyboard.press('Escape'); await s2.waitForFunction(() => !document.querySelector('.modal'));
+  const a2 = await login(b, 'admin@example.com', 'adminpass1');
+  await a2.selectOption('#who-sel', 'all'); await mainShow(a2, open[3]); await a2.waitForSelector('.bar.rm:has-text("参加者つきの会議")');
+  ok('全社の表示では、他の人の予約も出て、先頭に予約した人の姓が付く', (await a2.locator('.bar.rm:has-text("参加者つきの会議")').first().innerText()).startsWith('山田｜'), await a2.locator('.bar.rm:has-text("参加者つきの会議")').first().innerText());
+  await a2.selectOption('#who-sel', { label: '自分' }); await a2.waitForTimeout(600);
+  ok('特定の人（管理者本人）の表示には、関係ない予約は出ない', (await a2.locator('.bar.rm:has-text("参加者つきの会議")').count()) === 0);
+  await a2.selectOption('#who-sel', String(sid)); await a2.waitForSelector('.bar.rm:has-text("参加者つきの会議")');
+  ok('特定の人（鈴木）を選ぶと、その人が参加者の予約が出る', true);
+  await a2.click('.tab[data-view=me]'); await a2.waitForSelector('.view-banner.me'); await a2.waitForTimeout(300);
+  ok('プライベート版には、会議室の予約は出ない', (await a2.locator('.bar.rm').count()) === 0);
+  // 予約した本人は、カレンダーの帯から、予約のページを開いて、変更・取り消しできる
+  await y.goto(BASE + 'index.php'); await y.waitForSelector('.cal .week'); await mainShow(y, open[3]); await y.waitForSelector('.bar.rm:has-text("参加者つきの会議")');
+  await y.locator('.bar.rm:has-text("参加者つきの会議")').first().click(); await y.waitForSelector('.modal button:has-text("変更・取り消し")');
+  await y.click('.modal button:has-text("変更・取り消し")'); await y.waitForSelector('.modal input[name=title]');
+  ok('予約した本人は、カレンダーの帯 →「変更・取り消し」で、予約のページの変更画面が開く', (await y.url()).endsWith('#rooms') && (await y.inputValue('input[name=title]')) === '参加者つきの会議');
+  await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
+  // ---- 開始の1時間前の通知（Slack）
+  const nowD = new Date(); const startMin = Math.ceil((nowD.getHours() * 60 + nowD.getMinutes() + 1) / 30) * 30;
+  if (startMin + 60 <= 24 * 60) {
+    const sm = minStr => pad(Math.floor(minStr / 60)) + ':' + pad(minStr % 60);
+    const preOn = await api(a, 'room_booking_save', { room_id: big.id, date: ymd(nowD), start: sm(startMin), end: sm(startMin + 30), title: 'まもなくの会議', kind: 'meeting', pax: 2, participants: [yid, sid], notify_pre: true });
+    const preOff = await api(a, 'room_booking_save', { room_id: small.id, date: ymd(nowD), start: sm(startMin), end: sm(startMin + 30), title: '通知なしの会議', kind: 'meeting', pax: 2, notify_pre: false });
+    ok('準備: 今日の、まもなく始まる予約が2つ入る', !!preOn.booking && !!preOff.booking, [preOn, preOff]);
+    await api(a, 'rooms_cfg_save', Object.assign({}, cfg0, { notify_prev: { on: false, time: '08:30' }, notify_today: { on: false, time: '08:30' } }));
+    fs.writeFileSync(LOG, ''); cron(); const lp = log();
+    ok('開始の1時間前を過ぎた予約が、Slack に届く（時間・部屋・用件・予約した人・参加者）', lp.includes('【まもなく会議室】') && lp.includes('まもなくの会議') && lp.includes('参加:') && lp.includes('山田 花子') && lp.includes('鈴木 一郎'), lp.slice(0, 400));
+    ok('「知らせない」にした予約は、通知されない', !lp.includes('通知なしの会議'));
+    cron(); ok('同じ予約の通知は、2回は送らない', (log().match(/まもなくの会議/g) || []).length === 1);
+    await api(a, 'room_booking_delete', { id: preOn.booking.id }); await api(a, 'room_booking_delete', { id: preOff.booking.id });
+  }
   // ---- スマホ幅
   const m = await login(b, 'yamada@example.com', 'yamadapass1', { width: 390, height: 844 });
   await m.goto(BASE + 'index.php#rooms'); await m.waitForSelector('.cal .week'); await m.waitForSelector('#rooms-body .month-sum');

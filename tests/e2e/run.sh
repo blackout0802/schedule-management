@@ -58,6 +58,7 @@ for s in $LIST; do
   [ -f "$SUITES_DIR/$s.js" ] || { echo "== $s: テストがありません"; FAILED="$FAILED $s"; continue; }
   reset_db "$s" >/dev/null 2>&1 || { echo "== $s: データベースを用意できませんでした"; FAILED="$FAILED $s"; continue; }
   out=$(timeout 240 node "$SUITES_DIR/$s.js" 2>&1); code=$?
+  [ -n "${E2E_SHOW:-}" ] && echo "$out" | sed "s/^/   | /"   # E2E_SHOW=1 で、各テストの1つ1つの確認の結果も出す
   if [ $code -eq 0 ]; then echo "OK   $s"; PASS=$((PASS+1)); else echo "NG   $s"; echo "$out" | grep -E "^NG|Error|Timeout|\.js:[0-9]+" | head -8 | sed 's/^/       /'; FAILED="$FAILED $s"; fi
 done
 echo
