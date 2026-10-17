@@ -6,7 +6,12 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); await p.waitForTimeout(500);
   const lg = await p.locator('.legend').innerText();
   ok('カレンダーの下は、色の見本だけ（長い説明文は無い）', !lg.includes('ドラッグ') && !lg.includes('土日祝') && !lg.includes('自動で反映') && lg.includes('業務') && lg.includes('休み') && lg.includes('繰り返しの業務'), lg);
-  await p.screenshot({ path: 'tips-legend.png', clip: { x: 0, y: 640, width: 1280, height: 220 } });
+  const pos = await p.evaluate(() => { const l = document.querySelector('.legend'), c = document.querySelector('.cal'); return { inBanner: !!l.closest('.view-banner'), above: l.getBoundingClientRect().bottom <= c.getBoundingClientRect().top, one: document.querySelectorAll('.legend').length }; });
+  ok('凡例は、説明の帯の中（月の表示とカレンダーの間）にある', pos.inBanner && pos.above && pos.one === 1, pos);
+  await p.click('.seg label:has-text("リスト")'); await p.waitForSelector('.list-h, .kanban, .todo-mgr', { timeout: 5000 }).catch(() => {}); await p.waitForTimeout(300);
+  ok('リスト画面に切り替えると、凡例は残らない', (await p.locator('.legend').count()) === 0);
+  await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal'); await p.waitForTimeout(300);
+  ok('カレンダーに戻すと、凡例が1つだけ出る', (await p.locator('.legend').count()) === 1);
   await p.click('.legend-help'); await p.waitForSelector('.modal'); const t = await p.locator('.modal').innerText();
   ok('「ⓘ 使い方」に、説明がまとまっている', ['期間のある業務', 'ドラッグ', 'ショートカット', '自動で反映', '予定の色'].every(k => t.includes(k)), t);
   await p.screenshot({ path: 'tips-modal.png' });

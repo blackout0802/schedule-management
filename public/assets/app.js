@@ -483,12 +483,10 @@
     var admin = S.me.user.role === 'admin';
     var list = [
       { id: 'theme', title: '画面の色（ライト／ダーク）', build: openThemeDialog },
-      { id: 'install', title: 'ホーム画面に追加（スマホ）', build: openInstallHelp },
       { id: 'colors', title: '予定の色', build: openColorDialog },
       { id: 'series', title: '繰り返し業務', build: openSeriesDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
-      { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts },
-      { id: 'password', title: 'パスワードの変更', build: function () { openPasswordDialog(false); } }
+      { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts }
     ];
     if (admin) {
       list.push({ id: 'users', title: '社員の管理', admin: true, build: openUsersDialog },
@@ -575,7 +573,7 @@
         ['変更履歴', j.counts.audit + ' 件'],
         ['アプリの版 / PHP / DB', 'v' + j.version + ' / ' + j.php + ' / ' + (j.db.type ? j.db.type + ' ' + j.db.version : '不明')],
         ['時間帯 / いまの時刻', j.timezone + ' / ' + j.now.slice(0, 16)]])));
-      body.appendChild(el('div', { class: 'actions' }, el('a', { class: 'btn', href: 'guide.php', target: '_blank', rel: 'noopener', text: '運用の手引き' }), el('button', { class: 'btn primary', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+      body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     }).catch(function (e) { ov.close(); fail(e); });
   }
 
@@ -584,7 +582,7 @@
     var body = el('div', { class: 'form audit' });
     var ov = openModal('変更履歴', body, true);
     var list = el('div', { class: 'audit-list', 'aria-live': 'polite' });
-    var more = el('button', { class: 'btn', type: 'button', text: 'さらに読み込む', hidden: true });
+    var more = el('button', { class: 'btn', type: 'button', text: '古い履歴を表示する', hidden: true });
     var fType = el('select', { 'aria-label': '種類' }, el('option', { value: '', text: 'すべての種類' }));
     var fActor = el('select', { 'aria-label': '操作した人' }, el('option', { value: '', text: 'すべての人' }), S.me.users.map(function (u) { return el('option', { value: String(u.id), text: u.name }); }));
     var fQ = el('input', { type: 'search', placeholder: '件名・名前・内容で検索', maxlength: '50', 'aria-label': '検索', autocomplete: 'off' });
@@ -603,7 +601,7 @@
     }
     function load(reset) {
       if (reset) { last = 0; list.textContent = ''; }
-      var params = { limit: '50' };
+      var params = { limit: reset ? '5' : '50' }; // 初めは、直近の5件だけ。ボタンを押すと、残りを50件ずつ
       if (fType.value) params.type = fType.value;
       if (fActor.value) params.actor = fActor.value;
       if (fQ.value.trim()) params.q = fQ.value.trim();
@@ -772,9 +770,9 @@
         return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'pane', checked: (S.pane || 'todo') === m[0], onchange: function () { S.pane = m[0]; var lay = document.querySelector('.layout'); if (lay) lay.setAttribute('data-pane', m[0]); } }), m[1]);
       })) : null
     ));
-    if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px',
-      text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
-        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' }));
+    if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px' },
+      el('span', { class: 'vb-text', text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
+        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
   }
 
 
@@ -1092,6 +1090,8 @@
     if (!board) return;
     var mgrKeep = captureTodoInput(document.getElementById('todo-mgr')); // リスト表示のToDo入力欄は、描き直すと作り直されるので、入力中の内容を引き継ぐ
     board.textContent = '';
+    var vbOld = document.querySelector('.view-banner .legend'); // 凡例は、上の説明の帯の中に置く（描き直すたびに入れ替える）
+    if (vbOld) vbOld.parentNode.removeChild(vbOld);
     var db = deletedBanner();
     if (db) board.appendChild(db);
     var ub = updatesBanner();
@@ -1125,14 +1125,16 @@
     if (NARROW()) tips.push('カレンダーを左右にスワイプすると、前の月・次の月に切り替わります。');
     if (POLL_MS && !FAMILY) tips.push('他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に、自動で反映されます。');
     if (!SHARE && S.view === 'me') return; // プライベート版は、カレンダーの下（凡例・月のまとめ）を出さない
-    board.appendChild(el('div', { class: 'legend', style: 'margin-top:8px' },
+    var legend = el('div', { class: 'legend' },
       personColorOn() ? personLegend() : [el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
         el('span', null, el('i', { style: 'background:var(--uc-off, var(--off))' }), '休み')],
       offdayPref().on ? el('span', null, el('i', { class: 'offday-sw', style: offdayPref().color ? 'background:' + offdayBg(offdayPref().color) : null }), '休みの人がいる日') : null,
       S.view === 'me' || (SHARE && SHARE.kind === 'family') ? el('span', null, el('i', { style: 'background:var(--uc-private, var(--private))' }), 'プライベート') : null,
       FAMILY ? null : el('span', null, el('span', { class: 'rec-sample', text: '↻ 繰り返しの業務' })),
       tips.length ? el('button', { class: 'legend-help', type: 'button', text: 'ⓘ 使い方', title: 'カレンダーの使い方', onclick: function () { openTipsDialog(tips); } }) : null,
-      FAMILY && delCount() ? el('span', null, el('span', { class: 'del-sample', text: '取消線' }), '＝削除された予定（押して「確認した」を選ぶと消えます）') : null));
+      FAMILY && delCount() ? el('span', null, el('span', { class: 'del-sample', text: '取消線' }), '＝削除された予定（押して「確認した」を選ぶと消えます）') : null);
+    var vb = document.querySelector('.view-banner');
+    if (vb) vb.appendChild(legend); else board.insertBefore(legend, board.firstChild);
     var sum = monthSummary();
     if (sum) board.appendChild(sum);
   }

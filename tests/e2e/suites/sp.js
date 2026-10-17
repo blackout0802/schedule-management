@@ -8,7 +8,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page');
   ok('「設定」を押すと、ポップアップではなく、設定のページになる（URL は #settings）', a.url().endsWith('#settings') && (await a.locator('.overlay').count()) === 0 && (await a.locator('.cal').count()) === 0);
   const titles = await a.locator('.set-sec > h3').allInnerTexts();
-  ok('すべての項目が、1ページに並ぶ', ['画面の色', '予定の色', '繰り返し業務', '共有リンク', 'ショートカットキー', 'パスワードの変更', '社員の管理', '会社の休業日', 'Slack通知の送り先', 'Slack通知の時間・文面', 'システム更新'].every(t => titles.some(x => x.includes(t))), titles);
+  ok('すべての項目が、1ページに並ぶ', ['画面の色', '予定の色', '繰り返し業務', '共有リンク', 'ショートカットキー', '社員の管理', '会社の休業日', 'Slack通知の送り先', 'Slack通知の時間・文面', 'システム更新'].every(t => titles.some(x => x.includes(t))) && !titles.some(x => x.includes('パスワードの変更') || x.includes('ホーム画面に追加')), titles);
   ok('左に、項目の一覧（ジャンプ用）がある', (await a.locator('.set-nav a').count()) === titles.length);
   // 中身が、その場で出ている
   ok('予定の色: パレットが、ページの中に出ている', (await a.locator('#set-colors .cs-sw, #set-colors .pal').count()) > 0);
@@ -23,8 +23,6 @@ const BASE = 'http://127.0.0.1:8099/';
   // 社員の編集は、これまでどおりポップアップ
   await a.locator('#set-users button:has-text("編集")').first().click(); await a.waitForSelector('.overlay .modal'); ok('社員の編集は、入力用のポップアップで開く', (await a.locator('.overlay .modal').innerText()).includes('社員を編集')); await a.click('.overlay button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.overlay'));
   ok('ポップアップを閉じても、設定のページのまま', (await a.locator('.settings-page').count()) === 1);
-  // パスワード変更（まちがい）: ページの中にエラー
-  await a.fill('#set-password input[type=password] >> nth=0', 'wrongpass'); await a.fill('#set-password input[type=password] >> nth=1', 'newpassword9'); await a.click('#set-password button[type=submit]'); await a.waitForSelector('#set-password .error:not([hidden])'); ok('パスワードの変更: ページの中でエラーが出る', (await a.locator('#set-password .error').innerText()).includes('現在のパスワード'));
   // Slack 時間・文面: 保存してもページは閉じない
   await a.fill('#set-slackcfg [name=morTime]', '9:15'); await a.press('#set-slackcfg [name=morTime]', 'Tab'); await a.locator('#set-slackcfg button.btn.primary:has-text("保存")').click(); await a.waitForSelector('.toast:has-text("保存しました")'); await a.waitForTimeout(1200);
   ok('Slackの時間・文面: 保存してもページに残り、最新の内容で描き直される', (await a.locator('.settings-page').count()) === 1 && (await a.inputValue('#set-slackcfg [name=morTime]')) === '09:15');
@@ -36,7 +34,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.keyboard.press('?'); await a.waitForSelector('.overlay .sc-table'); await a.keyboard.press('Escape');
   // 一般の社員: 管理者向けは出ない
   const y = await mk(); await login(y, 'yamada@example.com', 'yamadapass1'); await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page');
-  const yt = await y.locator('.set-sec > h3').allInnerTexts(); ok('一般の社員には、管理者向けの項目は出ない', yt.length === 7 && !yt.join().includes('社員の管理') && !yt.join().includes('Slack'), yt);
+  const yt = await y.locator('.set-sec > h3').allInnerTexts(); ok('一般の社員には、管理者向けの項目は出ない', yt.length === 5 && !yt.join().includes('社員の管理') && !yt.join().includes('Slack'), yt);
   // スマホ幅
   const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.click('header button:has-text("設定")'); await ph.waitForSelector('.settings-page'); await ph.waitForTimeout(800);
   const m = await ph.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok('スマホ: 横にはみ出さない', m[0] <= m[1], m); await ph.screenshot({ path: 'set-phone.png' });

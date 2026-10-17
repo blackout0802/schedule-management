@@ -19,6 +19,8 @@ const BASE = 'http://127.0.0.1:8099/';
   await post(a, 'share_create', { kind: 'company' });
   await a.reload(); await a.waitForSelector('.cal');
   await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-audit .audit-item');
+  ok('変更履歴は、初めは直近の5件だけ出る（残りはボタンで）', (await a.locator('#set-audit .audit-item').count()) === 5 && (await a.locator('#set-audit button:has-text("古い履歴を表示する")').isVisible()));
+  for (let g = 0; g < 8 && await a.locator('#set-audit button:has-text("古い履歴を表示する")').isVisible(); g++) { const n = await a.locator('#set-audit .audit-item').count(); await a.click('#set-audit button:has-text("古い履歴を表示する")'); await a.waitForFunction(k => document.querySelectorAll('#set-audit .audit-item').length > k, n); }
   const txt = await a.locator('#set-audit').innerText();
   ok('設定のページに、変更履歴の項目がある（管理者）', (await a.locator('#set-audit').count()) === 1);
   ok('予定の追加・変更・削除が出る（操作した人・対象・内容つき）', txt.includes('A社 打ち合わせ') && txt.includes('追加') && txt.includes('削除') && txt.includes('管理者 太郎') && txt.includes('対象: 山田 花子') && txt.includes('時刻 時刻なし → 14:00'), txt);
@@ -35,9 +37,10 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.fill('#set-audit input[type=search]', 'そんな履歴はない'); await a.waitForSelector('#set-audit .audit-list .muted'); ok('該当なしの案内が出る', true); await a.fill('#set-audit input[type=search]', ''); await a.waitForSelector('#set-audit .audit-item');
   // ページ送り（60件追加）
   for (let i = 0; i < 60; i++) await post(a, 'holiday_save', { hdate: `2032-0${1 + (i % 9)}-${pad(1 + Math.floor(i / 9))}`, name: '履歴多数' + i });
-  await a.click('#set-audit button:has-text("最新の状態にする")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length === 50);
-  ok('50件ずつ表示され、「さらに読み込む」が出る', (await a.locator('#set-audit button:has-text("さらに読み込む")').isVisible()));
-  await a.click('#set-audit button:has-text("さらに読み込む")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length > 50); ok('押すと、続きが読み込まれる', (await a.locator('#set-audit .audit-item').count()) > 50);
+  await a.click('#set-audit button:has-text("最新の状態にする")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length === 5);
+  await a.click('#set-audit button:has-text("古い履歴を表示する")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length === 55);
+  ok('初めの5件のあと、50件ずつ読み込まれ、「古い履歴を表示する」が出る', (await a.locator('#set-audit button:has-text("古い履歴を表示する")').isVisible()));
+  await a.click('#set-audit button:has-text("古い履歴を表示する")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length > 50); ok('押すと、続きが読み込まれる', (await a.locator('#set-audit .audit-item').count()) > 50);
   // 権限
   const y3 = await mk(); await login(y3, 'suzuki@example.com', 'suzukipass1'); // 山田さんは、パスワードをリセットされて、前のログインは終わっているので、別の一般社員で確かめる
   await y3.click('header button:has-text("設定")'); await y3.waitForSelector('.settings-page'); ok('一般の社員の設定には、変更履歴は出ない', (await y3.locator('#set-audit').count()) === 0);

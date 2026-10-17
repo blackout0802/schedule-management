@@ -540,6 +540,9 @@ body { letter-spacing: .01em; -webkit-font-smoothing: antialiased; }
 @media (max-width: 640px) { .toolbar h2 { font-size: 24px; margin: 0 4px; } }
 .seg label { border-radius: 10px; border-width: .5px; font-weight: 500; }
 .view-banner { border-radius: 10px; font-weight: 500; }
+/* 説明の帯の中の凡例（業務・休み・使い方）。帯の文字の下に置く */
+.view-banner .legend { margin-top: 4px; font-weight: 400; color: inherit; }
+.view-banner .legend .legend-help { color: inherit; text-decoration: underline; }
 .fchip { border-width: .5px; }
 input, select, textarea { border-radius: 10px; border-width: .5px; }
 .cal-wrap { border-radius: 14px; border-width: .5px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.05); overflow: hidden; }
@@ -762,8 +765,10 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
   .toolbar .pane-seg label { justify-content: center; padding: 7px 8px; }
   .toolbar.todo-only h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: 0; }
   .toolbar > .btn:last-child { margin-left: auto; font-size: 13px; padding: 4px 9px; }
-  .view-banner { display: none; }
-  .toolbar + .view-banner, #toolbar .view-banner { display: none; }
+  .view-banner .vb-text { display: none; }
+  .view-banner:has(> .legend) { background: none; padding: 0 2px; }
+  .view-banner:not(:has(> .legend)) { display: none; }
+  .view-banner .legend { margin-top: 0 !important; }
 
   /* カレンダーの下 */
   .legend { gap: 4px 10px; font-size: 11px; margin-top: 4px !important; }

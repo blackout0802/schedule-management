@@ -13,9 +13,9 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('ログイン画面に、マニフェスト・アイコン・テーマ色の指定がある', head.man === 'manifest.php' && !!head.apple && !!head.theme && head.cap === 'yes', head);
   await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1'); await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
   ok('アプリの画面にも、同じ指定がある', (await p.evaluate(() => document.querySelector('link[rel=manifest]')?.getAttribute('href'))) === 'manifest.php');
-  // 設定のページ: ホーム画面に追加
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-install'); if (await p.locator('#set-install.collapsible:not(.open)').count()) await p.click('#set-install > h3'); const it = await p.locator('#set-install').innerText();
-  ok('設定のページに、「ホーム画面に追加」の手順（iPhone・Android）が出る', it.includes('iPhone（Safari）') && it.includes('Android（Chrome）') && it.includes('ホーム画面に追加'), it);
+  // 設定のページには、「ホーム画面に追加」「パスワードの変更」は無い（パスワードの変更は、名前のメニューから）
+  await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page');
+  ok('設定のページに、「ホーム画面に追加」「パスワードの変更」の項目は無い', (await p.locator('#set-install').count()) === 0 && (await p.locator('#set-password').count()) === 0);
   // 共有リンク
   const sh = await p.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const f = k => fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ kind: k }) }).then(x => x.json()); return [(await f('company')).path, (await f('family')).path]; });
   const tok = sh[1].split('t=')[1]; const sm = await get('manifest.php?t=' + tok); const smj = JSON.parse(sm.text);
