@@ -291,7 +291,7 @@
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
   }
   /* 休みの人がいる日のセルを薄く塗りつぶす設定（本人の画面だけ）。標準の色は、休みの色（緑）の薄い色 */
-  function offdayPref() { var o = S.me && S.me.prefs && S.me.prefs.offday; return o ? { on: o.on !== false, color: o.color || '' } : { on: true, color: '' }; }
+  function offdayPref() { var o = SHARE ? SHARE.offday : S.me && S.me.prefs && S.me.prefs.offday; return o ? { on: o.on !== false, color: o.color || '' } : { on: true, color: '' }; }
   function offdayBg(c) { return c ? 'color-mix(in srgb, ' + c + ' 55%, var(--surface))' : ''; }
   function openColorDialog() {
     var pending = {};

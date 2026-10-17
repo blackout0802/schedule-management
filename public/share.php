@@ -40,7 +40,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1;
 <body>
 <div id="app" data-csrf=""><p class="muted" style="padding:24px">読み込み中…</p></div>
 <script nonce="<?= csp_nonce() ?>">window.SCHEDULE_POLL_MS = <?= (int)poll_ms() ?>; window.SCHEDULE_BUILD = <?= json_encode(app_build()) ?>;</script>
-<script nonce="<?= csp_nonce() ?>">window.SCHEDULE_SHARE = { token: <?= json_encode($token) ?>, kind: <?= json_encode($link['kind']) ?> };</script>
+<script nonce="<?= csp_nonce() ?>">window.SCHEDULE_SHARE = { token: <?= json_encode($token) ?>, kind: <?= json_encode($link['kind']) ?>, offday: <?= json_encode($link['kind'] === 'family' ? get_prefs(['id' => (int)$link['owner_id']])['offday'] : ['on' => true, 'color' => '']) ?> }; // offday: 休みの人がいる日の背景（家族用リンクは、持ち主の設定どおり。本人の画面と同じ見た目にする）</script>
 <script src="assets/app.js?v=<?= $v ?>"></script>
 </body>
 </html>

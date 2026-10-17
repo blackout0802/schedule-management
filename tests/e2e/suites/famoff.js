@@ -17,5 +17,14 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const ds = `${t.
   const api = await f.evaluate(async (tk) => { const d = new Date(); const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); const r = await fetch('share_api.php?t=' + tk + '&action=events&from=' + m + '-01&to=' + m + '-28'); return await r.text(); }, tok);
   ok('サーバーの応答にも、休みの種類（欠勤）は含まれない', !api.includes('欠勤'), api.slice(0, 200));
   await f.locator('.bar.off').first().click(); await f.waitForSelector('.modal'); const dt = await f.locator('.modal').innerText(); ok('詳細にも、種類は出ない', !dt.includes('欠勤') && dt.includes('休み'), dt);
+  // 休みの人がいる日の背景: 家族用リンクも、持ち主（本人）の設定のとおり。本人の画面と同じ見た目になる
+  const bgOf = pg => pg.$$eval('.cell.offday', els => getComputedStyle(els[0]).backgroundColor);
+  await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=prefs_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ colors: { work: '', rec: '', off: '', private: '' }, offday: { on: true, color: '#c9e8d4' } }) }); });
+  await y.reload(); await y.waitForSelector('.cell.offday'); await f.reload(); await f.waitForSelector('.cell.offday');
+  const mineBg = await bgOf(y), famBg = await bgOf(f);
+  ok('家族用リンクの「休みの人がいる日」の背景は、本人が決めた色（本人の画面と同じ）', mineBg === famBg && mineBg !== 'rgba(0, 0, 0, 0)', [mineBg, famBg]);
+  await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=prefs_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ colors: { work: '', rec: '', off: '', private: '' }, offday: { on: false, color: '' } }) }); });
+  await f.reload(); await f.waitForSelector('.bar.off');
+  ok('本人が「休みの人がいる日」の背景を切っていれば、家族用リンクでも、背景は付かない', (await f.locator('.cell.offday').count()) === 0);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();
