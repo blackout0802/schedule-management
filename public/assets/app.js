@@ -897,7 +897,7 @@
     if (e.kind === 'off' && SHARE && SHARE.kind === 'family') {
       t = '休み'; // 家族用の共有には、名前も休みの種類も出さない
     } else if (e.kind === 'off' && !full && allView() && e.owner_name) {
-      t = (personColorOn() && !compact ? '' : '休｜') + ownerShort(e); // 全社の表示: 「休」バッジ（狭い画面・色分けなしでは「休｜」）と姓だけ。同じ姓の人がいるときは、ownerShort がフルネームにする
+      t = ownerShort(e) + (personColorOn() && !compact ? '' : '｜休'); // 全社の表示: 姓が先（業務の「姓｜件名」と同じ並び）。そのあとに「休」バッジ（狭い画面・色分けなしでは「｜休」）。同じ姓の人がいるときは、ownerShort がフルネームにする
     } else if (e.kind === 'off' && compact) {
       t = e.owner_name.split(/[\s　]+/)[0] + (e.tag || '休み'); // スマホのカレンダー: 狭いので「山田有給」のように詰める
     } else if (e.kind === 'off') {

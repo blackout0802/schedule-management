@@ -906,10 +906,10 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 }
 
 /* ---------- 全社の表示: 人ごとの色分け（v1.52）----------
-   業務も休みも、その人の淡い色。休みは、帯の頭に、濃い色の「休」バッジが付く（色や柄を見なくても、休みと分かる）。 */
+   業務も休みも、その人の淡い色。休みは、帯の名前のあとに、濃い色の「休」バッジが付く（色や柄を見なくても、休みと分かる）。 */
 .bar.off.pc, .day-item.off.pc { font-weight: 700; }
-.bar.off.pc::before, .day-item.off.pc::before { content: "休"; display: inline-block; background: var(--pc-badge); color: var(--pc-on); border-radius: 3px; padding: 0 4px; margin-right: 5px; font-size: 10px; line-height: 15px; vertical-align: 1px; font-weight: 700; }
-@media (max-width: 640px) { .bar.off.pc::before { display: none; } } /* 狭い画面は、帯が短いので、バッジは出さない（名前と分類を優先） */
+.bar.off.pc::after, .day-item.off.pc::after { content: "休"; display: inline-block; background: var(--pc-badge); color: var(--pc-on); border-radius: 3px; padding: 0 4px; margin-left: 5px; font-size: 10px; line-height: 15px; vertical-align: 1px; font-weight: 700; }
+@media (max-width: 640px) { .bar.off.pc::after { display: none; } } /* 狭い画面は、帯が短いので、バッジは出さない（名前と分類を優先） */
 .pc-opt { font-size: 13px; white-space: nowrap; }
 .pc-opt input { width: auto; margin: 0; }
 .legend .pc-chip { display: inline-flex; align-items: center; }
