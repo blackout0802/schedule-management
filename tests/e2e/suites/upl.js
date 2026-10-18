@@ -5,7 +5,10 @@ const BASE = 'http://127.0.0.1:8099/';
 let fails = 0;
 const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.stringify(x === undefined ? '' : x).slice(0, 300)); if (!c) fails++; };
 (async () => {
-  const dist = path.join(__dirname, '..', '..', '..', 'dist');
+  const root = path.join(__dirname, '..', '..', '..');
+  const dist = path.join(root, 'dist');
+  // dist/ は git に入れていない（CIには無い）ので、いまの版の更新ファイルを、その場で作る
+  require('child_process').execFileSync('python3', [path.join(root, 'tools', 'make_update.py')], { cwd: root, stdio: 'ignore' });
   const zips = fs.readdirSync(dist).filter(f => /^update-v[\d.]+\.zip$/.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const zip = path.join(dist, zips[zips.length - 1]);
   const b = await chromium.launch();
