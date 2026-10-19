@@ -22,13 +22,13 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.keyboard.press('Escape'); await p.waitForTimeout(300); await p.waitForSelector('.cal');
   await p.reload(); await p.waitForSelector('.cal');
   const mondays = await p.evaluate(() => Array.from(document.querySelectorAll('.bar')).filter(b => b.textContent.includes('毎週の定例ミーティング')).length);
-  ok('カレンダーに、毎週の予定が並ぶ（今日以降の月曜が、今月に2回以上）', mondays >= 2, mondays);
+  ok('カレンダーに、毎週の予定が並ぶ（今日以降の月曜が、今月にある）。月の終わりの週は1回だけのこともある', mondays >= 1, mondays);
   await openSeries(p); await p.waitForSelector('.modal'); await p.waitForSelector('.modal .card:has-text("毎週の定例ミーティング")');
   ok('ルール一覧に「毎週 月曜日」と出る', (await p.locator('.modal .card:has-text("毎週の定例ミーティング")').innerText()).includes('毎週 月曜日'));
   await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   // 1回だけ消す → 元に戻す
   const before = await p.locator('.bar:has-text("毎週の定例ミーティング")').count();
-  await p.locator('.bar:has-text("毎週の定例ミーティング")').nth(1).click(); await p.waitForSelector('.modal input[name=title]'); await p.click('.modal button:has-text("削除")');
+  await p.locator('.bar:has-text("毎週の定例ミーティング")').first().click(); await p.waitForSelector('.modal input[name=title]'); await p.click('.modal button:has-text("削除")');
   await p.waitForSelector('.toast .toast-act'); await p.waitForTimeout(500);
   ok('1回だけ消せる（毎週の繰り返し自体は残る）', (await p.locator('.bar:has-text("毎週の定例ミーティング")').count()) === before - 1, [before, await p.locator('.bar:has-text("毎週の定例ミーティング")').count()]);
   await p.click('.toast .toast-act'); await p.waitForTimeout(800);

@@ -160,11 +160,6 @@ function room_min(string $hhmm): int
     return (int)substr($hhmm, 0, 2) * 60 + (int)substr($hhmm, 3, 2);
 }
 
-function room_hm(int $m): string
-{
-    return sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
-}
-
 /** 予約が終わっているか（終わった予約は、変更も取り消しもできない） */
 function rooms_is_past(array $b, ?int $now = null): bool
 {

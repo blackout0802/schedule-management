@@ -231,7 +231,7 @@ check('削除した回は復活しない', (int)row('SELECT COUNT(*) AS c FROM e
 
 // ルール削除: 今日以降の未編集分が消え、編集済みは通常の予定として残る
 delete_series($sid);
-check('ルール削除後、未編集の将来分は消える', (int)row("SELECT COUNT(*) AS c FROM events WHERE title = '月次締め'")['c'], 0);
+check('ルール削除後、未編集の将来分は消える', (int)row("SELECT COUNT(*) AS c FROM events WHERE title = '月次締め' AND end_date >= ?", [date('Y-m-d')])['c'], 0); // 今日より前の回は、ふつうの予定として残る（実行する日によって、あるかないかが変わる）
 check('編集済みの回は通常の予定として残る', (int)row("SELECT COUNT(*) AS c FROM events WHERE title = '月次締め(前倒し)' AND series_id IS NULL")['c'], 1);
 
 // ---- 予定の複製 ----

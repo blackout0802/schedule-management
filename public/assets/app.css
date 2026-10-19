@@ -186,7 +186,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pill { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .pill.admin { background: var(--work-soft); color: var(--work); }
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px; z-index: 100; font-size: 14px; }
-.hl { color: var(--off); font-weight: 700; }
 .dup-list { display: grid; gap: 8px; }
 .dup-row { display: grid; grid-template-columns: minmax(150px, 190px) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .notice { background: var(--work-soft); color: var(--ink); border-left: 4px solid var(--work); border-radius: 6px; padding: 10px 14px; }
@@ -209,9 +208,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* ToDoの完了 / リスト表示 */
 .todo-item.done { cursor: default; opacity: .8; background: var(--surface-2); }
 .todo-item.done .t-title { text-decoration: line-through; color: var(--muted); }
-.todo-done { border-top: 1px solid var(--line); padding-top: 8px; }
-.todo-done summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
-.todo-done .todo-item { margin-bottom: 6px; }
 .layout.list-mode #todo { display: none; }
 .layout.no-memo .side { display: none; } /* プライベート版には、日報メモは出さない（日報は業務） */
 .layout.list-mode.no-memo { grid-template-columns: minmax(0, 1fr); }
@@ -290,7 +286,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ms-table td.absent { color: var(--danger); font-weight: 700; }
 .ms-table tr.me { background: var(--surface-2); }
 
-.list-opt { margin: 0 0 8px; font-size: 13px; }
 
 /* 業務版: 表示する人の切り替え */
 .who { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
@@ -341,13 +336,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .sc-table th { width: 80px; text-align: left; } kbd { display: inline-block; min-width: 24px; padding: 1px 8px; text-align: center; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--surface-2); font-family: inherit; font-size: 13px; font-weight: 700; }
 /* ToDoにする（カレンダーの予定を右端へ）／リストの日の行へのドロップ */
 .todo-edge { color: var(--off); border-right-color: var(--off); background: linear-gradient(to left, var(--off-soft), transparent); }
-.td-zone { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; background: var(--surface-2); }
-.td-zone h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; } .td-zone.doing h3 { color: var(--work); }
-.td-zone .cnt { font-size: 12px; color: var(--muted); font-weight: var(--fw); }
-.td-item { font-size: 13px; padding: 3px 8px; border-left: 3px solid var(--work); background: var(--surface); border-radius: 4px; overflow-wrap: anywhere; } .td-item.private { border-left-color: var(--private); }
-.td-more { font-size: 12px; color: var(--muted); }
-.td-drop { margin-top: 4px; border: 2px dashed var(--line); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 700; }
-.td-zone.drop { outline: 2px solid var(--work); background: var(--work-soft); } .td-zone.drop .td-drop { border-color: var(--work); color: var(--work); }
 .list-day.drop { outline: 2px solid var(--work); outline-offset: -2px; background: var(--work-soft); }
 .bar.plain[draggable="true"] { cursor: grab; }
 .month-sum h3 .btn.small { padding: 0 8px; font-size: 12px; line-height: 1.6; }
@@ -376,7 +364,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 /* 設定ボタンのメニュー */
 .topbar-in .menu + .menu { margin-left: 8px; }
-.menu-h { padding: 6px 10px 2px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
 
 /* カレンダーの右端にカーソルを持っていくと出る、ToDoのパネル */
 .todo-hover { position: fixed; right: 0; top: 40%; z-index: 30; width: 20px; height: 100px; display: flex; align-items: center; justify-content: center; writing-mode: vertical-rl; letter-spacing: .2em; font-size: 12px; font-weight: 700; color: var(--work); background: var(--work-soft); border: 1px solid var(--line); border-right: 0; border-radius: 8px 0 0 8px; cursor: pointer; opacity: .85; }
@@ -385,7 +372,6 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .todo-panel.open { transform: translateX(0); }
 .todo-panel.away { transform: translateX(110%); opacity: .0; pointer-events: none; }
 .tp-head { display: flex; align-items: center; gap: 8px; } .tp-head .btn { margin-left: auto; }
-.tp-hint { font-size: 11.5px; color: var(--muted); }
 .tp-add { display: flex; gap: 6px; flex-wrap: wrap; } .tp-add input[type=text] { flex: 1 1 140px; min-width: 0; padding: 6px 8px; font-size: 14px; } .tp-add select { width: auto; padding: 6px 4px; font-size: 13px; }
 .tp-g { margin: 6px 0 0; font-size: 13px; display: flex; justify-content: space-between; } .tp-g.st-doing { color: var(--work); } .tp-g .cnt { font-size: 12px; color: var(--muted); font-weight: var(--fw); }
 .tp-card { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: 6px 8px; background: var(--surface); cursor: grab; display: grid; gap: 2px; }
@@ -584,7 +570,7 @@ a:not(.btn) { color: var(--work); }
 .login-card h1 { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
 .set-nav a { border-radius: 10px; font-weight: 500; }
 .set-nav a:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
-.card, .scope, .td-zone, .tp-zone, .cs-row, .cs-sample, .notice { border-width: .5px; border-radius: 12px; }
+.card, .scope, .tp-zone, .cs-row, .cs-sample, .notice { border-width: .5px; border-radius: 12px; }
 .notice { border-left-width: .5px; background: var(--work-soft); }
 
 /* ToDoのカンバン（リスト画面）: カレンダーのマスのように、薄い面 + 極細の線 */
@@ -691,13 +677,6 @@ kbd { border-radius: 6px; }
 .brand .ver { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .bar.done, .day-item.done .di-title { text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: .6; }
 .pill.sched { background: var(--work-soft); color: var(--work); }
-.memo-day { display: grid; gap: 4px; padding: 6px; border-radius: 10px; border: .5px solid transparent; }
-.memo-day + .memo-day { margin-top: 6px; border-top: .5px solid var(--line); padding-top: 12px; }
-.memo-day.drop { border-color: var(--work); background: var(--work-soft); }
-.memo-dh { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.memo-dh b { font-size: 13px; }
-.memo-day .memo-editor { min-height: 110px; }
-.memo-day.first .memo-dh b { color: var(--work); }
 .memo-editor div[data-todo] { border-left: 2px solid var(--line); padding-left: 6px; margin-left: -2px; }
 
 /* v1.42 日報は1つの入力欄（【日付】の行は自動） */

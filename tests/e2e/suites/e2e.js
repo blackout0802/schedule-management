@@ -126,7 +126,8 @@ async function login(browser, email, pw) {
   await a.page.keyboard.press('n');
   await a.page.check('input[name=kind][value=off]');
   ok('管理者には「休みを取る人」が出る', await a.page.locator('select[name=owner_id]').isVisible());
-  const tomorrow = new Date(Date.now() + 86400000 * 3); const t3 = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+  // 休みを入れる日: ほかの予定が重なっていない平日（1日に表示できる予定の数は決まっているので、混み合った日だと「他 n件」に隠れる）
+  const t3 = await a.page.evaluate(async () => { const pd = n => String(n).padStart(2, '0'), f = d => `${d.getFullYear()}-${pd(d.getMonth() + 1)}-${pd(d.getDate())}`; const n = new Date(); const r = await (await fetch('api.php?action=events&from=' + f(new Date(n.getFullYear(), n.getMonth(), 1)) + '&to=' + f(new Date(n.getFullYear(), n.getMonth() + 1, 0)) + '&view=team')).json(); const busy = {}; (r.events || []).forEach(e => { for (let d = new Date(e.start); f(d) <= e.end; d.setDate(d.getDate() + 1)) busy[f(d)] = 1; }); for (let i = 1; i < 40; i++) { const d = new Date(n.getFullYear(), n.getMonth(), n.getDate() + i); if (d.getMonth() !== n.getMonth()) break; if (d.getDay() > 0 && d.getDay() < 6 && !busy[f(d)]) return f(d); } return f(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 3)); });
   await a.page.selectOption('select[name=owner_id]', { label: '鈴木 一郎' });
   await a.page.fill('input[name=start]', t3);
   await a.page.click('.modal button[type=submit]');

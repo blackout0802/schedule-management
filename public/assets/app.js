@@ -1069,11 +1069,6 @@
     }
     if (!any) list.appendChild(el('p', { class: 'empty-note', text: 'この月の予定はまだありません。' }));
     board.appendChild(el('h3', { class: 'list-h', text: S.year + '年' + S.month + '月の予定' }));
-    if (false) {
-      board.appendChild(el('label', { class: 'check list-opt' },
-        el('input', { type: 'checkbox', id: 'list-work', checked: !!S.listWork, style: 'width:auto', onchange: function () { S.listWork = this.checked; store('sched.listWork', S.listWork); renderBoard(); } }),
-        '業務の予定も表示する（初期設定は、非表示）'));
-    }
     board.appendChild(list);
   }
 
@@ -2075,16 +2070,6 @@
     }).catch(function (x) { fail(x); loadTodos(); });
   }
 
-  function doneItem(t) {
-    return el('div', { class: 'todo-item done ' + t.kind },
-      el('input', { type: 'checkbox', class: 't-check', checked: true, 'aria-label': '未完了に戻す', title: 'チェックを外すと、未完了に戻ります', onchange: function () { setDone(t, false); } }),
-      el('div', { class: 't-body' },
-        el('div', { class: 't-main' }, el('span', { class: 't-title', text: t.title }),
-          el('span', { class: 'pill', text: t.done_at ? mdw(t.done_at.slice(0, 10)).replace(/（.*）/, '') + ' 完了' : '完了' })),
-        el('div', { class: 't-actions' }, el('button', { class: 'btn small ghost', type: 'button', text: '削除', onclick: function () {
-          deleteTodo(t);
-        } }))));
-  }
 
   /* ToDoを消す。「元に戻す」で戻せる（コメントのあるToDoは、コメントも消えて戻せないので、先に確かめる） */
   function deleteTodo(t) {
@@ -2264,10 +2249,6 @@
     return lines.map(function (segs) {
       return '<div' + metaAttr(segs.meta) + '>' + (segs.length ? segs.map(function (g) { var t = escHtml(g.t); return g.s ? '<s>' + t + '</s>' : t; }).join('') : '<br>') + '</div>';
     }).join('');
-  }
-  /* 行を <br> でつないだ、1つの塊のHTML（カーソル位置への挿入用） */
-  function linesToInlineHtml(lines) {
-    return lines.map(function (segs) { return segs.map(function (g) { var t = escHtml(g.t); return g.s ? '<s>' + t + '</s>' : t; }).join(''); }).join('<br>');
   }
   /* メール等に貼るためのHTML。段落の余白をなくし、取り消し線は <s> と style の両方で指定（貼り付け先ごとの差を減らす） */
   function linesToClipHtml(lines) {
@@ -3821,7 +3802,6 @@
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* 履歴を触れなくても、表示には影響しない */ }
     }
     S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
-    S.listWork = store('sched.listWork') === true;
     S.who = String(me.user.id); // ログインして開いたときは、まず自分のカレンダー・自分のToDo（「表示する人」「表示」で全員にも切り替えられる。開き直すと自分に戻る）
     S.todoWho = 'me';
     var start = function () { renderShell(); load(); startAutoRefresh(); };
