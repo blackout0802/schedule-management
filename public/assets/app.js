@@ -46,7 +46,10 @@
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   /* 右上のボタンの絵（線画。文字と同じ色・同じ大きさ） */
   var ICON_PATHS = {
-    gear: '<path d="M19.43 10.40L21.93 10.82L21.93 13.18L19.43 13.60L18.38 16.12L19.85 18.19L18.19 19.85L16.12 18.38L13.60 19.43L13.18 21.93L10.82 21.93L10.40 19.43L7.88 18.38L5.81 19.85L4.15 18.19L5.62 16.12L4.57 13.60L2.07 13.18L2.07 10.82L4.57 10.40L5.62 7.88L4.15 5.81L5.81 4.15L7.88 5.62L10.40 4.57L10.82 2.07L13.18 2.07L13.60 4.57L16.12 5.62L18.19 4.15L19.85 5.81L18.38 7.88Z"/><circle cx="12" cy="12" r="3.2"/>'
+    gear: '<path d="M19.43 10.40L21.93 10.82L21.93 13.18L19.43 13.60L18.38 16.12L19.85 18.19L18.19 19.85L16.12 18.38L13.60 19.43L13.18 21.93L10.82 21.93L10.40 19.43L7.88 18.38L5.81 19.85L4.15 18.19L5.62 16.12L4.57 13.60L2.07 13.18L2.07 10.82L4.57 10.40L5.62 7.88L4.15 5.81L5.81 4.15L7.88 5.62L10.40 4.57L10.82 2.07L13.18 2.07L13.60 4.57L16.12 5.62L18.19 4.15L19.85 5.81L18.38 7.88Z"/><circle cx="12" cy="12" r="3.2"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
+    monitor: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>',
+    moon: '<path d="M20 14.2A8 8 0 0 1 9.8 4 8 8 0 1 0 20 14.2z"/>'
   };
   function svgIcon(name) { var s = el('span', { class: 'ic-wrap', 'aria-hidden': 'true' }); s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" focusable="false">' + ICON_PATHS[name] + '</svg>'; return s; }
 
@@ -87,17 +90,18 @@
     var t = store('sched.theme');
     if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
   }
-  function openThemeDialog() {
+  /* 画面の色の切り替え（上の帯のアイコン）: 太陽＝ライト、モニター＝自動（端末の設定に合わせる）、月＝ダーク。端末ごとに覚える */
+  function themeSwitch() {
     var cur = store('sched.theme'); cur = cur === 'light' || cur === 'dark' ? cur : 'auto';
-    var opts = [['auto', '自動（端末の設定に合わせる）'], ['light', 'ライト（白い背景）'], ['dark', 'ダーク（黒い背景）']];
-    var body = el('div', { class: 'form' },
-      el('p', { class: 'hint', text: '「自動」では、スマホやパソコンがダークモードのとき、黒い背景になります。この端末だけの設定です。' }),
-      opts.map(function (o) {
-        return el('label', { class: 'check theme-opt' }, el('input', { type: 'radio', name: 'theme', value: o[0], checked: cur === o[0], onchange: function () { store('sched.theme', o[0]); applyTheme(); } }), ' ' + o[1]);
-      }),
-      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
-    var ov = openModal('画面の色', body);
-    ov.outsideClose = true;
+    var opts = [['light', 'sun', 'ライト（白い背景）'], ['auto', 'monitor', '自動（端末の設定に合わせる）'], ['dark', 'moon', 'ダーク（黒い背景）']];
+    var box = el('span', { class: 'theme-sw', role: 'group', 'aria-label': '画面の色（この端末だけの設定）' });
+    opts.forEach(function (o) {
+      box.appendChild(el('button', { type: 'button', 'data-theme-opt': o[0], 'aria-pressed': cur === o[0] ? 'true' : 'false', 'aria-label': o[2], title: o[2], onclick: function () {
+        store('sched.theme', o[0]); applyTheme();
+        Array.prototype.forEach.call(document.querySelectorAll('.theme-sw button'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-theme-opt') === o[0] ? 'true' : 'false'); });
+      } }, svgIcon(o[1])));
+    });
+    return box;
   }
   function NARROW() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); } // スマホの幅
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -396,7 +400,7 @@
   /* 共有リンクの閲覧ページ: 月の移動と、予定の詳細を見るだけ。編集・ToDo・メモは無い */
   function renderShareShell() {
     root.textContent = '';
-    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('button', { class: 'btn small', type: 'button', text: '画面の色', title: 'ライト（白い背景）／ダーク（黒い背景）', onclick: openThemeDialog }))));
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('span', { class: 'spacer' }), themeSwitch())));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
     renderToolbar();
   }
@@ -445,7 +449,7 @@
       }));
 
     return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
-      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })), tabs, el('span', { class: 'spacer' }), settingsMenu, userMenu)));
+      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })), tabs, el('span', { class: 'spacer' }), themeSwitch(), settingsMenu, userMenu)));
   }
 
   function renderShell() {
@@ -482,7 +486,6 @@
   function settingsSections() {
     var admin = S.me.user.role === 'admin';
     var list = [
-      { id: 'theme', title: '画面の色（ライト／ダーク）', build: openThemeDialog },
       { id: 'colors', title: '予定の色', build: openColorDialog },
       { id: 'series', title: '繰り返し業務', build: openSeriesDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
@@ -665,10 +668,10 @@
       nav.appendChild(el('a', { href: '#set-' + sec.id, text: sec.title, onclick: function (e) { e.preventDefault(); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
       render();
     });
-    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in settings-bar' },
       el('span', { class: 'brand', text: S.me.app_name }),
       el('button', { class: 'btn small', type: 'button', title: 'カレンダー（c）', 'aria-label': 'カレンダーに戻る', onclick: leaveSettings }, '← ', el('span', { class: 'lbl', text: 'カレンダーに' }), '戻る'),
-      el('span', { class: 'spacer' }), el('span', { class: 'muted', text: S.me.user.name }),
+      el('span', { class: 'spacer' }), themeSwitch(), el('span', { class: 'muted', text: S.me.user.name }),
       el('button', { class: 'btn small', type: 'button', text: 'ログアウト', onclick: doLogout }))));
     root.appendChild(el('main', { class: 'settings-page' }, el('h2', { text: '設定' }), el('div', { class: 'set-layout' }, nav, content)));
     window.scrollTo(0, 0);

@@ -541,7 +541,8 @@ body { letter-spacing: .01em; -webkit-font-smoothing: antialiased; }
 .seg label { border-radius: 10px; border-width: .5px; font-weight: 500; }
 .view-banner { border-radius: 10px; font-weight: 500; }
 /* 説明の帯の中の凡例（業務・休み・使い方）。帯の文字の下に置く */
-.view-banner .legend { margin-top: 4px; font-weight: 400; color: inherit; }
+.view-banner:has(> .legend) { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 20px; } /* 説明・凡例・「使い方」を1行に（入りきらないときだけ折り返す） */
+.view-banner .legend { flex: 1 1 auto; margin-top: 0; font-weight: 400; color: inherit; }
 .view-banner .legend .legend-help { color: inherit; text-decoration: underline; }
 .fchip { border-width: .5px; }
 input, select, textarea { border-radius: 10px; border-width: .5px; }
@@ -920,3 +921,12 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .ic { width: 1.15em; height: 1.15em; flex: none; display: block; }
 .ic * { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .topbar .btn.small { gap: 6px; }
+
+/* 画面の色の切り替え（上の帯）: 太陽・モニター・月のアイコン */
+.theme-sw { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.theme-sw button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; padding: 0; }
+.theme-sw button:hover { color: var(--ink); }
+.theme-sw button[aria-pressed="true"] { background: color-mix(in srgb, var(--work) 14%, var(--surface)); color: var(--work); }
+.theme-sw .ic { width: 16px; height: 16px; }
+.topbar-in .theme-sw { margin-left: 4px; }
+@media (max-width: 640px) { .theme-sw button { width: 24px; height: 26px; } .topbar-in .theme-sw { margin-left: 0; } .topbar-in .brand .ver, .topbar-in > .muted, .topbar-in.settings-bar .brand { display: none; } } /* スマホは、上の帯が1行に収まるよう、版の表示を省く */
