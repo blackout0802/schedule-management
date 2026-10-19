@@ -8,7 +8,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page');
   ok('「設定」を押すと、ポップアップではなく、設定のページになる（URL は #settings）', a.url().endsWith('#settings') && (await a.locator('.overlay').count()) === 0 && (await a.locator('.cal').count()) === 0);
   const titles = await a.locator('.set-sec > h3').allInnerTexts();
-  ok('すべての項目が、1ページに並ぶ', ['予定の色', '繰り返し業務', '共有リンク', 'ショートカットキー', '社員の管理', '会社の休業日', 'Slack通知の送り先', 'Slack通知の時間・文面', 'システム更新'].every(t => titles.some(x => x.includes(t))) && !titles.some(x => x.includes('パスワードの変更') || x.includes('ホーム画面に追加')), titles);
+  ok('すべての項目が、1ページに並ぶ', ['予定の色', '共有リンク', 'ショートカットキー', '社員の管理', '会社の休業日', 'Slack通知の送り先', 'Slack通知の時間・文面', 'システム更新'].every(t => titles.some(x => x.includes(t))) && !titles.some(x => x.includes('パスワードの変更') || x.includes('ホーム画面に追加')), titles);
   ok('左に、項目の一覧（ジャンプ用）がある', (await a.locator('.set-nav a').count()) === titles.length);
   // 中身が、その場で出ている
   ok('予定の色: パレットが、ページの中に出ている', (await a.locator('#set-colors .cs-sw, #set-colors .pal').count()) > 0);
@@ -33,7 +33,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.keyboard.press('?'); await a.waitForSelector('.overlay .sc-table'); await a.keyboard.press('Escape');
   // 一般の社員: 管理者向けは出ない
   const y = await mk(); await login(y, 'yamada@example.com', 'yamadapass1'); await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page');
-  const yt = await y.locator('.set-sec > h3').allInnerTexts(); ok('一般の社員には、管理者向けの項目は出ない', yt.length === 4 && !yt.join().includes('社員の管理') && !yt.join().includes('Slack'), yt);
+  const yt = await y.locator('.set-sec > h3').allInnerTexts(); ok('一般の社員には、管理者向けの項目は出ない', yt.length === 3 && !yt.join().includes('社員の管理') && !yt.join().includes('Slack'), yt);
   // スマホ幅
   const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.click('header button:has-text("設定")'); await ph.waitForSelector('.settings-page'); await ph.waitForTimeout(800);
   const m = await ph.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok('スマホ: 横にはみ出さない', m[0] <= m[1], m); await ph.screenshot({ path: 'set-phone.png' });

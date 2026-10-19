@@ -445,7 +445,7 @@
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
-      return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
+      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -495,7 +495,6 @@
     var admin = S.me.user.role === 'admin';
     var list = [
       { id: 'colors', title: '予定の色', build: openColorDialog },
-      { id: 'series', title: '繰り返し業務', build: openSeriesDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
       { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts }
     ];

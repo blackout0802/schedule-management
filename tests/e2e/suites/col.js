@@ -16,10 +16,11 @@ const backToCal = async (p) => { await p.click('button:has-text("カレンダー
   await p.reload(); await p.waitForSelector('.cal .bar');
   // ---- 設定のページ
   await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page'); const st = await p.locator('.set-sec > h3').allInnerTexts();
-  ok('「設定」を押すと、設定のページが開き、項目が並ぶ（管理者向けは出ない）', ['予定の色', '繰り返し業務', '共有リンク', 'ショートカットキー'].every(x => st.join().includes(x)) && !st.join().includes('社員の管理') && !st.join().includes('システム更新'), st);
+  ok('「設定」を押すと、設定のページが開き、項目が並ぶ（管理者向けは出ない）', ['予定の色', '共有リンク', 'ショートカットキー'].every(x => st.join().includes(x)) && !st.join().includes('繰り返し業務') && !st.join().includes('社員の管理') && !st.join().includes('システム更新'), st);
   ok('色の設定の画面は、タブで切り替える（単発の業務・繰り返しの業務・休み・プライベート・休みの人がいる日）。色の表示は、選んだ1つだけ', (await p.locator('.cs-tab').allInnerTexts()).join(',') === '単発の業務,繰り返しの業務,休み,プライベート,休みの人がいる日' && (await p.locator('.cs-row').count()) === 1);
   await tab(p, '休み'); ok('タブを押すと、その種類の色の画面に切り替わる', (await p.locator('.cs-name').innerText()) === '休み' && (await p.locator('.cs-row').count()) === 1); await tab(p, 'プライベート'); ok('プライベートのタブ', (await p.locator('.cs-name').innerText()) === 'プライベート'); await tab(p, '単発の業務');
-  await backToCal(p); await p.click('header button:has-text("山田")'); const um = await p.locator('.menu-list').innerText(); ok('ユーザー名のメニューには、パスワードの変更とログアウトだけ', um.includes('パスワードの変更') && um.includes('ログアウト') && !um.includes('予定の色の設定'), um);
+  await backToCal(p); await p.click('header button:has-text("山田")'); const um = await p.locator('.menu-list').innerText(); ok('ユーザー名のメニューは、パスワードの変更・繰り返し業務・ログアウトの順', um.includes('パスワードの変更') && um.includes('繰り返し業務') && um.includes('ログアウト') && um.indexOf('パスワードの変更') < um.indexOf('繰り返し業務') && um.indexOf('繰り返し業務') < um.indexOf('ログアウト') && !um.includes('予定の色の設定'), um);
+  await p.locator('.menu-list button:has-text("繰り返し業務")').click(); await p.waitForSelector('.modal'); ok('「繰り返し業務」を押すと、繰り返し業務の設定の画面が開く', (await p.locator('.modal').innerText()).includes('繰り返し業務の設定')); await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.modal')); await p.click('header button:has-text("山田")');
   await p.keyboard.press('Escape'); await p.click('body', { position: { x: 5, y: 500 } }); ok('外を押すとメニューが閉じる', (await p.locator('.menu-list').count()) === 0);
   await openColors(p);
   // ---- 明るい色の候補
