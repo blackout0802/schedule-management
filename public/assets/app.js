@@ -302,10 +302,12 @@
     COLOR_DEFS.forEach(function (d) { pending[d[0]] = (S.me.prefs && S.me.prefs.colors && S.me.prefs.colors[d[0]]) || ''; });
     var pOff = offdayPref();
     var rows = el('div', { class: 'cs-rows' });
+    var active = 0; // いま開いているタブ（業務・繰り返し・休み・プライベート・休みの人がいる日）。色の表示は、選んだ1つだけ
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     function styleOf() { var v = colorVars(pending); return Object.keys(v).map(function (k) { return k + ':' + v[k]; }).join(';'); }
     function draw() {
       rows.textContent = '';
+      var built = [];
       COLOR_DEFS.forEach(function (d) {
         var key = d[0], cur = pending[key];
         var sample = el('div', { class: 'cs-sample', style: styleOf() }, el('div', { class: d[2], text: d[3] }));
@@ -315,9 +317,10 @@
           return el('button', { type: 'button', class: 'sw', style: 'background:' + c, 'aria-label': nm + ' ' + c, 'aria-pressed': cur === c ? 'true' : 'false', title: nm + ' ' + c, onclick: function () { pending[key] = c; draw(); } });
         })), el('input', { type: 'color', 'aria-label': d[1] + 'の色を自由に選ぶ', value: cur || '#cfe4fc', onchange: function () { pending[key] = this.value.toLowerCase(); draw(); } }),
           el('button', { type: 'button', class: 'btn small', text: '標準に戻す', disabled: !cur, onclick: function () { pending[key] = ''; draw(); } }));
-        rows.appendChild(el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: d[1] }), warn), sw, sample));
-        var bar = sample.querySelector('.bar'), cs = getComputedStyle(bar), fg = parseRgb(cs.color), bg = parseRgb(cs.backgroundColor);
-        if (cur && fg && bg && contrastRatio(fg, bg) < 4.5) warn.hidden = false;
+        built.push({ label: d[1], node: el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: d[1] }), warn), sw, sample), check: function () { // 画面に出してから、色の見やすさを確かめる
+          var bar = sample.querySelector('.bar'), cs = getComputedStyle(bar), fg = parseRgb(cs.color), bg = parseRgb(cs.backgroundColor);
+          if (cur && fg && bg && contrastRatio(fg, bg) < 4.5) warn.hidden = false;
+        } });
       });
       // 休みの人がいる日のセル
       var cell = el('div', { class: 'cs-sample' }, el('div', { class: 'cell' + (pOff.on ? ' offday' : ''), style: pOff.color ? '--offday-bg:' + offdayBg(pOff.color) : null }, el('div', { class: 'num' }, el('span', { class: 'd', text: '14' })), el('div', { class: 'bar off', text: '山田 花子 有給' })));
@@ -327,8 +330,13 @@
         return el('button', { type: 'button', class: 'sw', disabled: !pOff.on, style: 'background:' + c, 'aria-label': nm + ' ' + c, 'aria-pressed': pOff.color === c ? 'true' : 'false', title: nm + ' ' + c, onclick: function () { pOff.color = c; draw(); } });
       })), el('input', { type: 'color', disabled: !pOff.on, 'aria-label': '休みの人がいる日のセルの色を自由に選ぶ', value: pOff.color || '#cfe4fc', onchange: function () { pOff.color = this.value.toLowerCase(); draw(); } }),
         el('button', { type: 'button', class: 'btn small', text: '標準に戻す', disabled: !pOff.on || !pOff.color, onclick: function () { pOff.color = ''; draw(); } }));
-      rows.appendChild(el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: '休みの人がいる日（カレンダーのセル）' })),
-        el('label', { class: 'check' }, onCb, ' 休みの人がいる日のセルを、薄く塗りつぶす'), osw, cell));
+      built.push({ label: '休みの人がいる日', node: el('div', { class: 'cs-row' }, el('div', { class: 'cs-top' }, el('span', { class: 'cs-name', text: '休みの人がいる日（カレンダーのセル）' })),
+        el('label', { class: 'check' }, onCb, ' 休みの人がいる日のセルを、薄く塗りつぶす'), osw, cell), check: null });
+      rows.appendChild(el('div', { class: 'cs-tabs', role: 'tablist', 'aria-label': '色を決める予定の種類' }, built.map(function (b, i) {
+        return el('button', { type: 'button', class: 'cs-tab', role: 'tab', 'aria-selected': i === active ? 'true' : 'false', text: b.label, onclick: function () { active = i; draw(); } });
+      })));
+      rows.appendChild(built[active].node);
+      if (built[active].check) built[active].check();
     }
     draw();
     var form = el('form', { class: 'form', onsubmit: function (e) {

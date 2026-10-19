@@ -17,12 +17,13 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('凡例に「休みの人がいる日」が出る', (await a.locator('.legend').innerText()).includes('休みの人がいる日'));
   // 設定で、オフ
   await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-colors .cs-row');
-  ok('予定の色の設定に、休みの人がいる日のセルの項目がある', (await a.locator('#set-colors').innerText()).includes('休みの人がいる日（カレンダーのセル）'));
+  await a.click('#set-colors .cs-tab:has-text("休みの人がいる日")');
+  ok('予定の色の設定に、休みの人がいる日のセルの項目がある（タブ）', (await a.locator('#set-colors').innerText()).includes('休みの人がいる日（カレンダーのセル）'));
   await a.locator('#set-colors label:has-text("薄く塗りつぶす") input').uncheck(); await a.click('#set-colors button[type=submit]'); await a.waitForSelector('.toast:has-text("色を保存しました")');
   await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal .bar'); await a.waitForTimeout(300);
   ok('オフにすると、塗りつぶされない', (await bg('14')) === (await bg('16')), [await bg('14'), await bg('16')]);
   // 色を選ぶ
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-colors .cs-row'); await a.locator('#set-colors label:has-text("薄く塗りつぶす") input').check();
+  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-colors .cs-row'); await a.click('#set-colors .cs-tab:has-text("休みの人がいる日")'); await a.locator('#set-colors label:has-text("薄く塗りつぶす") input').check();
   await a.locator('#set-colors .cs-row:has-text("休みの人がいる日") button.sw').nth(0).click(); // 淡い赤
   const sample = await a.locator('#set-colors .cs-row:has-text("休みの人がいる日") .cs-sample .cell').evaluate(e => getComputedStyle(e).backgroundColor); ok('色を選ぶと、見本のセルにその場で反映される', /rgb\(2[45]\d, 2[0-3]\d, 2[0-3]\d\)/.test(sample) || sample.startsWith('color('), sample);
   await a.click('#set-colors button[type=submit]'); await a.waitForSelector('.toast:has-text("色を保存しました")'); await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal .bar'); await a.waitForTimeout(300);
