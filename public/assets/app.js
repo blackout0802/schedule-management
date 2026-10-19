@@ -411,7 +411,7 @@
   }
 
   /* 上の帯（アプリ名・業務版/プライベート版・会議室・設定・ユーザー）。カレンダーと会議室のページで、同じものを使う */
-  function buildTopbar(onMain) {
+  function buildTopbar(onMain, teamOnly) { // teamOnly: 会議室のページは業務版だけなので、プライベート版のタブは出さない
     /* 右上のメニュー: 「設定」ボタン（設定の項目）と、ユーザー名のボタン（パスワード・ログアウト）。同時に開くのは1つだけ */
     var openMenus = [];
     function closeAllMenus() { openMenus.slice().forEach(function (m) { m(); }); }
@@ -438,7 +438,7 @@
     document.addEventListener('click', closeAllMenus);
 
     var tabs = el('div', { class: 'tabs', role: 'tablist' },
-      ['team', 'me'].map(function (v) {
+      (teamOnly ? ['team'] : ['team', 'me']).map(function (v) {
         return el('button', { class: 'tab', type: 'button', role: 'tab', 'data-view': v, 'aria-selected': onMain && S.view === v ? 'true' : 'false',
           text: v === 'team' ? '業務版' : 'プライベート版', title: (v === 'team' ? '業務版（b）' : 'プライベート版（p）'),
           onclick: function () { if (onMain) return setView(v); S.view = v; store('sched.view', v); leaveSettings(); } }); // 会議室のページからは、押した版のカレンダーに戻る
@@ -3490,7 +3490,7 @@
     root.textContent = '';
     syncTodoHover();
     if (!S.rm) S.rm = { month: monthFirst(new Date()), data: null, ahead: null };
-    root.appendChild(buildTopbar(false));
+    root.appendChild(buildTopbar(false, true));
     root.appendChild(el('main', null, el('div', { id: 'rooms-body', 'aria-live': 'polite' }, el('p', { class: 'muted', text: '読み込み中…' }))));
     window.scrollTo(0, 0);
     roomsLoad();
