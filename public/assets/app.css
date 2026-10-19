@@ -809,12 +809,6 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
   .set-sec > h3 .pill { white-space: nowrap; flex: 0 0 auto; }
   .settings-page > h2 { margin: 6px 0 8px; }
   .set-sec { margin-bottom: 8px; padding: 12px 14px; }
-  .set-sec.collapsible > h3 { margin: 0; padding: 0; border: 0; cursor: pointer; justify-content: flex-start; font-size: 15px; }
-  .set-sec.collapsible > h3::after { content: '▾'; margin-left: auto; color: var(--muted); transition: transform .15s; }
-  .set-sec.collapsible.open > h3 { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-  .set-sec.collapsible.open > h3::after { transform: rotate(180deg); }
-  .set-sec.collapsible > .set-body { display: none; }
-  .set-sec.collapsible.open > .set-body { display: block; }
 }
 
 /* v1.46.1 スマホで、画面より横に広がらない・左右にスワイプしても動かない
@@ -933,3 +927,20 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .theme-sw .ic { width: 16px; height: 16px; }
 .topbar-in .theme-sw { margin-left: 4px; }
 @media (max-width: 640px) { .theme-sw button { width: 24px; height: 26px; } .topbar-in .theme-sw { margin-left: 0; } .topbar-in .brand .ver, .topbar-in > .muted, .topbar-in.settings-bar .brand { display: none; } } /* スマホは、上の帯が1行に収まるよう、版の表示を省く */
+
+/* 設定の各項目: 見出しを押すと開く（初めは畳んである） */
+.set-sec.collapsible > h3 { margin: 0; padding: 0; border: 0; cursor: pointer; justify-content: flex-start; user-select: none; }
+.set-sec.collapsible > h3::after { content: '▾'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+.set-sec.collapsible > h3:hover { color: var(--work); }
+.set-sec.collapsible.open > h3 { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.set-sec.collapsible.open > h3::after { transform: rotate(180deg); }
+.set-sec.collapsible > .set-body { display: none; }
+.set-sec.collapsible.open > .set-body { display: block; }
+.set-sec.collapsible { padding-top: 14px; padding-bottom: 14px; margin-bottom: 10px; }
+.set-sec.collapsible.open { padding-bottom: 20px; }
+/* ショートカットキー: 2〜3列に並べて、縦を短く */
+.sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 18px; max-width: none; font-size: 13px; }
+.sc-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sc-item kbd { flex: none; min-width: 22px; padding: 0 6px; font-size: 12px; }
+.sc-item span { min-width: 0; }
+.set-body .sc-table.sc-grid { max-width: none; }

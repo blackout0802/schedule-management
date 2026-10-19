@@ -358,7 +358,7 @@
      入力欄に文字を打っているとき、ダイアログを開いているとき、Ctrl・Alt・Command を押しているときは、動かさない。
      日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
   var SHORTCUTS = [
-    ['c', 'カレンダーを表示'], ['r', '会議室予約を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月・今週に戻る（今日）'], ['w', '月表示・週表示の切り替え（カレンダー）'], ['← / →', '前の月・週 / 次の月・週'],
+    ['c', 'カレンダーを表示'], ['r', '会議室予約を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月・今週に戻る（今日）'], ['w', '月・週表示の切り替え'], ['← / →', '前の月・週 / 次の月・週'],
     ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['s', 'システム更新（管理者のみ）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
   ];
   function shortcutKey(e) {
@@ -370,8 +370,8 @@
   }
   function openShortcuts() {
     if (modals.some(function (m) { return m.shortcuts; })) return;
-    var rows = SHORTCUTS.filter(function (s) { return s[0] !== 's' || S.me.user.role === 'admin'; }).map(function (s) { return el('tr', null, el('th', { scope: 'row' }, el('kbd', { text: s[0] })), el('td', { text: s[1] })); });
-    var body = el('div', { class: 'form' }, el('table', { class: 't sc-table' }, el('tbody', null, rows)),
+    var rows = SHORTCUTS.filter(function (s) { return s[0] !== 's' || S.me.user.role === 'admin'; }).map(function (s) { return el('div', { class: 'sc-item' }, el('kbd', { text: s[0] }), el('span', { text: s[1] })); });
+    var body = el('div', { class: 'form' }, el('div', { class: 'sc-table sc-grid' }, rows), // 2〜3列に並べて、縦を短く
       el('p', { class: 'hint', text: '入力欄に文字を打っているときと、ダイアログを開いているときは、使えません。' }),
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     var ov = openModal('ショートカットキー', body);
@@ -648,6 +648,7 @@
     return ov;
   }
 
+  function openIds() { var v = store('sched.setOpen'); return v === 'all' ? ['*'].concat(settingsSections().map(function (x) { return x.id; })) : Array.isArray(v) ? v : []; } // 'all' は、画面テスト用（すべて開いた状態）
   function renderSettingsPage() {
     root.textContent = '';
     syncTodoHover(); // 右端のToDoの取っ手は、カレンダーのときだけ
@@ -658,13 +659,17 @@
     secs.forEach(function (sec) {
       var host = el('div', { class: 'set-body' });
       var head = el('h3', null, sec.title, sec.admin ? el('span', { class: 'pill admin', text: '管理者' }) : null);
-      var card = el('section', { class: 'set-sec' + (sec.admin ? ' admin' : '') + (phone ? ' collapsible' : ''), id: 'set-' + sec.id, 'aria-label': sec.title }, head, host);
-      if (phone) { // スマホでは、項目を畳んでおく（長いページを、ずっとスクロールしなくて済むように）。見出しを押すと開く
-        var toggle = function () { var open = card.classList.toggle('open'); head.setAttribute('aria-expanded', open ? 'true' : 'false'); if (open) card.scrollIntoView({ block: 'start' }); };
-        head.setAttribute('role', 'button'); head.setAttribute('tabindex', '0'); head.setAttribute('aria-expanded', 'false');
-        head.addEventListener('click', toggle);
-        head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
-      }
+      var card = el('section', { class: 'set-sec collapsible' + (sec.admin ? ' admin' : ''), id: 'set-' + sec.id, 'aria-label': sec.title }, head, host);
+      /* 各項目は、見出しを押すと開く（初めは畳んでおく）。開いた項目は、この端末が覚える */
+      var setOpen = function (open) {
+        card.classList.toggle('open', open); head.setAttribute('aria-expanded', open ? 'true' : 'false');
+        var ids = openIds().filter(function (x) { return x !== sec.id; }); if (open) ids.push(sec.id); store('sched.setOpen', ids);
+      };
+      var toggle = function () { var open = !card.classList.contains('open'); setOpen(open); if (open && phone) card.scrollIntoView({ block: 'start' }); };
+      head.setAttribute('role', 'button'); head.setAttribute('tabindex', '0'); head.setAttribute('aria-expanded', 'false');
+      head.addEventListener('click', toggle);
+      head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      if (openIds().indexOf(sec.id) >= 0) { card.classList.add('open'); head.setAttribute('aria-expanded', 'true'); }
       var render = function () {
         host.textContent = '';
         sec.t = Date.now();
@@ -672,7 +677,7 @@
         try { sec.build(); } finally { embedHost = null; }
       };
       content.appendChild(card);
-      nav.appendChild(el('a', { href: '#set-' + sec.id, text: sec.title, onclick: function (e) { e.preventDefault(); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
+      nav.appendChild(el('a', { href: '#set-' + sec.id, text: sec.title, onclick: function (e) { e.preventDefault(); if (!card.classList.contains('open')) setOpen(true); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
       render();
     });
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in settings-bar' },
