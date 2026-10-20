@@ -1468,7 +1468,7 @@
     var impCb = el('input', { type: 'checkbox', name: 'important', checked: !!(ev && ev.important), style: 'width:auto' });
     // ToDoリストにも入れる（進捗を選ぶ）。ToDoから置いた予定は、下の「ToDoの状態」で変えるので、ここには出さない
     var todoSel = el('select', { name: 'todo_status', 'aria-label': 'ToDoリストの進捗' },
-      [['', '入れない'], ['todo', '未着手'], ['doing', '進行中'], ['done', '完了']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
+      [['', '入れない'], ['todo', '未着手'], ['doing', '進行中'], ['hold', '保留'], ['done', '完了']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
     var todoLabel = el('label', { class: 'todo-opt' }, 'ToDoリストにも入れる（進捗）', todoSel,
       ev && ev.recurring ? el('span', { class: 'hint', text: 'この回だけが ToDo になります（保存すると、この回は、あとでルールを変えても変わらなくなります）。' }) : null);
     var hint = el('p', { class: 'hint' });
@@ -2789,13 +2789,13 @@
     function draw() {
       box.textContent = '';
       box.appendChild(el('span', { class: 'td-state-lbl', text: 'ToDoの状態' }));
-      ['todo', 'doing', 'done'].forEach(function (s) {
+      ['todo', 'doing', 'hold', 'done'].forEach(function (s) {
         box.appendChild(el('button', { class: 'btn small st-' + s + (cur === s ? ' on' : ''), type: 'button', 'aria-pressed': cur === s ? 'true' : 'false', disabled: canChange ? null : 'disabled', text: TD_STATE_NAME[s],
           onclick: function () {
             if (cur === s) return;
             api('todo_status', { body: { id: ev.todo_id, status: s } }).then(function () {
               cur = s; ev.todo_status = s; ev.done = s === 'done'; draw();
-              toast(s === 'done' ? '完了にしました（カレンダーでは取り消し線になります）' : s === 'doing' ? '進行中にしました' : '未着手に戻しました');
+              toast(s === 'done' ? '完了にしました（カレンダーでは取り消し線になります）' : s === 'doing' ? '進行中にしました' : s === 'hold' ? '保留にしました' : '未着手に戻しました');
               load(); loadTodos(); syncMemoTodos();
             }).catch(fail);
           } }));

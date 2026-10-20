@@ -15,7 +15,7 @@ const pad = n => String(n).padStart(2, '0');
   // 1) 新規追加 → 進行中で、ToDoリストにも入れる
   await openAdd('16');
   ok('追加ダイアログに「ToDoリストにも入れる（進捗）」がある（既定は「入れない」）', (await p.locator('.modal select[name=todo_status]').inputValue()) === '' && await p.locator('.modal .todo-opt').isVisible());
-  ok('選べる進捗は、入れない・未着手・進行中・完了', (await p.locator('.modal select[name=todo_status] option').allInnerTexts()).join('|') === '入れない|未着手|進行中|完了');
+  ok('選べる進捗は、入れない・未着手・進行中・保留・完了', (await p.locator('.modal select[name=todo_status] option').allInnerTexts()).join('|') === '入れない|未着手|進行中|保留|完了');
   await p.fill('.modal input[name=title]', 'カレンダーから作る業務A'); await p.selectOption('.modal select[name=todo_status]', 'doing'); await p.click('.modal button[type=submit]');
   await p.waitForSelector('.bar:has-text("カレンダーから作る業務A")');
   ok('保存すると、ToDoリストにも「進行中」で入る', (await todos()).some(t => t[0] === 'カレンダーから作る業務A' && t[1] === 'doing'), await todos());

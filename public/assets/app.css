@@ -707,6 +707,7 @@ kbd { border-radius: 6px; }
 .td-state .btn.st-doing.on { background: var(--work-soft); border-color: var(--work); color: var(--work); }
 .td-state .btn.st-done.on { background: var(--off-soft); border-color: var(--off); color: var(--off); }
 .td-state .btn.st-todo.on { background: var(--surface); border-color: var(--ink); }
+.td-state .btn.st-hold.on { background: var(--surface-2); border-color: var(--muted); color: var(--muted); }
 .td-state .btn:disabled { opacity: .7; cursor: default; }
 
 /* v1.46 スマホ（幅640px以下）: なるべくスクロールしないで済むように、縦の余白と説明を減らす */
