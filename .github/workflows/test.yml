@@ -3,6 +3,7 @@
 #   mariadb … 同じテストを MariaDB で（PHP 8.3）
 #   compat  … PHP 7.4 で使えない書き方がないかの、静的な検査
 #   e2e     … ブラウザ（Chromium）を動かす画面テスト（tests/e2e。SQLite）
+#   deploy  … 上の4つがすべて成功したときだけ、サーバーへ FTP（FTPS）で反映する（下記。Secrets が無ければ、何もしない）
 name: tests
 
 on:
@@ -98,3 +99,45 @@ jobs:
           name: e2e-output
           path: tests/e2e/.work/out
           if-no-files-found: ignore
+
+  # サーバーへの反映。テストがすべて成功した、作業ブランチへの push のときだけ。
+  # 反映するのは、更新用 zip と同じファイル（public / src / sql / bin。config.php・data は含まない）。
+  # 次の4つを、リポジトリの Settings → Secrets and variables → Actions に登録するまでは、何もしない（失敗にもならない）:
+  #   FTP_SERVER（例 ss912764.stars.ne.jp）/ FTP_USERNAME / FTP_PASSWORD / FTP_SERVER_DIR（アプリのフォルダ。config.php と同じ場所）
+  deploy:
+    needs: [unit, mariadb, compat, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/intelligent-brahmagupta-qhk963'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secrets がそろっているか
+        id: ready
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+        run: |
+          if [ -n "$FTP_SERVER" ] && [ -n "$FTP_USERNAME" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$FTP_SERVER_DIR" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::サーバーへの反映は、Secrets（FTP_SERVER・FTP_USERNAME・FTP_PASSWORD・FTP_SERVER_DIR）が未登録のため、行いませんでした。"
+          fi
+      - name: 反映するファイルをそろえる
+        if: steps.ready.outputs.ok == 'true'
+        run: python3 tools/make_update.py --stage stage
+      - name: サーバーへ反映（FTPS）
+        if: steps.ready.outputs.ok == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: stage/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          state-name: .ftp-deploy-sync-state-schedule.json

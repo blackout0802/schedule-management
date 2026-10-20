@@ -202,6 +202,33 @@ Slack の通知に付く「スケジュールを開く」は、会社用リン�
 
 更新用 zip の作り方（開発側）: `python3 tools/make_update.py`（`dist/update-v〜.zip` ができます）。
 
+## 11-2. サーバーへの自動反映（GitHub Actions → FTPS）
+
+zip を使わずに、GitHub にプッシュしたあと、テストがすべて成功したら、サーバーへ**自動で**反映する仕組みです（`.github/workflows/test.yml` の `deploy`）。
+
+- 反映するのは、更新用 zip と同じファイル（`public`・`src`・`sql`・`bin`）だけです。`config.php`・`data`・`.htaccess` には触りません。
+- 反映するのは、作業ブランチ（`claude/intelligent-brahmagupta-qhk963`）へのプッシュのときだけです。テストが1つでも失敗すると、反映しません。
+- データベースの変更は、画面を開いたときに自動で行われます（zip のときと同じです）。
+
+### 初めに1回だけ: Secrets の登録
+
+GitHub のリポジトリ → **Settings → Secrets and variables → Actions → New repository secret** で、次の4つを登録します。（登録するまでは、反映は行われませんが、テストは失敗にもなりません）
+
+| 名前 | 入れるもの | 例 |
+|---|---|---|
+| `FTP_SERVER` | FTP のホスト名 | `ss912764.stars.ne.jp` |
+| `FTP_USERNAME` | FTP のユーザー名 | `ss912764` |
+| `FTP_PASSWORD` | FTP のパスワード | （FileZilla のサイトマネージャーと同じもの） |
+| `FTP_SERVER_DIR` | サーバー側の、アプリのフォルダ（`config.php` と `public` フォルダがある場所）。**最後に `/` を付ける** | `/schedule-management.skym.ink/public_html/` |
+
+- パスワードは、チャットやファイルには書かず、Secrets の画面にだけ入れてください。登録した値は、あとから見ることはできません（上書きだけできます）。
+- `FTP_SERVER_DIR` は、FileZilla の右側（サーバー側）で、`config.php`・`public`・`src`・`sql`・`bin`・`data` が並んでいるフォルダを開いたときの、上のほうの「リモートサイト」に出るパスです。
+- 接続は、FileZilla と同じ「使用可能なら明示的な FTP over TLS」（FTPS）です。証明書のエラーが出たときは、`deploy` の `security: loose` を足します。
+
+### うまくいったかの確認
+
+プッシュ後、GitHub の **Actions** → 最新の `tests` → `deploy` を開きます。緑なら反映済みです。サーバーの画面を開き直し（Ctrl + F5）、画面左上のバージョンが上がっていれば確認できます。
+
 ## こんなときは
 
 | 症状 | 確認すること |
