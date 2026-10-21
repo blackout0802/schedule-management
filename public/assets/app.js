@@ -692,14 +692,17 @@
           api('audit_delete', { body: { id: e.id } }).then(function () { toast('1件を削除しました'); load(true); }).catch(fail);
         } }));
     }
+    var loadSeq = 0;
     function load(reset) {
       if (reset) { last = 0; list.textContent = ''; }
+      var seq = ++loadSeq; // 絞り込みを続けて切り替えたとき、古い答えが、あとから届いて混ざらないようにする
       var params = { limit: reset ? '5' : '50' }; // 初めは、直近の5件だけ。ボタンを押すと、残りを50件ずつ
       if (fType.value) params.type = fType.value;
       if (fActor.value) params.actor = fActor.value;
       if (fQ.value.trim()) params.q = fQ.value.trim();
       if (last) params.before = String(last);
       api('audit_list', { params: params }).then(function (j) {
+        if (seq !== loadSeq) return;
         if (!typesLoaded) { typesLoaded = true; Object.keys(j.types).forEach(function (k) { fType.appendChild(el('option', { value: k, text: j.types[k] })); }); }
         if (reset && !j.entries.length) list.appendChild(el('p', { class: 'muted', text: '該当する履歴はありません。' }));
         j.entries.forEach(function (e) { list.appendChild(item(e)); last = e.id; });
