@@ -21,6 +21,7 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const ds = `${t.
   const bgOf = pg => pg.$$eval('.cell.offday', els => getComputedStyle(els[0]).backgroundColor);
   await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=prefs_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ colors: { work: '', rec: '', off: '', private: '' }, offday: { on: true, color: '#c9e8d4' } }) }); });
   await y.reload(); await y.waitForSelector('.cell.offday'); await f.reload(); await f.waitForSelector('.cell.offday');
+  await y.mouse.move(0, 0); await f.mouse.move(0, 0); await f.waitForTimeout(150); // マウスがマスの上に残っていると、ホバーの色（少し濃い）になるので、外しておく
   const mineBg = await bgOf(y), famBg = await bgOf(f);
   ok('家族用リンクの「休みの人がいる日」の背景は、本人が決めた色（本人の画面と同じ）', mineBg === famBg && mineBg !== 'rgba(0, 0, 0, 0)', [mineBg, famBg]);
   await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=prefs_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ colors: { work: '', rec: '', off: '', private: '' }, offday: { on: false, color: '' } }) }); });
