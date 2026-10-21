@@ -33,7 +33,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.keyboard.press('?'); await a.waitForSelector('.overlay .sc-table'); await a.keyboard.press('Escape');
   // 一般の社員: 管理者向けは出ない
   const y = await mk(); await login(y, 'yamada@example.com', 'yamadapass1'); await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page');
-  const yt = await y.locator('.set-sec > h3').allInnerTexts(); ok('一般の社員には、管理者向けの項目は出ない', yt.length === 3 && !yt.join().includes('社員の管理') && !yt.join().includes('Slack'), yt);
+  const yt = await y.locator('.set-sec > h3').allInnerTexts(); ok('一般の社員には、管理者向けの項目は出ない', yt.length === 4 && !yt.join().includes('社員の管理') && !yt.join().includes('Slack'), yt);
   // スマホ幅
   const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.click('header button:has-text("設定")'); await ph.waitForSelector('.settings-page'); await ph.waitForTimeout(800);
   const m = await ph.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok('スマホ: 横にはみ出さない', m[0] <= m[1], m); await ph.screenshot({ path: 'set-phone.png' });

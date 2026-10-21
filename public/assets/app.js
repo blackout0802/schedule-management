@@ -3,6 +3,7 @@
   'use strict';
 
   var SHARE = window.SCHEDULE_SHARE || null; // 共有リンクの閲覧ページ（ログイン不要・閲覧専用）
+  var FAMACCT = false; // 家族のアカウントでログインしているとき（起動時に決まる）。プライベートのカレンダーだけ。ToDo・日報・会議室・設定は無い
   var FAMILY = !!(SHARE && SHARE.kind === 'family'); // 家族用: 更新履歴・「前回見たとき」からの更新の目印がある
   var root = document.getElementById('app');
   var csrf = root.getAttribute('data-csrf');
@@ -368,6 +369,79 @@
     if (e.key === '?' || e.key === '？' || (e.code === 'Slash' && e.shiftKey)) return '?';
     return '';
   }
+  /* ---------- 家族の招待（設定のページの項目）----------
+     家族を招待すると、家族が自分のアカウントでログインして、自分のプライベートのカレンダーを見たり、自分の予定を書き込んだりできる。
+     家族に見えるのは、「家族に共有」にした予定（と、共有リンクの範囲）と、家族が入れた予定だけ。業務・ToDo・日報・会議室・設定は見えない。 */
+  function showFamilyCredentials(name, email, pw, again) {
+    var url = new URL('login.php', location.href).href;
+    var box = el('div', { class: 'form fam-cred' },
+      el('p', { class: 'hint', text: again ? name + ' さんのパスワードをリセットしました。次の内容を、本人に伝えてください。' : name + ' さんを招待しました。次の内容を、本人に伝えてください。' }),
+      el('dl', { class: 'detail' },
+        el('dt', { text: 'ログインのページ' }), el('dd', { text: url }),
+        el('dt', { text: 'メールアドレス' }), el('dd', { text: email }),
+        el('dt', { text: '一時パスワード' }), el('dd', { class: 'fam-pw', text: pw })),
+      el('p', { class: 'hint warn', text: 'この画面を閉じると、一時パスワードは、二度と表示されません（忘れたときは、「パスワードをリセット」で作り直せます）。本人が最初にログインすると、自分だけのパスワードに変更します。' }),
+      el('div', { class: 'actions' },
+        el('button', { class: 'btn', type: 'button', text: '内容をコピー', onclick: function () {
+          var t = 'ログインのページ: ' + url + '\nメールアドレス: ' + email + '\n一時パスワード: ' + pw;
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast('コピーしました'); }, function () { toast('コピーできませんでした。手で書き写してください'); });
+        } }),
+        el('button', { class: 'btn primary', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    var ov = openModal('家族のログイン情報', box, false, true);
+  }
+  function openFamilyDialog() {
+    var body = el('div', { class: 'form fam-box' });
+    var ov = openModal('家族の招待', body, true);
+    var nameIn = el('input', { name: 'fam_name', maxlength: '60', autocomplete: 'off', placeholder: '例: 山田 花子' });
+    var mailIn = el('input', { name: 'fam_email', type: 'email', maxlength: '190', autocomplete: 'off', placeholder: '例: hanako@example.com（ログインに使います）' });
+    var msg = el('p', { class: 'error', role: 'alert', hidden: true });
+    function draw(members, max) {
+      body.textContent = '';
+      body.appendChild(el('p', { class: 'hint', text: '家族を招待すると、家族が自分のアカウントでログインして、あなたのプライベートのカレンダーを見たり、自分の予定を書き込んだりできます。' }));
+      body.appendChild(el('ul', { class: 'tips-list' },
+        el('li', { text: '家族に見えるのは、あなたが「家族に共有」にした予定（と、共有リンクで共有している範囲）と、家族が入れた予定だけです。業務・ToDo・日報・会議室・設定は、見えません。' }),
+        el('li', { text: '家族が入れた予定は、あなたのプライベート版にも出ます（見るだけ。変更・削除できるのは、入れた本人だけです）。' }),
+        el('li', { text: '管理者にも、家族の予定は見えません。招待できるのは、' + max + '人までです。' })));
+      if (!members.length) body.appendChild(el('p', { class: 'muted', text: 'まだ、招待した家族はいません。' }));
+      members.forEach(function (m) {
+        var status = !m.active ? '利用停止中' : m.must_change_password ? '招待中（最初のログイン待ち）' : m.last_login_at ? '最後のログイン: ' + String(m.last_login_at).slice(0, 16).replace('T', ' ') : '利用中';
+        body.appendChild(el('div', { class: 'card fam-member' + (m.active ? '' : ' off') },
+          el('div', { class: 'name', text: m.name }),
+          el('div', { class: 'muted', text: m.email + '　' + status }),
+          el('div', { class: 'actions', style: 'justify-content:flex-start;margin-top:6px' },
+            el('button', { class: 'btn small', type: 'button', text: 'パスワードをリセット', onclick: function () {
+              if (!window.confirm(m.name + ' さんのパスワードをリセットします。いまのパスワードは使えなくなり、新しい一時パスワードが作られます。よろしいですか？')) return;
+              api('family_reset_password', { body: { id: m.id } }).then(function (j) { showFamilyCredentials(m.name, m.email, j.password, true); refresh(); }).catch(fail);
+            } }),
+            el('button', { class: 'btn small', type: 'button', text: m.active ? '利用を止める' : '利用を再開', onclick: function () {
+              if (m.active && !window.confirm(m.name + ' さんの利用を止めます。ログインできなくなり、この人の予定も、いったん見えなくなります（再開すると、戻ります）。')) return;
+              api('family_set_active', { body: { id: m.id, active: m.active ? 0 : 1 } }).then(function () { toast(m.active ? '利用を止めました' : '利用を再開しました'); refresh(); load(); }).catch(fail);
+            } }),
+            el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
+              if (!window.confirm(m.name + ' さんのアカウントを削除します。この人が入れた予定も、すべて消えます。元に戻せません。よろしいですか？')) return;
+              api('family_delete', { body: { id: m.id } }).then(function () { toast('削除しました'); refresh(); load(); }).catch(fail);
+            } }))));
+      });
+      var full = members.length >= max;
+      body.appendChild(el('form', { class: 'fam-add', onsubmit: function (e) {
+        e.preventDefault(); msg.hidden = true;
+        var nm = nameIn.value.trim(), em = mailIn.value.trim();
+        api('family_add', { body: { name: nm, email: em } }).then(function (j) {
+          nameIn.value = ''; mailIn.value = '';
+          showFamilyCredentials(nm, em.toLowerCase(), j.password, false); draw(j.members, max);
+        }).catch(function (x) { msg.textContent = x.message; msg.hidden = false; });
+      } },
+        el('h4', { text: '家族を招待する' }),
+        full ? el('p', { class: 'hint', text: '招待できる人数に達しています。使わない人を削除すると、招待できます。' }) : null,
+        el('div', { class: 'row' }, el('label', null, '名前', nameIn), el('label', null, 'メールアドレス', mailIn)),
+        msg,
+        el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn primary', type: 'submit', text: '招待する', disabled: full ? 'disabled' : null }))));
+      if (!embedHost) body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
+    }
+    function refresh() { api('family_list').then(function (j) { draw(j.members, j.max); }).catch(fail); }
+    refresh();
+  }
+
   function openShortcuts() {
     if (modals.some(function (m) { return m.shortcuts; })) return;
     var rows = SHORTCUTS.filter(function (s) { return s[0] !== 's' || S.me.user.role === 'admin'; }).map(function (s) { return el('div', { class: 'sc-item' }, el('kbd', { text: s[0] }), el('span', { text: s[1] })); });
@@ -388,18 +462,18 @@
     }
     var done = true;
     if (k === 'c') setMode('cal');
-    else if (k === 'r' && !SHARE && S.view === 'team') openRoomsPage();
-    else if (k === 'l' && !FAMILY) setMode('list');
+    else if (k === 'r' && !SHARE && !FAMACCT && S.view === 'team') openRoomsPage();
+    else if (k === 'l' && !FAMILY && !FAMACCT) setMode('list');
     else if (k === 't') goToday();
     else if (k === 'w' && S.mode === 'cal' && S.page === 'main') setSpan(S.span === 'week' ? 'month' : 'week');
     else if (k === 'ArrowLeft') navMonth(-1);
     else if (k === 'ArrowRight') navMonth(1);
     else if (k === '?') openShortcuts();
     else if (!SHARE && k === 'n') openEventDialog(null, ymd(new Date()));
-    else if (!SHARE && k === 'd' && S.mode === 'cal') { if (document.getElementById('todo-panel')) closeTodoPanel(true); else openTodoPanel(); }
-    else if (!SHARE && k === 's' && S.me.user.role === 'admin') location.href = 'update.php';
-    else if (!SHARE && k === 'b') setView('team');
-    else if (!SHARE && k === 'p') setView('me');
+    else if (!SHARE && !FAMACCT && k === 'd' && S.mode === 'cal') { if (document.getElementById('todo-panel')) closeTodoPanel(true); else openTodoPanel(); }
+    else if (!SHARE && !FAMACCT && k === 's' && S.me.user.role === 'admin') location.href = 'update.php';
+    else if (!SHARE && !FAMACCT && k === 'b') setView('team');
+    else if (!SHARE && !FAMACCT && k === 'p') setView('me');
     else done = false;
     if (done) e.preventDefault();
   });
@@ -445,11 +519,12 @@
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
+      if (FAMACCT) return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
       return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     });
     document.addEventListener('click', closeAllMenus);
 
-    var tabs = el('div', { class: 'tabs', role: 'tablist' },
+    var tabs = FAMACCT ? null : el('div', { class: 'tabs', role: 'tablist' },
       (teamOnly ? ['team'] : ['team', 'me']).map(function (v) {
         return el('button', { class: 'tab', type: 'button', role: 'tab', 'data-view': v, 'aria-selected': onMain && S.view === v ? 'true' : 'false',
           text: v === 'team' ? '業務版' : 'プライベート版', title: (v === 'team' ? '業務版（b）' : 'プライベート版（p）'),
@@ -457,7 +532,9 @@
       }));
 
     return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
-      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })), tabs, el('span', { class: 'spacer' }), themeSwitch(), settingsMenu, userMenu)));
+      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })),
+      FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : tabs,
+      el('span', { class: 'spacer' }), themeSwitch(), FAMACCT ? null : settingsMenu, userMenu)));
   }
 
   function renderShell() {
@@ -467,6 +544,11 @@
     if (S.page === 'rooms') return renderRoomsPage();
     root.textContent = '';
     root.appendChild(buildTopbar(true));
+    if (FAMACCT) { // 家族のアカウント: カレンダーだけ（ToDo・日報はない）
+      root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
+      renderToolbar();
+      return;
+    }
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }),
       el('div', { class: 'layout' }, el('div', { id: 'board', class: 'board' }),
         el('div', { class: 'side' }, el('aside', { id: 'todo', class: 'todo', 'aria-label': 'ToDoリスト' }), el('section', { id: 'memo', class: 'todo memo', 'aria-label': 'メモ（日報用）' })))));
@@ -487,7 +569,7 @@
   }
   window.addEventListener('hashchange', function () {
     if (SHARE || !S.me) return;
-    var want = location.hash === '#settings' ? 'settings' : location.hash === '#rooms' ? 'rooms' : 'main';
+    var want = FAMACCT ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#rooms' ? 'rooms' : 'main';
     if (want === S.page) return;
     S.page = want; renderShell(); if (want === 'main') load();
   });
@@ -496,6 +578,7 @@
     var list = [
       { id: 'colors', title: '予定の色', build: openColorDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
+      { id: 'family', title: '家族の招待', build: openFamilyDialog },
       { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts }
     ];
     if (admin) {
@@ -770,14 +853,14 @@
       })),
       el('span', { class: 'spacer', style: 'flex:1' }),
       el('span', { class: 'tb-break' }), // スマホでは、ここで行を分ける
-      SHARE || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' },
+      SHARE || FAMACCT || todoOnly || S.view !== 'team' ? null : el('label', { class: 'who' },
         el('select', { id: 'who-sel', 'aria-label': '表示する人', onchange: function () { selectWho(this.value); } },
           el('option', { value: 'all', text: '全社', selected: !whoId() }),
           el('option', { value: String(S.me.user.id), text: '自分', selected: whoId() === S.me.user.id }),
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
       todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
-      SHARE && SHARE.kind === 'family' ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
+      (SHARE && SHARE.kind === 'family') || FAMACCT ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         (!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
         })),
@@ -786,7 +869,7 @@
       })) : null
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px' },
-      el('span', { class: 'vb-text', text: SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
+      el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
   }
 
@@ -826,8 +909,8 @@
       var c = { events: FAMILY ? j.events.filter(function (e) { return !(e.deleted && ackIds().indexOf(e.log_id) >= 0); }) : j.events, holidays: j.holidays, summary: j.summary || null, rev: j.rev, rooms: j.rooms || [], roomDefs: j.room_defs || null };
       S.loading = false;
       applyEvents(c); S.cache[evKey(params)] = c; renderBoard();
-      if (!SHARE) memoRefreshDays(); // 休みなどが変わると、出勤日（日報の日）も変わる
-      if (!SHARE) prefetchOtherView(params, seq);
+      if (!SHARE && !FAMACCT) memoRefreshDays(); // 休みなどが変わると、出勤日（日報の日）も変わる
+      if (!SHARE && !FAMACCT) prefetchOtherView(params, seq);
     }).catch(function (e) { if (seq === loadSeq) S.loading = false; fail(e); });
   }
   /* もう一方の版も、裏で読んでおく（切り替えたとき、すぐ出せるように） */
@@ -920,7 +1003,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : ''; // 全社の表示: 業務の予定の先頭に、誰の予定か
+    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? ownerShort(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
     return who + (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
@@ -1266,7 +1349,7 @@
   /* ---------- カレンダーの右端にカーソルを持っていくと、ToDoが出る（そこからカレンダーの日付へドラッグして予定にできる） ---------- */
   var todoPanelTimer = null;
   function syncTodoHover() {
-    var want = !SHARE && S.me && S.mode === 'cal' && S.page === 'main';
+    var want = !SHARE && !FAMACCT && S.me && S.mode === 'cal' && S.page === 'main';
     var z = document.getElementById('todo-hover');
     if (want && !z) {
       z = el('div', { id: 'todo-hover', class: 'todo-hover', title: 'ToDoを表示（d）', text: 'ToDo' });
@@ -1293,7 +1376,7 @@
   }
   function openTodoPanel() {
     clearTimeout(todoPanelTimer);
-    if ((S.drag && S.drag.t !== 'event') || S.mode !== 'cal' || SHARE) return;
+    if ((S.drag && S.drag.t !== 'event') || S.mode !== 'cal' || SHARE || FAMACCT) return;
     var p = document.getElementById('todo-panel');
     if (p) { p.classList.add('open'); return; }
     p = el('div', { id: 'todo-panel', class: 'todo-panel', role: 'dialog', 'aria-label': 'ToDo' });
@@ -1443,6 +1526,7 @@
   function openEventDialog(ev, dateStr) {
     if (SHARE || (ev && !ev.editable)) return openEventView(ev);
     var isNew = !ev;
+    var FA = FAMACCT; // 家族のアカウント: プライベート（家族に共有）の予定だけ。種類・ToDo・家族への共有・繰り返しは出さない
     var kind = ev ? ev.kind : (S.view === 'me' ? 'private' : 'work');
     // 種類（業務・休み・プライベート）は、登録したあとからも変えられる。変えられるのは、予定の持ち主だけ
     var isOwner = !ev || ev.owner_id === S.me.user.id;
@@ -1525,6 +1609,10 @@
       todoLabel.hidden = k === 'off' || !!(ev && (ev.todo_id || ev.owner_id !== S.me.user.id)); // 休み・ToDoと結びついた予定・他の人の予定には出さない
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示されます。' : '業務の予定は全員に表示されます。';
+      if (FA) { // 家族のアカウント
+        ownerLabel.hidden = true; todoLabel.hidden = true; repeatHint.hidden = true; tagLabel.hidden = true; famLabel.hidden = true; famNote.hidden = true;
+        hint.textContent = '家族のカレンダーに表示されます（' + (S.me.family_owner_name || '') + 'さんと、ほかの家族にも見えます）。';
+      }
       if (k === 'off' && !title.value) title.setAttribute('placeholder', '休み（空のままで可）');
       else if (title.value || !(ev && ev.kind === 'off')) title.removeAttribute('placeholder');
     }
@@ -1546,11 +1634,11 @@
       e.preventDefault();
       err.hidden = true;
       var body = {
-        id: ev ? ev.id : null, kind: curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
+        id: ev ? ev.id : null, kind: FA ? 'private' : curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
         start_time: timeVal(st), end_time: timeVal(et), note: note.value, important: impCb.checked
       };
       // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
-      if (!famOwnerOnly) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
+      if (!famOwnerOnly && !FA) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
       if (!ownerLabel.hidden) body.owner_id = owner.value;
       body.todo_status = todoLabel.hidden ? '' : todoSel.value;
       var kindChanged = !!ev && ev.kind !== body.kind;
@@ -1563,7 +1651,7 @@
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     };
     /* 家族に共有している予定を消すと、家族用の画面に「削除された予定」が取消線で残り、更新履歴にも出る。消すときに、「家族の更新履歴にも残さない」を選べる（プライベートの予定は、初めから選んである） */
-    var shareable = !!ev && ev.owner_id === S.me.user.id && ev.family_shared !== false && !ev.recurring;
+    var shareable = !FA && !!ev && ev.owner_id === S.me.user.id && ev.family_shared !== false && !ev.recurring;
     var forgetCb = shareable ? el('input', { type: 'checkbox', name: 'forget_log', checked: ev.kind === 'private', style: 'width:auto' }) : null;
     var del = ev ? el('button', { class: 'btn danger left', type: 'button', text: '削除', onclick: function () {
       api('event_delete', { body: { id: ev.id, forget_log: !!(forgetCb && forgetCb.checked) } }).then(function (j) {
@@ -1575,7 +1663,7 @@
     } }) : null;
 
     var form = el('form', { class: 'form', onsubmit: save },
-      el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
+      FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
       !(isNew || isOwner) ? el('p', { class: 'hint', style: 'margin:-6px 0 0', text: '種類を変えられるのは、予定の持ち主だけです。' }) : null,
       el('label', null, '件名', title),
       el('div', { class: 'row' }, tagLabel, ownerLabel),
@@ -1594,7 +1682,7 @@
       forgetCb ? el('label', { class: 'check', title: '家族用の画面の「更新履歴」と、取消線の「削除された予定」に、この予定を残しません。テストで入れた予定などを消すときに' }, forgetCb, '削除するとき、家族の更新履歴にも残さない') : null,
       el('div', { class: 'actions' }, del,
         ev ? el('button', { class: 'btn', type: 'button', text: '複製', title: 'この予定を、他の日にも作る', onclick: function () { ov.close(); openDuplicateDialog(ev); } }) : null,
-        ev && canReturnToTodo(ev) ? el('button', { class: 'btn', type: 'button', text: 'ToDoに戻す', title: '日付のない ToDo に戻す', onclick: function () { ov.close(); returnEventToTodo(ev.id, null, false); } }) : null,
+        ev && !FA && canReturnToTodo(ev) ? el('button', { class: 'btn', type: 'button', text: 'ToDoに戻す', title: '日付のない ToDo に戻す', onclick: function () { ov.close(); returnEventToTodo(ev.id, null, false); } }) : null,
         el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
     var ov = openModal(isNew ? '予定を追加' : '予定を編集', form);
     if (ev) tag.value = ev.tag;
@@ -3359,8 +3447,8 @@
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
       forced ? el('div', { class: 'notice' }, el('b', { text: 'はじめにパスワードを変更してください' }),
-        el('p', { text: '管理者が決めた初期パスワードでログインしています。ご自身だけが知っているパスワードに変更すると、予定の画面に進めます。' })) : null,
-      el('label', null, forced ? '現在のパスワード（管理者から伝えられたもの）' : '現在のパスワード', cur),
+        el('p', { text: (FAMACCT ? '招待されたときの一時パスワードでログインしています。' : '管理者が決めた初期パスワードでログインしています。') + 'ご自身だけが知っているパスワードに変更すると、予定の画面に進めます。' })) : null,
+      el('label', null, forced ? '現在のパスワード（伝えられた一時パスワード）' : '現在のパスワード', cur),
       el('label', null, '新しいパスワード（8文字以上・現在のものとは別）', nw), err,
       el('div', { class: 'actions' },
         forced ? el('button', { class: 'btn left', type: 'button', text: 'ログアウト', onclick: doLogout }) : el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }),
@@ -3406,7 +3494,7 @@
     var ev = S.pendEv, td = S.pendTd;
     S.pendEv = false; S.pendTd = false;
     if (ev) { if (S.page === 'rooms') roomsLoad(true); else load(); }
-    if (td && !SHARE) loadTodos();
+    if (td && !SHARE && !FAMACCT) loadTodos();
   }
   function pollRev() {
     if (document.hidden || pollBusy || !S.me) return;
@@ -3796,12 +3884,13 @@
     csrf = me.csrf;
     var now = new Date();
     S.year = now.getFullYear(); S.month = now.getMonth() + 1; initSpan(now);
-    S.view = store('sched.view') === 'me' ? 'me' : 'team';
-    if (/[?&]view=team(&|$)/.test(location.search)) { // 通知のリンクから開いたときは、必ず業務版
+    FAMACCT = me.user.role === 'family';
+    S.view = store('sched.view') === 'me' || FAMACCT ? 'me' : 'team';
+    if (!FAMACCT && /[?&]view=team(&|$)/.test(location.search)) { // 通知のリンクから開いたときは、必ず業務版
       S.view = 'team'; store('sched.view', 'team');
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* 履歴を触れなくても、表示には影響しない */ }
     }
-    S.mode = store('sched.mode') === 'list' ? 'list' : 'cal';
+    S.mode = store('sched.mode') === 'list' && !FAMACCT ? 'list' : 'cal';
     S.who = String(me.user.id); // ログインして開いたときは、まず自分のカレンダー・自分のToDo（「表示する人」「表示」で全員にも切り替えられる。開き直すと自分に戻る）
     S.todoWho = 'me';
     var start = function () { renderShell(); load(); startAutoRefresh(); };

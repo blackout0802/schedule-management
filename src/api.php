@@ -129,7 +129,7 @@ const EXAMPLE_SERIES = [
 
 /** GET（画面を開くだけ）でも使ってよい、読むだけの操作。これ以外は、POST（CSRFトークンの確認つき）だけ受け付ける */
 const API_READ_ACTIONS = ['me', 'rev', 'events', 'todo_list', 'todo_comments', 'todo_file', 'share_list', 'slack_status', 'slack_cfg',
-    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list'];
+    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list'];
 
 function handle_api(): void
 {
@@ -172,6 +172,11 @@ function handle_api(): void
         api_fail('最初にパスワードを変更してください。', 403);
     }
 
+    // 家族のアカウントは、予定の閲覧・自分の予定の変更・パスワードの変更だけ（業務・社員・ToDo・会議室・設定などは、すべて使えない）
+    if (is_family($user) && !in_array($action, FAMILY_ALLOWED_ACTIONS, true)) {
+        api_fail('家族のアカウントでは使えない操作です。', 403);
+    }
+
     switch ($action) {
         case 'me':
             ensure_schema(); // アプリのファイルを更新したあと、足りないテーブルを自動で作る
@@ -183,13 +188,14 @@ function handle_api(): void
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
                 'family_share' => get_family_share($user),
+                'family_owner_name' => is_family($user) ? (string)(row('SELECT name FROM users WHERE id = ?', [family_owner_id($user)])['name'] ?? '') : null, // 家族のアカウントのとき、持ち主の名前
                 'backup_alert' => is_admin($user) ? backup_alert_for_screen() : null, // 月1回の手動バックアップのお知らせ（管理者だけ）
                 'prefs' => get_prefs($user),
                 'work_tags' => cfg('work_tags'),
                 'off_tags' => cfg('off_tags'),
-                'users' => array_map(function ($u) {
+                'users' => is_family($user) ? [] : array_map(function ($u) {
                     return ['id' => (int)$u['id'], 'name' => $u['name']];
-                }, rows('SELECT id, name FROM users WHERE active = 1 ORDER BY name')),
+                }, rows("SELECT id, name FROM users WHERE active = 1 AND role <> 'family' ORDER BY name")),
             ]);
 
         case 'events':
@@ -199,7 +205,7 @@ function handle_api(): void
                 api_fail('期間が正しくありません。');
             }
             $rev = data_rev(); // データを読む前の番号（読んでいる間に更新されても、次の確認で見つかるように）
-            $view = ($_GET['view'] ?? 'team') === 'me' ? 'me' : 'team';
+            $view = ($_GET['view'] ?? 'team') === 'me' || is_family($user) ? 'me' : 'team'; // 家族のアカウントは、いつも、プライベート版
             $holidays = holiday_map($from, $to);
             $out = [
                 'events' => list_events($user, $from, $to, $view, ['who' => ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0]),
@@ -211,12 +217,18 @@ function handle_api(): void
                 $out['room_defs'] = rooms_for_client(false);
             }
             $sum = (string)($_GET['sum'] ?? ''); // 表示している月（YYYY-MM）。あれば、その月の自分の出勤日・休みの日数も返す
-            if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $sum)) {
+            if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $sum) && !is_family($user)) {
                 $out['summary'] = month_summary_multi(summary_users($user, $view, ctype_digit((string)($_GET['who'] ?? '')) ? (int)$_GET['who'] : 0), $sum);
             }
             api_out($out);
 
         case 'event_save':
+            if (is_family($user)) { // 家族の予定は、いつも、プライベート（持ち主の家族に共有）。ToDo・持ち主の指定は受け付けない
+                $in['kind'] = 'private';
+                $in['family_shared'] = 1;
+                unset($in['owner_id']);
+                $in['todo_status'] = '';
+            }
             $existing = null;
             if (!empty($in['id'])) {
                 $existing = find_event((int)$in['id'], $user);
@@ -745,7 +757,7 @@ function handle_api(): void
             require_admin($user);
             api_out(['users' => array_map(function ($u) {
                 return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'active' => (int)$u['active'], 'must_change_password' => (int)$u['must_change_password']];
-            }, rows('SELECT id,name,email,role,active,must_change_password FROM users ORDER BY id'))]);
+            }, rows("SELECT id,name,email,role,active,must_change_password FROM users WHERE role <> 'family' ORDER BY id"))]);
 
         case 'user_save':
             require_admin($user);
@@ -758,7 +770,7 @@ function handle_api(): void
                 api_fail('名前とメールアドレスを正しく入力してください。');
             }
             if (!empty($in['id'])) {
-                $target = row('SELECT * FROM users WHERE id = ?', [(int)$in['id']]);
+                $target = row("SELECT * FROM users WHERE id = ? AND role <> 'family'", [(int)$in['id']]); // 家族のアカウントは、持ち主だけが管理する
                 if (!$target) {
                     api_fail('社員が見つかりません。', 404);
                 }
@@ -802,6 +814,9 @@ function handle_api(): void
             if ($tid === (int)$user['id']) {
                 api_fail('自分のパスワードは、「設定」の「パスワードの変更」で変えられます。');
             }
+            if (user_id_is_family($tid)) {
+                api_fail('家族のアカウントは、持ち主が管理します。', 403);
+            }
             try {
                 $tmp = reset_user_password($tid);
             } catch (RuntimeException $e) {
@@ -810,6 +825,39 @@ function handle_api(): void
             $tu = row('SELECT name FROM users WHERE id = ?', [$tid]);
             audit_log('user', 'reset', 'パスワードをリセット', $tu ? $tu['name'] : '', '一時パスワードを発行（次のログインで本人が変更）');
             api_out(['password' => $tmp]);
+
+        case 'family_list': // 自分が招待した家族（持ち主だけ）
+            api_out(['members' => family_members((int)$user['id']), 'max' => FAMILY_MAX]);
+
+        case 'family_add': // 家族を招待する（アカウントを作り、一時パスワードを1度だけ返す）
+            try {
+                [$fid, $tmp] = family_add($user, (string)($in['name'] ?? ''), (string)($in['email'] ?? ''));
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            audit_log('user', 'add', '家族のアカウントを追加', $user['name'], '持ち主: ' . $user['name']); // 家族の名前は、管理者の履歴には残さない
+            api_out(['ok' => true, 'id' => $fid, 'password' => $tmp, 'members' => family_members((int)$user['id'])]);
+
+        case 'family_reset_password': // 家族のパスワードをリセットする（一時パスワードを1度だけ返す）
+            $m = family_member_of($user, (int)($in['id'] ?? 0));
+            if (!$m) {
+                api_fail('家族が見つかりません。', 404);
+            }
+            api_out(['password' => reset_user_password((int)$m['id'])]);
+
+        case 'family_set_active': // 家族の利用を止める・再開する（止めると、ログインできず、予定も見えなくなる）
+            $m = family_member_of($user, (int)($in['id'] ?? 0));
+            if (!$m) {
+                api_fail('家族が見つかりません。', 404);
+            }
+            q('UPDATE users SET active = ? WHERE id = ?', [empty($in['active']) ? 0 : 1, (int)$m['id']]);
+            api_out(['ok' => true, 'members' => family_members((int)$user['id'])]);
+
+        case 'family_delete': // 家族のアカウントを消す（その人の予定も消える）
+            if (!family_delete($user, (int)($in['id'] ?? 0))) {
+                api_fail('家族が見つかりません。', 404);
+            }
+            api_out(['ok' => true, 'members' => family_members((int)$user['id'])]);
 
         case 'family_log_list': // 自分の家族用リンクに見える更新履歴（持ち主が確認・削除するための一覧）
             api_out(family_event_log((int)$user['id'], 200));

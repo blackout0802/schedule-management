@@ -1753,6 +1753,74 @@ $m26 = function ($o) { $r = row('SELECT * FROM rooms WHERE sort_order = ?', [$o]
 check('会議室: 古い初期値の部屋は、会議室（6名）・応接室（3名）になり、初期の設備名は消える。自分で書いた設備・名前を変えた部屋は、そのまま', [$m26(8), $m26(9), $m26(10), $m26(11)], ['会議室/会/6/', '応接室/応/3/', '会議室/会/6/大きなテレビ', '第2会議室/2/8/モニター']);
 q('DELETE FROM rooms WHERE sort_order >= 8');
 
+
+// ---- 家族のアカウント（v1.76.0）: 招待・見える範囲・書ける範囲 ----
+$fD = '2031-05-12';
+$mkF = function (array $user, array $in) { [$d, $err] = validate_event_input($in, $user); if ($err) { throw new RuntimeException($err); } return save_event($d, $user, null); };
+$fOwner = $a; // 山田
+[$fid1, $fpw1] = family_add($fOwner, '山田 妻', 'wife@example.com');
+$fam1 = row('SELECT * FROM users WHERE id = ?', [$fid1]);
+check('家族: 招待すると、家族のアカウントができる（持ち主・一時パスワード・初回に変更）', [$fam1['role'], (int)$fam1['family_of'] === (int)$fOwner['id'], (int)$fam1['must_change_password'], strlen($fpw1) >= 8], ['family', true, 1, true]);
+check('家族: 一時パスワードでログインできる（家族のアカウントとして）', (function () use ($fpw1) { $u = login_attempt('wife@example.com', $fpw1); return $u !== null && $u['role'] === 'family'; })(), true);
+check('家族: 同じメールアドレスでは招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'wife@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
+check('家族: メールアドレスが正しくないと招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'not-an-email'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
+check('家族: 家族のアカウントからは、招待できない', (function () use ($fam1) { try { family_add($fam1, '孫', 'grand@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
+[$fid2] = family_add($fOwner, '山田 長男', 'son@example.com');
+$fam2 = row('SELECT * FROM users WHERE id = ?', [$fid2]);
+check('家族: 招待できるのは、決まった人数まで', (function () use ($fOwner) { try { for ($i = 0; $i < FAMILY_MAX + 1; $i++) { family_add($fOwner, '多数' . $i, "many$i@example.com"); } return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
+foreach (rows("SELECT id FROM users WHERE email LIKE 'many%@example.com'") as $r) { q('DELETE FROM users WHERE id = ?', [$r['id']]); }
+check('家族: 家族の数は、持ち主ごとに数える', count(family_members((int)$b['id'])), 0);
+
+$fShared = $mkF($fOwner, ['kind' => 'private', 'title' => '家族に共有の予定', 'start' => $fD]);
+$fHidden = $mkF($fOwner, ['kind' => 'private', 'title' => '共有しない予定', 'start' => $fD, 'family_shared' => 0]);
+$fWork = $mkF($fOwner, ['kind' => 'work', 'title' => '共有しない業務', 'tag' => '打ち合わせ', 'start' => $fD]);
+$fT = function (array $u, string $view = 'me') use ($fD) { $t = array_column(list_events($u, $fD, $fD, $view), 'title'); sort($t); return $t; };
+check('家族: 見えるのは、持ち主が家族に共有した予定だけ（共有しない予定・業務は見えない）', $fT($fam1), ['家族に共有の予定']);
+check('家族: 業務版を指定しても、プライベート版の見え方', $fT($fam1, 'team'), ['家族に共有の予定']);
+$fMine = $mkF($fam1, ['kind' => 'work', 'title' => '妻の予定', 'tag' => '会議', 'start' => $fD, 'family_shared' => 0, 'owner_id' => $b['id']]);
+$fMineRow = row('SELECT * FROM events WHERE id = ?', [$fMine['id']]);
+check('家族: 家族が入れる予定は、いつも、プライベート（api で種類を固定する前の関数でも、持ち主は本人）', [(int)$fMineRow['owner_id'] === (int)$fam1['id']], [true]);
+q("UPDATE events SET kind = 'private', family_shared = 1 WHERE id = ?", [$fMine['id']]); // api.php が、家族の予定を、プライベート・共有に固定する
+check('家族: 家族の予定は、ほかの家族にも見える', $fT($fam2), ['妻の予定', '家族に共有の予定']);
+check('家族: 家族の予定は、自分にも見える', $fT($fam1), ['妻の予定', '家族に共有の予定']);
+check('家族: 持ち主のプライベート版に、家族の予定も出る', $fT($fOwner), ['共有しない予定', '妻の予定', '家族に共有の予定']);
+check('家族: ほかの社員のプライベート版には出ない', $fT($b), []);
+check('家族: 業務版には、家族の予定は出ない', in_array('妻の予定', $fT($fOwner, 'team'), true) || in_array('妻の予定', $fT($admin, 'team'), true), false);
+check('家族: 管理者にも、家族の予定は見えない', $fT($admin), []);
+check('家族: 家族の予定は、持ち主の家族用リンクの更新履歴には出ない', count(array_filter(family_event_log((int)$fOwner['id'], 200), function ($l) { return strpos(json_encode($l, JSON_UNESCAPED_UNICODE), '妻の予定') !== false; })), 0);
+check('家族: 見える予定は、開ける（find_event）', [find_event((int)$fShared['id'], $fam1) !== null, find_event((int)$fMine['id'], $fam2) !== null], [true, true]);
+check('家族: 共有しない予定・業務は、開けない', [find_event((int)$fHidden['id'], $fam1), find_event((int)$fWork['id'], $fam1)], [null, null]);
+check('家族: 編集できるのは、自分の予定だけ', [can_edit_event($fMineRow, $fam1), can_edit_event(row('SELECT * FROM events WHERE id = ?', [$fMine['id']]), $fam2), can_edit_event($fShared, $fam1), can_edit_event($fWork, $fam1)], [true, false, false, false]);
+check('家族: 持ち主も、家族の予定は編集できない（見るだけ）', can_edit_event(row('SELECT * FROM events WHERE id = ?', [$fMine['id']]), $fOwner), false);
+check('家族: 管理者も、家族の予定は編集できない', can_edit_event(row('SELECT * FROM events WHERE id = ?', [$fMine['id']]), $admin), false);
+
+// 別の持ち主の家族には、混ざらない
+[$fidB] = family_add($b, '鈴木 妻', 'wifeb@example.com');
+$famB = row('SELECT * FROM users WHERE id = ?', [$fidB]);
+check('家族: 別の持ち主の家族には、見えない（互いの予定が混ざらない）', [$fT($famB), find_event((int)$fShared['id'], $famB), find_event((int)$fMine['id'], $famB)], [[], null, null]);
+
+// 利用停止・削除
+q('UPDATE users SET active = 0 WHERE id = ?', [$fid2]);
+check('家族: 利用を止めた家族は、ログインできない', login_attempt('son@example.com', 'whatever1'), null);
+q('UPDATE users SET active = 0 WHERE id = ?', [$fid1]);
+check('家族: 利用を止めると、その家族の予定は、持ち主のプライベート版からも見えなくなる', $fT($fOwner), ['共有しない予定', '家族に共有の予定']);
+q('UPDATE users SET active = 1 WHERE id = ?', [$fid1]);
+check('家族: 利用を再開すると、また見える', $fT($fOwner), ['共有しない予定', '妻の予定', '家族に共有の予定']);
+check('家族: 他の持ち主は、家族を消せない', family_delete($b, (int)$fid1), false);
+check('家族: 持ち主が消すと、アカウントも予定も消える', [family_delete($fOwner, (int)$fid1), row('SELECT id FROM users WHERE id = ?', [$fid1]), (int)row('SELECT COUNT(*) AS c FROM events WHERE owner_id = ?', [$fid1])['c']], [true, null, 0]);
+check('家族: 家族の一覧に、他の持ち主の家族は出ない', array_column(family_members((int)$fOwner['id']), 'email'), ['son@example.com']);
+family_delete($fOwner, (int)$fid2); family_delete($b, (int)$fidB);
+check('家族: 家族のアカウントの許可する操作に、業務・ToDo・設定は入っていない', array_intersect(FAMILY_ALLOWED_ACTIONS, ['todo_list', 'todo_save', 'users_list', 'user_save', 'share_create', 'rooms_list', 'memo_get', 'series_list', 'family_add', 'backup_snooze', 'usage_get', 'audit_list', 'slack_status', 'prefs_save']), []);
+q('DELETE FROM events WHERE start_date = ?', [$fD]);
+
+// 古い版（family_of の列が無い）のデータベースからの更新: 列が足され、家族のアカウントが使える
+db()->exec('ALTER TABLE users DROP COLUMN family_of');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '27']);
+ensure_schema();
+check('更新: 古いデータベースに family_of の列が足される', (function () { try { db()->query('SELECT family_of FROM users LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
+check('更新: 更新したあとに、家族を招待できる', (function () use ($a) { [$id] = family_add($a, '更新後の家族', 'after-upgrade@example.com'); return family_delete($a, $id); })(), true);
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

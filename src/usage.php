@@ -92,7 +92,7 @@ function usage_report(?int $now = null): array
         return ['id' => (int)$u['id'], 'name' => $u['name'], 'role' => $u['role'], 'active' => (int)$u['active'],
             'must_change' => (int)$u['must_change_password'], 'last_login' => $u['last_login_at'] ?: null, 'last_seen' => $u['last_seen_at'] ?: null,
             'idle_days' => usage_days_since($u['last_seen_at'] ?: ($u['last_login_at'] ?: null), $now)];
-    }, rows('SELECT id,name,role,active,must_change_password,last_login_at,last_seen_at FROM users ORDER BY active DESC, id'));
+    }, rows("SELECT id,name,role,active,must_change_password,last_login_at,last_seen_at FROM users WHERE role <> 'family' ORDER BY active DESC, id"));
 
     // ---- 容量 ----
     $adir = attach_dir();

@@ -312,7 +312,7 @@ function rooms_participants_parse($v, int $ownerId): array
     }
     if ($ids) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $ok = rows("SELECT id FROM users WHERE active = 1 AND id IN ($ph)", $ids);
+        $ok = rows("SELECT id FROM users WHERE active = 1 AND role <> 'family' AND id IN ($ph)", $ids);
         if (count($ok) !== count($ids)) {
             return [null, '参加者に選べない人が含まれています。'];
         }

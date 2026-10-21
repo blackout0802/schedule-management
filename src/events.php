@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/attachments.php';
 require_once __DIR__ . '/recurrence.php';
+require_once __DIR__ . '/family.php';
 require_once __DIR__ . '/audit.php';
 
 /**
@@ -62,7 +63,11 @@ function allowed_tags(string $kind): array
 function list_events(array $user, string $from, string $to, string $view, array $opts = []): array
 {
     $params = [$to, $from];
-    if ($view === 'team') {
+    if (is_family($user)) {
+        // 家族のアカウント: 持ち主の家族用リンクに見えるものと、家族の予定だけ（いつも、プライベート版の見え方）
+        [$where, $fp] = family_account_cond($user);
+        $params = array_merge($params, $fp);
+    } elseif ($view === 'team') {
         // 業務版: プライベート予定は条件にすら含めない
         $where = "e.kind IN ('work','off')";
         if (!empty($opts['who'])) { // 特定の社員だけ（全社を見ているときは指定なし）
@@ -75,6 +80,11 @@ function list_events(array $user, string $from, string $to, string $view, array 
         [$fcond, $fparams] = family_visible_cond((int)$user['id']);
         $where = "(e.owner_id = ? AND (e.kind = 'private' OR ($fcond)))";
         $params = array_merge($params, [(int)$user['id']], $fparams);
+        $fam = family_member_ids((int)$user['id']); // 家族が入れた予定も、自分のプライベート版に出る（見るだけ）
+        if ($fam) {
+            $where = "($where OR (e.owner_id IN (" . implode(',', array_fill(0, count($fam), '?')) . ") AND e.kind = 'private'))";
+            $params = array_merge($params, $fam);
+        }
     }
     $list = rows("SELECT e.*, u.name AS owner_name, t.done_at AS todo_done_at, t.doing AS todo_doing FROM events e JOIN users u ON u.id = e.owner_id LEFT JOIN todos t ON t.id = e.todo_id
                   WHERE e.start_date <= ? AND e.end_date >= ? AND $where ORDER BY e.start_date, e.start_time, e.id", $params);
@@ -142,6 +152,9 @@ function find_event(int $id, array $user): ?array
     if (!$e) {
         return null;
     }
+    if (is_family($user) && (int)$e['owner_id'] !== (int)$user['id']) {
+        return family_can_see_event($e, $user) ? $e : null; // 家族のアカウントは、見えるものだけ（書き換えは、can_edit_event が、本人の予定だけに絞る）
+    }
     if ($e['kind'] === 'private' && (int)$e['owner_id'] !== (int)$user['id']) {
         return null;
     }
@@ -189,7 +202,7 @@ function validate_event_input(array $in, array $user): array
     // 持ち主: プライベートは必ず本人。休みだけ、管理者が他の社員分を登録できる
     $owner = (int)$user['id'];
     if ($kind === 'off' && is_admin($user) && !empty($in['owner_id'])) {
-        $o = row('SELECT id FROM users WHERE id = ? AND active = 1', [(int)$in['owner_id']]);
+        $o = row("SELECT id FROM users WHERE id = ? AND active = 1 AND role <> 'family'", [(int)$in['owner_id']]);
         if (!$o) {
             return [null, '社員が見つかりません。'];
         }
@@ -966,7 +979,7 @@ function month_summary(array $user, string $ym): array
  */
 function summary_users(array $user, string $view, int $who): array
 {
-    $all = array_map(function ($u) { return ['id' => (int)$u['id'], 'name' => $u['name']]; }, rows('SELECT id, name FROM users WHERE active = 1 ORDER BY name'));
+    $all = array_map(function ($u) { return ['id' => (int)$u['id'], 'name' => $u['name']]; }, rows("SELECT id, name FROM users WHERE active = 1 AND role <> 'family' ORDER BY name"));
     if ($view !== 'team') {
         return [['id' => (int)$user['id'], 'name' => $user['name']]];
     }
@@ -1159,6 +1172,9 @@ function family_log_delete(int $ownerId, ?int $id): int
 function event_changed(?array $before, ?array $after): void
 {
     $ref = $after ?? $before;
+    if ($ref !== null && user_id_is_family((int)$ref['owner_id'])) {
+        return; // 家族の予定は、更新履歴・変更履歴には残さない（持ち主の家族用リンクには出さない）
+    }
     if ($ref !== null && (($before['kind'] ?? '') === 'off' || ($after['kind'] ?? '') === 'off')) {
         try {
             rematerialize_owner((int)$ref['owner_id']); // 休みを優先して、その人の繰り返し業務の日付を決め直す

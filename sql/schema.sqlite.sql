@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   prefs TEXT NOT NULL DEFAULT '',
   last_login_at TEXT NULL,
   last_seen_at TEXT NULL,
+  family_of INTEGER NULL,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS series (

@@ -924,3 +924,12 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .sc-item kbd { flex: none; min-width: 22px; padding: 0 6px; font-size: 12px; }
 .sc-item span { min-width: 0; }
 .set-body .sc-table.sc-grid { max-width: none; }
+
+/* 家族のアカウント・家族の招待 */
+.fam-pill { background: var(--private-soft); color: var(--private); white-space: nowrap; }
+.fam-box .fam-member { margin: 8px 0; }
+.fam-box .fam-member.off { opacity: .65; }
+.fam-box .fam-add { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.fam-box .fam-add h4 { margin: 0 0 6px; font-size: 14px; }
+.fam-cred dd { word-break: break-all; }
+.fam-pw { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: .06em; user-select: all; }

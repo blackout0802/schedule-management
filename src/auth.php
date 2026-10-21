@@ -27,7 +27,11 @@ function current_user(): ?array
     if (!$id) {
         return null;
     }
-    $u = row('SELECT id,name,email,role,slack_id,active,must_change_password, SUBSTR(password_hash, 8, 22) AS pwv FROM users WHERE id = ?', [$id]);
+    try {
+        $u = row('SELECT id,name,email,role,slack_id,active,must_change_password,family_of, SUBSTR(password_hash, 8, 22) AS pwv FROM users WHERE id = ?', [$id]);
+    } catch (PDOException $e) { // 更新した直後で、family_of の列がまだ無いとき
+        $u = row('SELECT id,name,email,role,slack_id,active,must_change_password, SUBSTR(password_hash, 8, 22) AS pwv FROM users WHERE id = ?', [$id]);
+    }
     if (!$u || (int)$u['active'] !== 1) {
         return null;
     }
