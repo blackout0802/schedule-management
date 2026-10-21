@@ -123,6 +123,10 @@ jobs:
         run: |
           if [ -n "$FTP_SERVER" ] && [ -n "$FTP_USERNAME" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$FTP_SERVER_DIR" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
+            dir="$FTP_SERVER_DIR"
+            case "$dir" in */) ;; *) dir="$dir/" ;; esac   # フォルダのパスは、最後が「/」でないと受け付けない（登録のとき付け忘れても動くように）
+            echo "::add-mask::$dir"
+            echo "dir=$dir" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
             echo "::notice::サーバーへの反映は、Secrets（FTP_SERVER・FTP_USERNAME・FTP_PASSWORD・FTP_SERVER_DIR）が未登録のため、行いませんでした。"
@@ -139,5 +143,5 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
           local-dir: stage/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          server-dir: ${{ steps.ready.outputs.dir }}
           state-name: .ftp-deploy-sync-state-schedule.json
