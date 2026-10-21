@@ -124,7 +124,8 @@ jobs:
           if [ -n "$FTP_SERVER" ] && [ -n "$FTP_USERNAME" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$FTP_SERVER_DIR" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             dir="$FTP_SERVER_DIR"
-            case "$dir" in */) ;; *) dir="$dir/" ;; esac   # フォルダのパスは、最後が「/」でないと受け付けない（登録のとき付け忘れても動くように）
+            case "$dir" in */) ;; *) dir="$dir/" ;; esac
+            case "$dir" in */public/) echo "::error::FTP_SERVER_DIR が public フォルダになっています。反映先は、public フォルダの「1つ上」（config.php と public・src・sql・bin が並んでいるフォルダ）にしてください。反映は行いませんでした。"; exit 1 ;; esac   # フォルダのパスは、最後が「/」でないと受け付けない（登録のとき付け忘れても動くように）
             echo "::add-mask::$dir"
             echo "dir=$dir" >> "$GITHUB_OUTPUT"
           else

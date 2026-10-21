@@ -222,6 +222,7 @@ GitHub のリポジトリ → **Settings → Secrets and variables → Actions �
 | `FTP_SERVER_DIR` | サーバー側の、アプリのフォルダ（`config.php` と `public` フォルダがある場所）。**最後の `/` は、付け忘れても、自動で補う** | `/schedule-management.skym.ink/public_html/` |
 
 - パスワードは、チャットやファイルには書かず、Secrets の画面にだけ入れてください。登録した値は、あとから見ることはできません（上書きだけできます）。
+- **`FTP_SERVER_DIR` は、`public` フォルダの「1つ上」です**（画面のURLが `…/public/index.php` のとき、`index.php` がある `public` フォルダそのものではありません）。`public` フォルダの中を指すと、ファイルが `public/public/…`・`public/src/…` に入り、画面が新しくならず、外から見えてはいけないファイルが公開されてしまいます（このときは、反映を止めます）。
 - `FTP_SERVER_DIR` は、FileZilla の右側（サーバー側）で、`config.php`・`public`・`src`・`sql`・`bin`・`data` が並んでいるフォルダを開いたときの、上のほうの「リモートサイト」に出るパスです。
 - 接続は、FileZilla と同じ「使用可能なら明示的な FTP over TLS」（FTPS）です。証明書のエラーが出たときは、`deploy` の `security: loose` を足します。
 
