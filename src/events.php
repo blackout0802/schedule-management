@@ -351,7 +351,7 @@ function todo_with_comment_stats(array $todos): array
     }, $todos);
 }
 
-/** ToDo に、カレンダーに置いた日（いちばん早い予定の日。なければ null）を付ける */
+/** ToDo に、カレンダーに置いた日（いちばん早い予定の初日 = sched と、その予定の最終日 = sched_end。なければ null）を付ける */
 function todo_with_event_dates(array $todos): array
 {
     if (!$todos) {
@@ -359,11 +359,15 @@ function todo_with_event_dates(array $todos): array
     }
     $ids = array_map(function ($t) { return (int)$t['id']; }, $todos);
     $d = [];
-    foreach (rows('SELECT todo_id, MIN(start_date) AS d FROM events WHERE todo_id IN (' . implode(',', $ids) . ') GROUP BY todo_id') as $r) {
-        $d[(int)$r['todo_id']] = $r['d'];
+    foreach (rows('SELECT todo_id, start_date, end_date FROM events WHERE todo_id IN (' . implode(',', $ids) . ') ORDER BY start_date, id') as $r) {
+        if (!isset($d[(int)$r['todo_id']])) {
+            $d[(int)$r['todo_id']] = [$r['start_date'], $r['end_date']];
+        }
     }
     return array_map(function ($t) use ($d) {
-        $t['sched'] = $d[(int)$t['id']] ?? null;
+        $r = $d[(int)$t['id']] ?? null;
+        $t['sched'] = $r ? $r[0] : null;
+        $t['sched_end'] = $r ? $r[1] : null;
         return $t;
     }, $todos);
 }
@@ -695,11 +699,12 @@ function reorder_todos(array $ids, array $user): void
  * ------------------------------------------------------------------ */
 
 const MEMO_MAX_CHARS = 12000;
+const MEMO_AUTO_MAX = 900; // 日付の行の data-auto（自動で日報に入れたToDoの控え。「番号:日付」をカンマでつないだもの）の長さ
 
 /**
  * メモのHTMLを安全な形にする。許すのは div / br / s（取り消し線）だけ。属性・スクリプトは全て消す。
  * ただし div の印は残す: data-todo（元のToDoの番号。数字だけ）・data-st（todo / doing / done）・data-tr（転記された行）、
- * 日付の行の data-md（cur / next）と data-date（YYYY-MM-DD）。
+ * 日付の行の data-md（cur / next）と data-date（YYYY-MM-DD）、data-auto（スケジュールから自動で日報に入れたToDoの控え。数字・「:」・「-」・「,」だけ）。
  */
 function sanitize_memo_html(string $html): string
 {
@@ -712,7 +717,8 @@ function sanitize_memo_html(string $html): string
         if ($m[1] === '' && $tag === 'div') {
             $attrs = '';
             if (preg_match('#data-md\\s*=\\s*["\']?(cur|next)\\b#i', $m[3], $a) && preg_match('#data-date\\s*=\\s*["\']?(\\d{4}-\\d{2}-\\d{2})#', $m[3], $d)) {
-                return '<div data-md="' . strtolower($a[1]) . '" data-date="' . $d[1] . '">'; // 日付の行
+                $auto = preg_match('#data-auto\\s*=\\s*["\']?([0-9:,-]{1,' . MEMO_AUTO_MAX . '})#', $m[3], $u) ? ' data-auto="' . $u[1] . '"' : ''; // 自動で入れたToDoの控え
+                return '<div data-md="' . strtolower($a[1]) . '" data-date="' . $d[1] . '"' . $auto . '>'; // 日付の行
             }
             if (preg_match('#data-todo\\s*=\\s*["\']?(\\d{1,10})#i', $m[3], $a)) {
                 $attrs .= ' data-todo="' . (int)$a[1] . '"';
@@ -832,7 +838,7 @@ function memo_template_save(string $html, array $user): string
 {
     $key = 'memo_tpl_' . (int)$user['id'];
     $clean = trim($html) === '' ? '' : sanitize_memo_html($html);
-    $clean = preg_replace('#\s+data-(todo|st|tr)="[^"]*"#', '', $clean); // 項目の印は、雛形に持ち込まない
+    $clean = preg_replace('#\s+data-(todo|st|tr|auto)="[^"]*"#', '', $clean); // 項目の印は、雛形に持ち込まない
     if ($clean !== '') {
         if (substr_count($clean, 'data-md="cur"') !== 1 || substr_count($clean, 'data-md="next"') !== 1) {
             throw new RuntimeException('日付の行（「【10/15　予定・To Do】」）が、当日・次回出勤日の2つ必要です。');

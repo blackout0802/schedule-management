@@ -307,6 +307,7 @@ check('ToDo→予定: 業務の予定として作られる', [$ev['kind'], $ev['
 check('ToDo→予定: ToDoは残り、自動で進行中になる', todo_status_of(find_todo((int)$todoA['id'], $a)), 'doing');
 check('ToDo→予定: 予定はToDoと結びつく', (int)row('SELECT todo_id FROM events WHERE id = ?', [$ev['id']])['todo_id'], (int)$todoA['id']);
 check('ToDo→予定: リストのToDoに、置いた日が付く', array_column(array_filter($todosAll($a), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched'), [$dd]);
+check('ToDo→予定: リストのToDoに、置いた予定の最終日も付く（日報の自動反映用）', array_column(array_filter($todosAll($a), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched_end'), [$dd]);
 check('ToDo→予定: 全社員に見える', in_array('見積書を作る', $titles(list_events($b, $dd, $dd, 'team')), true), true);
 check('ToDo→予定: 予定は、完了していないので取り消し線なし', array_column(array_filter(list_events($a, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [false]);
 set_todo_status(find_todo((int)$todoA['id'], $a), 'done');
@@ -749,6 +750,8 @@ check('メモ: 出力に残る「<」は、許した目印だけ', preg_match_al
 check('メモ: ToDoの印（data-todo / data-st）は残り、他の属性は消える', sanitize_memo_html('<div data-todo="12" data-st="done" onclick="x()" style="a:b"><s>終わった</s></div>'), '<div data-todo="12" data-st="done"><s>終わった</s></div>');
 check('メモ: ToDoの印は数字と決まった状態だけ（それ以外は捨てる）', sanitize_memo_html('<div data-todo="1;alert(1)" data-st="x"><s>t</s></div><div data-todo="abc">u</div><div data-todo="5" data-st="evil">v</div>'), '<div data-todo="1"><s>t</s></div><div>u</div><div data-todo="5">v</div>');
 check('メモ: div 以外には、ToDoの印は付かない', sanitize_memo_html('<s data-todo="3">t</s>'), '<s>t</s>');
+check('メモ: 日付の行の data-auto（自動で入れたToDoの控え）は残る。数字・「:」・「-」・「,」だけ', sanitize_memo_html('<div data-md="cur" data-date="2026-03-02" data-auto="12:2026-03-03,15:-">x</div><div data-md="next" data-date="2026-03-03" data-auto="1&quot;onclick=x">y</div>'), '<div data-md="cur" data-date="2026-03-02" data-auto="12:2026-03-03,15:-">x</div><div data-md="next" data-date="2026-03-03" data-auto="1">y</div>');
+check('メモ: 日付の行でなければ、data-auto は付かない', sanitize_memo_html('<div data-auto="1:2026-01-01">a</div><s data-auto="2:-">b</s>'), '<div>a</div><s>b</s>');
 $ms = get_memo_state($a);
 check('日報: 当日と次回出勤日の日付が返る（どちらも平日で、当日の方が前）', [$ms['cur'] < $ms['next'], (int)date('N', strtotime($ms['cur'])) <= 5, (int)date('N', strtotime($ms['next'])) <= 5], [true, true, true]);
 check('日報: 最初は本文が空（予定やToDoを自動で入れない）', [$ms['html'], isset($ms['seed']) ? $ms['seed']['old'] : null], ['', '']);
@@ -762,6 +765,9 @@ $tpl = '<div>こんにちは。</div><div><br></div><div data-md="cur" data-date
 check('日報の雛形: 初めは無い（標準の雛形を使う）', get_memo_state($a)['tpl'], '');
 $tsaved = memo_template_save($tpl, $a);
 check('日報の雛形: 保存して読み出せる。項目の印（ToDoの印）は持ち込まない。日付の行の印は残る', [get_memo_state($a)['tpl'] === $tsaved, strpos($tsaved, 'data-todo') === false, strpos($tsaved, 'data-md="cur"') !== false, strpos($tsaved, '本日の予定') !== false], [true, true, true, true]);
+$tplAuto = memo_template_save(str_replace('data-date="2026-03-02"', 'data-date="2026-03-02" data-auto="5:2026-03-02"', $tpl), $a);
+check('日報の雛形: 自動で入れたToDoの控え（data-auto）は、持ち込まない', [strpos($tplAuto, 'data-auto') === false, strpos($tplAuto, 'data-md="cur"') !== false], [true, true]);
+memo_template_save($tpl, $a);
 check('日報の雛形: 他の人には、見えない（本人ごと）', [get_memo_state($b)['tpl'], get_memo_state($admin)['tpl']], ['', '']);
 $badT = [];
 foreach (['<div>日付の行がない</div>', '<div data-md="cur" data-date="2026-03-02">【3/2】</div><div>次回の行がない</div>', '<div data-md="cur" data-date="2026-03-02">【3/2】</div><div data-md="next" data-date="2026-03-03">【3/3】</div><div>' . str_repeat('あ', 2000) . '</div>'] as $bad) {
