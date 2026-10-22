@@ -839,6 +839,14 @@ function handle_api(): void
             $mail = !empty($in['send_mail']) ? (family_invite_mail($user, trim((string)($in['name'] ?? '')), strtolower(trim((string)($in['email'] ?? ''))), $tmp) ? 'sent' : 'failed') : 'skipped'; // 招待メール（一時パスワードつき）。失敗しても、アカウントはできていて、画面に一時パスワードが出る
             api_out(['ok' => true, 'id' => $fid, 'password' => $tmp, 'mail' => $mail, 'members' => family_members((int)$user['id'])]);
 
+        case 'family_name_save': // 家族のアカウントが、自分の表示名を変える（家族の名前は、管理者の履歴には残さない）
+            try {
+                $name = family_set_name($user, (string)($in['name'] ?? ''));
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), is_family($user) ? 400 : 403);
+            }
+            api_out(['ok' => true, 'name' => $name]);
+
         case 'family_reset_password': // 家族のパスワードをリセットする（一時パスワードを1度だけ返す）
             $m = family_member_of($user, (int)($in['id'] ?? 0));
             if (!$m) {

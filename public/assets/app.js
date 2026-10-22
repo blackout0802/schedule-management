@@ -296,6 +296,9 @@
     var k = surnameOf(e.owner_name);
     return S._dupNames[k] && Object.keys(S._dupNames[k]).length > 1 ? e.owner_name : k;
   }
+  /* プライベート版の、家族が入れた予定の先頭の名前: 家族が決めた表示名を、そのまま出す（名字だけにすると、同じ名字の家族の見分けがつかない）。
+     家族のアカウントから見た持ち主の予定は、これまでどおり（名字。同じ名字の人がいればフルネーム） */
+  function famWho(e) { return FAMACCT && e.owner_name === S.me.family_owner_name ? ownerShort(e) : e.owner_name; }
   /* 凡例（カレンダーの下）: いま表示している月に出てくる社員の、色と名前 */
   function personLegend() {
     var seen = {}, list = [];
@@ -542,9 +545,10 @@
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
+    var ver = el('div', { class: 'menu-ver', text: '版 v' + S.me.app_version }); // スマホでは上の帯に版を出さないので、ここで分かるように
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
-      if (FAMACCT) return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close), ver];
+      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close), ver];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -1027,7 +1031,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? ownerShort(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
+    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? famWho(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
     return who + (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
@@ -3528,6 +3532,24 @@
         forced ? el('button', { class: 'btn left', type: 'button', text: 'ログアウト', onclick: doLogout }) : el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }),
         el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
     var ov = openModal(forced ? 'パスワードの変更（初回のみ）' : 'パスワードの変更', form, false, forced);
+  }
+
+  /* 家族のアカウント: 自分の表示名を変える（予定の先頭・持ち主の画面・家族の一覧に出る名前） */
+  function openFamilyNameDialog() {
+    var input = el('input', { name: 'fam_display_name', maxlength: '60', required: true, value: S.me.user.name, autocomplete: 'off' });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('family_name_save', { body: { name: input.value } }).then(function (j) {
+        ov.close(); S.me.user.name = j.name; toast('表示名を「' + j.name + '」にしました');
+        renderShell(); load();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('p', { class: 'hint', text: 'あなたが入れた予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前です。家族が同じ名字のときは、「ママ」「たろう」のように、分かりやすい名前にできます。' }),
+      el('label', null, '表示名（60文字まで）', input), err,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
+    var ov = openModal('表示名の変更', form);
+    input.focus(); input.select();
   }
 
   function doLogout() {

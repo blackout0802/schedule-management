@@ -1743,6 +1743,14 @@ check('メール: 送れなかったとき（書き込めない）は、例外�
     rmdir($mailLog);
     return $r;
 })(), false);
+// 家族の表示名（家族が自分で変える）
+$fnErr = function (array $u, string $nm) { try { family_set_name($u, $nm); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } };
+check('家族の表示名: 家族は、自分の表示名を変えられる（前後の空白・改行は整える）', [family_set_name($fam1, "  ママ\n "), row('SELECT name FROM users WHERE id = ?', [$fid1])['name']], ['ママ', 'ママ']);
+check('家族の表示名: 空・61文字以上は変えられない', [$fnErr($fam1, '   '), $fnErr($fam1, str_repeat('あ', 61)), row('SELECT name FROM users WHERE id = ?', [$fid1])['name']], ['ng', 'ng', 'ママ']);
+check('家族の表示名: 社員（持ち主・管理者）は、この方法では変えられない', [$fnErr($fOwner, '別名'), $fnErr($admin, '別名'), row('SELECT name FROM users WHERE id = ?', [$fOwner['id']])['name'] === $fOwner['name']], ['ng', 'ng', true]);
+check('家族の表示名: 持ち主の家族の一覧にも、新しい名前で出る', in_array('ママ', array_column(family_members((int)$fOwner['id']), 'name'), true), true);
+check('家族の表示名: 家族のアカウントが使えるAPIに入っている', in_array('family_name_save', FAMILY_ALLOWED_ACTIONS, true), true);
+family_set_name($fam1, '山田 妻'); // 以降の確認は、元の名前で
 check('家族: 同じメールアドレスでは招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'wife@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
 check('家族: メールアドレスが正しくないと招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'not-an-email'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
 check('家族: 家族のアカウントからは、招待できない', (function () use ($fam1) { try { family_add($fam1, '孫', 'grand@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
