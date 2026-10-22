@@ -392,10 +392,11 @@
   /* ---------- 家族の招待（設定のページの項目）----------
      家族を招待すると、家族が自分のアカウントでログインして、自分のプライベートのカレンダーを見たり、自分の予定を書き込んだりできる。
      家族に見えるのは、「家族に共有」にした予定（と、共有リンクの範囲）と、家族が入れた予定だけ。業務・ToDo・日報・会議室・設定は見えない。 */
-  function showFamilyCredentials(name, email, pw, again) {
+  function showFamilyCredentials(name, email, pw, again, mail) { // mail = 招待メールの結果（'sent' 送った／'failed' 送れなかった／それ以外 送っていない）
     var url = new URL('login.php', location.href).href;
     var box = el('div', { class: 'form fam-cred' },
-      el('p', { class: 'hint', text: again ? name + ' さんのパスワードをリセットしました。次の内容を、本人に伝えてください。' : name + ' さんを招待しました。次の内容を、本人に伝えてください。' }),
+      el('p', { class: 'hint', text: again ? name + ' さんのパスワードをリセットしました。次の内容を、本人に伝えてください。' : mail === 'sent' ? name + ' さんを招待しました。次の内容を、メールでも送りました（届かないときは、迷惑メールの中を見てもらうか、下の内容を直接伝えてください）。' : name + ' さんを招待しました。次の内容を、本人に伝えてください。' }),
+      mail === 'failed' ? el('p', { class: 'error', role: 'alert', text: '招待メールを送れませんでした（アカウントはできています）。下の内容を、直接伝えてください。サーバーの設定（config.php の mail_from）が必要な場合があります。' }) : null,
       el('dl', { class: 'detail' },
         el('dt', { text: 'ログインのページ' }), el('dd', { text: url }),
         el('dt', { text: 'メールアドレス' }), el('dd', { text: email }),
@@ -443,17 +444,20 @@
             } }))));
       });
       var full = members.length >= max;
+      var sendMail = el('input', { type: 'checkbox', name: 'fam_send_mail', checked: store('sched.famMail') !== false });
       body.appendChild(el('form', { class: 'fam-add', onsubmit: function (e) {
         e.preventDefault(); msg.hidden = true;
         var nm = nameIn.value.trim(), em = mailIn.value.trim();
-        api('family_add', { body: { name: nm, email: em } }).then(function (j) {
+        store('sched.famMail', sendMail.checked); // この端末で覚える
+        api('family_add', { body: { name: nm, email: em, send_mail: sendMail.checked } }).then(function (j) {
           nameIn.value = ''; mailIn.value = '';
-          showFamilyCredentials(nm, em.toLowerCase(), j.password, false); draw(j.members, max);
+          showFamilyCredentials(nm, em.toLowerCase(), j.password, false, j.mail); draw(j.members, max);
         }).catch(function (x) { msg.textContent = x.message; msg.hidden = false; });
       } },
         el('h4', { text: '家族を招待する' }),
         full ? el('p', { class: 'hint', text: '招待できる人数に達しています。使わない人を削除すると、招待できます。' }) : null,
         el('div', { class: 'row' }, el('label', null, '名前', nameIn), el('label', null, 'メールアドレス', mailIn)),
+        el('label', { class: 'check' }, sendMail, ' 招待メールも送る（ログインのページ・メールアドレス・一時パスワードを、メールで届けます）'),
         msg,
         el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn primary', type: 'submit', text: '招待する', disabled: full ? 'disabled' : null }))));
       if (!embedHost) body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));

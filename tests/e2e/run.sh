@@ -32,9 +32,9 @@ for d in src public sql bin; do cp -R "$ROOT/$d" "$WORK/app/$d"; done
 cp "$ROOT/config.sample.php" "$WORK/app/"; mkdir -p "$WORK/app/data"
 DSN=${E2E_DSN:-sqlite:$WORK/e2e.sqlite}
 cat > "$WORK/config.php" <<PHP
-<?php return ['db' => ['dsn' => '$DSN', 'user' => '${E2E_DB_USER:-}' ?: null, 'pass' => '${E2E_DB_PASS:-}' ?: null], 'slack_webhook' => 'http://127.0.0.1:$HOOK_PORT/hook.php', 'base_url' => 'https://example.com/schedule/'];
+<?php return ['db' => ['dsn' => '$DSN', 'user' => '${E2E_DB_USER:-}' ?: null, 'pass' => '${E2E_DB_PASS:-}' ?: null], 'slack_webhook' => 'http://127.0.0.1:$HOOK_PORT/hook.php', 'base_url' => 'https://example.com/schedule/', 'mail_file' => '$WORK/mail.log'];
 PHP
-export SCHEDULE_CONFIG="$WORK/config.php" E2E_APP="$WORK/app" E2E_SLACK_LOG="$WORK/slack.log" TZ=${TZ:-Asia/Tokyo}
+export SCHEDULE_CONFIG="$WORK/config.php" E2E_APP="$WORK/app" E2E_SLACK_LOG="$WORK/slack.log" E2E_MAIL_LOG="$WORK/mail.log" TZ=${TZ:-Asia/Tokyo}
 
 PIDS=""
 cleanup() { for p in $PIDS; do kill "$p" 2>/dev/null; done; }
@@ -45,7 +45,7 @@ for i in $(seq 1 30); do curl -s -o /dev/null "http://127.0.0.1:$PORT/login.php"
 
 reset_db() {
   [ "${DSN#sqlite:}" != "$DSN" ] && rm -f "${DSN#sqlite:}"
-  rm -rf "$WORK/app/data/attachments" "$WORK/app/data/backups"; : > "$WORK/slack.log"
+  rm -rf "$WORK/app/data/attachments" "$WORK/app/data/backups"; : > "$WORK/slack.log"; : > "$WORK/mail.log"
   php "$HERE/lib/seed.php" || return 1
   [ "$1" = "seg" ] && php "$HERE/lib/seed-demo.php"   # 業務の予定を、あらかじめ入れておく必要があるテスト
   return 0

@@ -7,6 +7,8 @@
 //   - 持ち主のプライベート版には、家族の予定も出る（見るだけ）
 // API は、家族のアカウントには、下の FAMILY_ALLOWED_ACTIONS だけを許す（api.php）。
 
+require_once __DIR__ . '/mail.php';
+
 const FAMILY_MAX = 5; // 1人の持ち主が招待できる家族の数（利用停止の人も数える）
 const FAMILY_ALLOWED_ACTIONS = ['me', 'rev', 'events', 'event_save', 'event_delete', 'event_restore', 'event_move', 'event_duplicate', 'password_change', 'holidays_list'];
 
@@ -76,6 +78,38 @@ function family_add(array $owner, string $name, string $email): array
     $id = create_user($name, $email, $pw, 'family', null, true);
     q('UPDATE users SET family_of = ? WHERE id = ?', [(int)$owner['id'], $id]);
     return [$id, $pw];
+}
+
+/** ログインのページのURL。base_url があればそれを元に、なければ、いま開いているアドレスから作る */
+function login_page_url(): string
+{
+    $base = trim((string)cfg('base_url', ''));
+    if ($base !== '') {
+        return rtrim(preg_replace('#/[^/]*\.php$#', '/', $base), '/') . '/login.php';
+    }
+    $host = (string)($_SERVER['HTTP_HOST'] ?? '');
+    if (!preg_match('/^[A-Za-z0-9.-]+(:\d+)?$/', $host)) {
+        return '';
+    }
+    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    return ($https ? 'https://' : 'http://') . $host . rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/'))), '/') . '/login.php';
+}
+
+/** 招待のメール（ログインのページ・メールアドレス・一時パスワード）を、家族に送る。送れたら true */
+function family_invite_mail(array $owner, string $name, string $email, string $password): bool
+{
+    $app = mail_clean_line((string)cfg('app_name', 'スケジュール管理'));
+    $url = login_page_url();
+    $body = mail_clean_line($name) . " さん\n\n"
+        . mail_clean_line((string)$owner['name']) . " さんが、「{$app}」にあなたを招待しました。\n"
+        . "下のログインのページから、メールアドレスと一時パスワードでログインしてください。\n"
+        . "最初のログインで、あなただけが知っているパスワードに変更します。\n\n"
+        . ($url !== '' ? "ログインのページ: {$url}\n" : '')
+        . "メールアドレス: {$email}\n"
+        . "一時パスワード: {$password}\n\n"
+        . "※ パスワードが書かれたメールです。ログインして変更したあとは、このメールを削除してください。\n"
+        . "※ 心当たりがないときは、このメールを破棄してください（返信は不要です）。\n";
+    return mail_send($email, "【{$app}】ログインのご案内", $body);
 }
 
 /** 家族のアカウントを消す。その人の予定も、いっしょに消える */

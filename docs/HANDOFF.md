@@ -1,6 +1,6 @@
 # 引き継ぎメモ（スケジュール管理アプリ）
 
-新しいセッションの最初に、これを読んでください。最終更新: 2026-10-22 / 現在の版: **v1.82.0**（v1.81.0 までは、デプロイ対象のブランチに取り込みずみで、本番に反映済み。v1.82.0 は作業ブランチ `claude/schedule-to-daily-report-uars4x` に push ずみで、自動デプロイの対象外。本番に出すには、デプロイ対象のブランチへ取り込む）
+新しいセッションの最初に、これを読んでください。最終更新: 2026-10-22 / 現在の版: **v1.83.0**（v1.81.0 までは、デプロイ対象のブランチに取り込みずみで、本番に反映済み。v1.82.0・v1.83.0 は作業ブランチ `claude/schedule-to-daily-report-uars4x` に push ずみで、自動デプロイの対象外。本番に出すには、デプロイ対象のブランチへ取り込む）
 
 ## 1. アプリと作業場所
 
@@ -91,9 +91,16 @@
 - 会社用の共有ページは、**最初から「休みだけ」**（`S.offOnly = SHARE.kind === 'company'`）。外すと業務の予定も出る。リスト表示・説明の帯も合わせた。家族用リンクには出ない。ログインして見る業務版の初期値は、変えていない（最初はオフ）。
 - 画面テスト `dp`（会社用リンクで業務の予定を見る前に、チェックを外す）を、この仕様に合わせた。
 
+### v1.83.0 で入れたもの（家族の招待メール）
+
+- 家族を招待すると、ログインのページ・メールアドレス・一時パスワードを書いたメールを、本人に送る（`src/mail.php` の `mail_send()`、`src/family.php` の `family_invite_mail()`）。サーバーの `mail()` を使う（SMTP なし）。招待のフォームの「招待メールも送る」（この端末で覚える。初めはオン）。API `family_add` は `send_mail` を受け、`mail` = `sent` / `failed` / `skipped` を返す。送れなくても、アカウントはできる（画面に一時パスワードが出る）。
+- 設定: `config.php` の `mail_from`（送信元。空なら `noreply@` + base_url のドメイン）。`mail_file`（試験用。メールを送らず、ファイルに書く。**本番では設定しない**。単体テストと画面テストが使う）。
+- 不具合の切り分け: 「届かない」ときは、まず `mail_from`（サーバーが受け付ける自分のドメインのアドレス）と、迷惑メールのフォルダ。この作業環境からは、本番のメールが届くかは確かめられない（ユーザーに確かめてもらう）。
+- 家族のパスワードの再発行（リセット）のメールは、まだ送らない（画面に出るだけ）。社員の追加・リセットも同じ。
+
 ## 5. テスト
 
-- PHP 単体: `php tests/run.php`（SQLite）。約690件。
+- PHP 単体: `php tests/run.php`（SQLite）。約700件。
 - MariaDB: 手元では `mariadbd --datadir=/tmp/mdb/data --socket=/tmp/mdb/s.sock --port=3399` を起動して、DB `sched_t` を **毎回 DROP/CREATE してから** 実行する。
   `SCHEDULE_TEST_DSN='mysql:host=127.0.0.1;port=3399;dbname=sched_t;charset=utf8mb4' SCHEDULE_TEST_USER=t SCHEDULE_TEST_PASS=tp php tests/run.php`
 - 画面テスト: `bash tests/e2e/run.sh`（全部）／`bash tests/e2e/run.sh tm flog`（指定）。ポート 8099/8098、`TZ=Asia/Tokyo`。全部で約11分。
