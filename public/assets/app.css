@@ -66,7 +66,6 @@ textarea { resize: vertical; min-height: 64px; }
 .menu-list button { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .menu-list button:hover { background: var(--surface-2); }
 .menu-list hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
-.menu-ver { padding: 6px 10px 4px; margin-top: 4px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 main { max-width: 1180px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -909,7 +908,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .theme-sw button[aria-pressed="true"] { background: color-mix(in srgb, var(--work) 14%, var(--surface)); color: var(--work); }
 .theme-sw .ic { width: 16px; height: 16px; }
 .topbar-in .theme-sw { margin-left: 4px; }
-@media (max-width: 640px) { .theme-sw button { width: 24px; height: 26px; } .topbar-in .theme-sw { margin-left: 0; } .topbar-in .brand .ver, .topbar-in > .muted, .topbar-in.settings-bar .brand { display: none; } } /* スマホは、上の帯が1行に収まるよう、版の表示を省く */
+@media (max-width: 640px) { .theme-sw button { width: 24px; height: 26px; } .topbar-in .theme-sw { margin-left: 0; } .topbar-in > .muted, .topbar-in.settings-bar .brand { display: none; } .topbar-in .brand { display: flex; flex-direction: column; line-height: 1.15; } .topbar-in .brand .ver { font-size: 10px; margin-left: 0; } } /* 版は、スマホでもパソコンと同じ場所（左上のアプリ名のところ）に出す。横に並べると帯が3行になるので、アプリ名のすぐ下に小さく重ねる。スマホは、上の帯が1行に収まるよう、版の表示を省く */
 
 /* 設定の各項目: 見出しを押すと開く（初めは畳んである） */
 .set-sec.collapsible > h3 { margin: 0; padding: 0; border: 0; cursor: pointer; justify-content: flex-start; user-select: none; }
