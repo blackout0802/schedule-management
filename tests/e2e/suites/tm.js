@@ -17,7 +17,7 @@ async function login(b, vp, mobile) {
   await p.fill('.modal input[name=title]', '時刻テスト'); await p.fill('.modal input[name=start]', ds);
   const cases = [['9', '09:00'], ['930', '09:30'], ['0930', '09:30'], ['9:5', '09:05'], ['２１：３０', '21:30'], ['21時30分', '21:30'], ['18.45', '18:45']];
   for (const [i, o] of cases) { await p.fill('.modal input[name=start_time]', i); await p.press('.modal input[name=start_time]', 'Tab'); const v = await p.inputValue('.modal input[name=start_time]'); ok(`「${i}」→ ${o}`, v === o, v); }
-  await p.fill('.modal input[name=start_time]', '930'); await p.fill('.modal input[name=end_time]', '1730');
+  await p.fill('.modal input[name=start_time]', '930'); await p.press('.modal input[name=start_time]', 'Tab'); await p.fill('.modal input[name=end_time]', '1730');
   await p.click('.modal button[type=submit]'); await p.waitForSelector('.bar:has-text("時刻テスト")');
   ok('保存すると 09:30-17:30 で表示される', (await p.locator('.bar:has-text("時刻テスト")').first().innerText()).includes('09:30-17:30'), await p.locator('.bar:has-text("時刻テスト")').first().innerText());
   // Enter で確定しても正規化される（フォーカスを外さずに保存）

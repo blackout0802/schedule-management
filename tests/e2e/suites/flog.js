@@ -22,7 +22,7 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const M = `${t.g
   ok('更新された予定に ● と色の枠が付く', await f.locator('.bar.upd').count() === 2 && (await f.locator('.bar.upd').first().innerText()).startsWith('●'), await f.locator('.bar.upd').allInnerTexts());
   ok('更新されていない予定（家族で食事）には付かない', await f.locator('.bar:has-text("家族で食事")').first().getAttribute('class').then(c => !c.includes('upd')));
   await f.click('.upd-banner button:has-text("更新履歴を見る")'); await f.waitForSelector('.log-list'); const lt = await f.locator('.log-list').innerText();
-  ok('更新履歴に、いつ・何を更新したかが出る（件名・時刻の変更）', lt.includes('歯医者の予約（変更）') && lt.includes('時刻 10:00 → 14:30') && lt.includes('件名「歯医者の予約」→「歯医者の予約（変更）」'), lt);
+  ok('更新履歴に、いつ・何を更新したかが出る（件名・時刻の変更）', lt.includes('歯医者の予約（変更）') && lt.includes('時刻 10:00〜10:30 → 14:30') && lt.includes('件名「歯医者の予約」→「歯医者の予約（変更）」'), lt);
   ok('追加した予定は「追加」、新着の印が付く', lt.includes('新しい予定') && lt.includes('追加') && (await f.locator('.log-item.new').count()) >= 2, lt);
   await f.screenshot({ path: 'flog-modal.png' });
   await f.click('.modal button:has-text("確認した")'); await f.waitForFunction(() => !document.querySelector('.modal'));

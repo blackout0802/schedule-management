@@ -75,6 +75,23 @@
     if (n) { inp.value = n; return n; }
     return v; // 読み取れない入力は、そのまま送って、サーバーの案内（09:30 の形式で…）を出す
   }
+  /* 開始時刻を入れたら、終了時刻に、その30分後が自動で入る（終了を手で入れたあとは、変えない。開始を消すと、自動で入れた終了も消える） */
+  function addMinutesHm(hm, min) {
+    var m = /^(\d{2}):(\d{2})$/.exec(hm);
+    if (!m) return '';
+    var t = Math.min(+m[1] * 60 + +m[2] + min, 23 * 60 + 59); // 日をまたぐときは 23:59 まで
+    return pad(Math.floor(t / 60)) + ':' + pad(t % 60);
+  }
+  function autoEndTime(st, et) {
+    var auto = false; // 終了時刻を、ここで自動で入れた（まだ手で直していない）か
+    st.addEventListener('change', function () {
+      var s = timeVal(st);
+      if (s === '') { if (auto) { et.value = ''; auto = false; } return; }
+      if (et.value.trim() === '' || auto) { et.value = addMinutesHm(s, 30); auto = true; }
+    });
+    et.addEventListener('input', function () { auto = false; });
+    et.addEventListener('change', function () { auto = false; });
+  }
   function timeInput(name, value) {
     if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return el('input', { type: 'time', name: name, value: value || '' });
     if (!document.getElementById('time-list')) {
@@ -1545,6 +1562,7 @@
     start.addEventListener('change', function () { if (!end.value || end.value < start.value) end.value = start.value; });
     var st = timeInput('start_time', ev ? ev.start_time : '');
     var et = timeInput('end_time', ev ? ev.end_time : '');
+    autoEndTime(st, et);
     var note = el('textarea', { name: 'note', maxlength: '500' });
     note.value = ev ? ev.note : '';
     var impCb = el('input', { type: 'checkbox', name: 'important', checked: !!(ev && ev.important), style: 'width:auto' });
@@ -1599,7 +1617,7 @@
       var cur = tag.value || (ev ? ev.tag : '');
       tag.textContent = '';
       tags.forEach(function (t) { tag.appendChild(el('option', { value: t, text: t, selected: t === cur })); });
-      if (k === 'work' && !cur) tag.value = S.me.work_tags[0];
+      if (k === 'work' && tags.indexOf(cur) < 0) tag.value = tags.indexOf('個人作業') >= 0 ? '個人作業' : tags[0]; // 業務の分類の初期値は「個人作業」（休みから業務に切り替えたときも）
       tagLabel.hidden = k === 'private';
       syncFam();
       syncRepeat();
@@ -3099,6 +3117,7 @@
     var num = function (name, label, val, min, max) { return el('label', null, label, el('input', { type: 'number', name: name, min: String(min), max: String(max), value: val === null || val === undefined ? '' : String(val) })); };
     var st = timeInput('start_time', s ? s.start_time : (pf.start_time || ''));
     var et = timeInput('end_time', s ? s.end_time : (pf.end_time || ''));
+    autoEndTime(st, et);
     var preview = el('div', { class: 'scroll-x' });
     var autoTodo = el('input', { type: 'checkbox', name: 'todo_auto', checked: !!(s && s.todo_auto), style: 'width:auto' });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });

@@ -17,7 +17,7 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   const tx = await a.locator('.backup-alert').innerText(); ok('お知らせに、最後にダウンロードした日（40日前）が出る', /40日前/.test(tx), tx);
   await a.screenshot({ path: 'bk2-banner.png', clip: { x: 0, y: 0, width: 1100, height: 330 } });
   const y = await login(b, 'yamada@example.com', 'yamadapass1'); ok('一般の社員には、お知らせは出ない', await y.locator('.backup-alert').count() === 0); await y.close();
-  await a.click('.backup-alert button:has-text("あとで")'); await a.waitForTimeout(500);
+  await a.click('.backup-alert button:has-text("あとで")'); await a.waitForFunction(() => !document.querySelector('.backup-alert'), null, { timeout: 8000 }).catch(() => {});
   ok('「あとで」で、お知らせが消える', await a.locator('.backup-alert').count() === 0);
   await a.reload(); await a.waitForSelector('.cal'); await a.waitForTimeout(400); ok('開き直しても、7日間は出ない', await a.locator('.backup-alert').count() === 0);
   sql("DELETE FROM app_meta WHERE meta_key='backup_snooze'");
