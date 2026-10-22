@@ -278,6 +278,8 @@
   var PERSON_HUES = [10, 2, 6, 13, 0, 8, 3, 14, 5, 11, 1, 7, 12, 4, 9, 15]; // COLOR_PRESETS の色相の番号。隣り合う番号の社員の色が離れるように並べてある
   function allView() { return !FAMILY && S.view === 'team' && !whoId(); }
   function personColorOn() { return allView() && store('sched.personColor') !== false; }
+  /* 全社の表示で「休みだけ」にチェックがあるとき: 全員の休みだけを出す（業務の予定・会議室の予約は出さない）。開き直すと戻る（覚えない） */
+  function offOnly() { return !SHARE && !FAMACCT && allView() && !!S.offOnly; }
   function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3], badge: COLOR_PRESETS[h * 3 + 2] }; } // 休みも、業務と同じ淡い色。違いは、頭の「休」バッジ（濃い色）
   function onColor(hex) { var bg = hexRgb(hex); return contrastRatio(bg, [255, 255, 255]) >= contrastRatio(bg, [20, 32, 51]) ? '#ffffff' : '#14202f'; }
   function pcClass(e) { return personColorOn() && e.kind === 'off' && e.owner_id ? ' pc' : ''; }
@@ -296,7 +298,7 @@
   /* 凡例（カレンダーの下）: いま表示している月に出てくる社員の、色と名前 */
   function personLegend() {
     var seen = {}, list = [];
-    S.events.forEach(function (e) { if (e.kind !== 'private' && e.owner_id && e.owner_name && !e.deleted && !seen[e.owner_id]) { seen[e.owner_id] = 1; list.push(e); } });
+    S.events.forEach(function (e) { if (e.kind !== 'private' && e.owner_id && e.owner_name && !e.deleted && !seen[e.owner_id] && !(offOnly() && e.kind !== 'off')) { seen[e.owner_id] = 1; list.push(e); } });
     list.sort(function (a, b) { return a.owner_name.localeCompare(b.owner_name, 'ja'); });
     return list.map(function (e) { return el('span', { class: 'pc-chip' }, el('i', { style: 'background:' + ((e.colors && e.colors.work) || personColors(e.owner_id).work) }), ownerShort(e)); })
       .concat([el('span', null, el('span', { class: 'pc-badge-sample', text: '休' }), '＝休み（人ごとの色）')]);
@@ -875,6 +877,8 @@
           S.me.users.filter(function (u) { return u.id !== S.me.user.id; }).map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: whoId() === u.id }); }))),
       todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全社の表示で、社員ごとに色を変えます（休みは「休」バッジ）。この端末の設定です' },
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
+      todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全員の休みだけを表示します（業務の予定・会議室の予約は隠します）。開き直すと、元に戻ります' },
+        el('input', { type: 'checkbox', id: 'off-only', checked: offOnly(), onchange: function () { S.offOnly = this.checked; renderToolbar(); renderBoard(); } }), '休みだけ'),
       (SHARE && SHARE.kind === 'family') || FAMACCT ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
         (!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
@@ -885,7 +889,7 @@
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px' },
       el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
-        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
+        : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : offOnly() ? '業務版: 全員の休みだけを表示しています（業務の予定・会議室の予約は隠しています。「休みだけ」のチェックを外すと戻ります）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
   }
 
 
@@ -1061,6 +1065,7 @@
   /* 1週間分の、連続する同じ予定を1本のバーにまとめる */
   /* カレンダーに出す予定: 予定のほかに、会議室の予約（業務版。予約した人・参加者・全社のとき全員の予約）。予約は、kind が 'room' の予定として扱う */
   function calEvents() {
+    if (offOnly()) return S.events.filter(function (e) { return e.kind === 'off'; });
     if (SHARE || S.view !== 'team' || !S.roomBk || !S.roomBk.length) return S.events;
     if (S._rbSrc !== S.roomBk) {
       S._rbEv = S.roomBk.map(function (b) { return { id: 1000000000 + b.id, kind: 'room', rb: b, start: b.date, end: b.date, start_time: b.start, end_time: b.end, title: b.title, tag: '', owner_id: b.owner_id, owner_name: b.owner_name, editable: false, note: '' }; });
