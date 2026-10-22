@@ -108,6 +108,8 @@ main { max-width: 1280px; }
 .cell.sat .num { color: var(--work); }
 .cell.today .num .d { background: var(--work); color: #fff; border-radius: 999px; padding: 0 6px; }
 .hname { font-size: 10px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.offmark { flex: none; border: 0; padding: 0 5px; border-radius: 4px; background: var(--off); color: var(--surface); font: inherit; font-size: 11px; font-weight: 700; line-height: 16px; cursor: pointer; } /* 自分の休みを「休」のアイコンだけで出すとき */
+.offmark:hover { filter: brightness(1.1); }
 .bar { position: relative; z-index: 2; margin: 1px 3px; padding: 0 6px; height: 20px; line-height: 20px; font-size: 11.5px; font-weight: var(--fw); border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: none; }
 /* 色は、本人が「色の設定」で変えられる（--uc-* が文字色・塗りつぶし、--ub-* が淡い背景）。未設定なら標準の色 */
 .bar.work { background: var(--ub-work, var(--work-soft)); color: var(--uc-work, var(--work)); }

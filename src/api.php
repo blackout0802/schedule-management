@@ -189,6 +189,7 @@ function handle_api(): void
                 'app_version' => APP_VERSION,
                 'family_share' => get_family_share($user),
                 'family_owner_name' => is_family($user) ? (string)(row('SELECT name FROM users WHERE id = ?', [family_owner_id($user)])['name'] ?? '') : null, // 家族のアカウントのとき、持ち主の名前
+                'family_owner_offmark' => is_family($user) ? get_prefs(['id' => family_owner_id($user)])['offmark']['me'] : null, // 家族のアカウントのとき、持ち主の休みの出し方（プライベート版の設定）
                 'backup_alert' => is_admin($user) ? backup_alert_for_screen() : null, // 月1回の手動バックアップのお知らせ（管理者だけ）
                 'prefs' => get_prefs($user),
                 'work_tags' => cfg('work_tags'),
@@ -505,6 +506,9 @@ function handle_api(): void
             }
             $kind = in_array($in['kind'] ?? 'simple', ['morning', 'evening'], true) ? $in['kind'] : 'simple';
             api_out(['result' => slack_post_detailed(slack_test_message($kind, $user)), 'kind' => $kind]);
+
+        case 'offmark_save': // 自分の休みの出し方（業務版・プライベート版ごと。本人の画面と、家族用リンク・家族の画面）
+            api_out(['prefs' => save_offmark_pref($user, is_array($in['offmark'] ?? null) ? $in['offmark'] : [])]);
 
         case 'prefs_save': // 予定の色（本人の画面だけ）
             api_out(['prefs' => save_color_prefs($user, is_array($in['colors'] ?? null) ? $in['colors'] : [], array_key_exists('offday', $in) ? $in['offday'] : null)]);

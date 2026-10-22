@@ -469,6 +469,24 @@
     refresh();
   }
 
+  /* 自分の休みの出し方（業務版・プライベート版で別々に）。プライベート版の設定は、家族用リンク・家族の画面にも使う */
+  function openOffmarkDialog() {
+    var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'icon' };
+    var opts = [['icon', '「休」のアイコンだけ（日付の横）'], ['bar', '帯（名前と、休みの分類）']];
+    var sel = function (name, v) { return el('select', { name: name }, opts.map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === v }); })); };
+    var team = sel('offmark_team', m.team), me = sel('offmark_me', m.me);
+    var msg = el('p', { class: 'hint', role: 'status' });
+    openModal('休みの出し方', el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('offmark_save', { body: { offmark: { team: team.value, me: me.value } } }).then(function (j) { S.me.prefs = j.prefs; msg.textContent = '保存しました'; toast('休みの出し方を保存しました'); renderBoard(); }).catch(fail);
+    } },
+      el('p', { class: 'hint', text: 'カレンダーで、自分の休みの日を、どう出すかを決めます。業務版とプライベート版で、別々に選べます。' }),
+      el('label', null, '業務版（自分の休みだけ。ほかの人の休みは、いつも帯）', team),
+      el('label', null, 'プライベート版（家族用リンク・家族の画面も、この設定になります）', me),
+      msg,
+      el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn primary', type: 'submit', text: '保存' }))));
+  }
+
   function openShortcuts() {
     if (modals.some(function (m) { return m.shortcuts; })) return;
     var rows = SHORTCUTS.filter(function (s) { return s[0] !== 's' || S.me.user.role === 'admin'; }).map(function (s) { return el('div', { class: 'sc-item' }, el('kbd', { text: s[0] }), el('span', { text: s[1] })); });
@@ -605,6 +623,7 @@
     var admin = S.me.user.role === 'admin';
     var list = [
       { id: 'colors', title: '予定の色', build: openColorDialog },
+      { id: 'offmark', title: '休みの出し方', build: openOffmarkDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
       { id: 'family', title: '家族の招待', build: openFamilyDialog },
       { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts }
@@ -1082,9 +1101,23 @@
     }
     return S.events.concat(S._rbEv);
   }
+  /* 自分の休みを、帯ではなく、日付の横の「休」のアイコンだけで出すか（版ごとの設定「休みの出し方」。初期値は、業務版 = 帯、プライベート版 = アイコン）。
+     家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う（そこに出る休みは、持ち主の休みだけ）。会社用リンクは、いつも帯 */
+  function offMarkIcon() {
+    if (SHARE) return SHARE.kind === 'family' && SHARE.offmark === 'icon';
+    if (FAMACCT) return S.me.family_owner_offmark === 'icon';
+    var m = S.me && S.me.prefs && S.me.prefs.offmark, v = S.view === 'team' ? 'team' : 'me';
+    return (m && m[v] ? m[v] : (v === 'me' ? 'icon' : 'bar')) === 'icon';
+  }
+  function offAsIcon(e) { return e.kind === 'off' && !e.deleted && offMarkIcon() && (!!SHARE || FAMACCT || e.owner_id === S.me.user.id); }
+  /* 日付の横の「休」のアイコン（半休は「半休」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
+  function offMarkFor(e, ds) {
+    return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? '半休' : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
+      onclick: function (ev) { ev.stopPropagation(); if (useDayPopup()) openDayPopup(ds); else openEventDialog(e); } });
+  }
   function weekSegments(days) {
     var segs = [];
-    calEvents().forEach(function (e) {
+    calEvents().filter(function (e) { return !offAsIcon(e); }).forEach(function (e) {
       var cur = null;
       for (var c = 0; c < 7; c++) {
         if (shownOn(e, ymd(days[c]))) { if (cur) cur.e = c; else { cur = { ev: e, s: c, e: c }; segs.push(cur); } } else cur = null;
@@ -1303,7 +1336,7 @@
       var cls = 'cell' + (!wk && d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
         style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
-        el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
+        el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), (function () { var o = S.events.filter(function (e) { return offAsIcon(e) && shownOn(e, s); })[0]; return o ? offMarkFor(o, s) : null; })(), hol ? el('span', { class: 'hname', text: hol }) : null)));
     });
     var hidden = [0, 0, 0, 0, 0, 0, 0];
     pack.segs.forEach(function (g) {
