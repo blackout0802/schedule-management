@@ -40,12 +40,13 @@ const BASE = 'http://127.0.0.1:8099/';
   // 共有リンク（未ログインの端末・ライト端末）
   for (const [i, nm] of [[0, '会社用'], [1, '家族用']]) {
     const g = await mk(phone, 'light'); await g.goto(BASE + sh[i]); await g.waitForSelector('.cal'); await g.waitForTimeout(400);
+    if (i === 0) await g.uncheck('#off-only'); // 会社用リンクは、最初は「休みだけ」。業務の予定を見るには、チェックを外す
     await g.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g.waitForSelector('.modal');
     const gt = await g.locator('.modal').innerText(); ok(nm + 'リンク: 日付を押すと、その日の予定が出る（閲覧のみ・追加ボタンなし）', (i === 0 ? gt.includes('全体会議') : gt.includes('家族で外食') && gt.includes('19:00')), gt); ok(nm + 'リンク: 「予定を追加」は出ない', !gt.includes('予定を追加'));
     if (i === 0) { await g.click('.day-item:has-text("全体会議")'); await g.waitForSelector('.modal'); ok('会社用: 予定を押すと、詳細（閲覧）が出る', (await g.locator('.modal').innerText()).includes('予定の詳細')); }
     ok(nm + 'リンク: 画面の色のアイコン（ライト・自動・ダーク）がある', (await g.locator('header .theme-sw button').count()) === 3);
     await g.close(); }
-  const g2 = await mk(phone, 'light'); await g2.goto(BASE + sh[0]); await g2.waitForSelector('.cal'); await g2.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g2.waitForSelector('.day-list'); await g2.screenshot({ path: 'dp-popup.png' });
+  const g2 = await mk(phone, 'light'); await g2.goto(BASE + sh[0]); await g2.waitForSelector('.cal'); await g2.uncheck('#off-only'); await g2.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g2.waitForSelector('.day-list'); await g2.screenshot({ path: 'dp-popup.png' });
   // PC幅では、これまでどおり（空きの日を押すと、登録画面）
   const d = await mk({ viewport: { width: 1280, height: 900 } }, 'light'); await login(d);
   await d.locator('.cell[data-date="' + `${M}-22` + '"]').click({ position: { x: 20, y: 30 } }); await d.waitForSelector('.modal'); ok('PCでは、空きの日を押すと、これまでどおり登録画面', (await d.locator('.modal').innerText()).includes('予定') && !!(await d.locator('.modal input[name=title]').count()));

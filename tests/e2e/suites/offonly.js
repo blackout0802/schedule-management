@@ -41,5 +41,18 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   ok('特定の人を選ぶと、「休みだけ」のチェックは出ない。その人の業務も出る', (await a.locator('#off-only').count()) === 0 && (await a.locator('.bar.work').count()) >= 1);
   await a.reload(); await a.waitForSelector('#who-sel'); await a.selectOption('#who-sel', 'all'); await a.waitForSelector('.bar.work');
   ok('開き直すと、元に戻る（休みだけは覚えない）', !(await a.locator('#off-only').isChecked()) && (await a.locator('.bar.work').count()) >= 2);
+  // 会社用の共有リンク（ログイン不要・閲覧専用）: 最初から「休みだけ」。チェックを外すと業務の予定も出る。チェックは押せる
+  const path = (await api(a, 'share_create', { kind: 'company' })).path;
+  const g = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
+  g.on('pageerror', e => console.log('PAGEERR', e.message));
+  await g.goto(BASE + path); await g.waitForSelector('.cal'); await g.waitForSelector('.bar.off');
+  ok('会社用の共有ページ: 最初から「休みだけ」にチェックが入り、休みだけが出る（業務の予定は出ない）', (await g.locator('#off-only').isChecked()) && (await g.locator('.bar.work').count()) === 0 && (await g.locator('.bar.off').count()) >= 2);
+  ok('会社用の共有ページ: 説明の帯に、全員の休みだけと出る', (await g.locator('.view-banner .vb-text').innerText()).includes('全員の休みだけ'), await g.locator('.view-banner .vb-text').innerText());
+  await g.uncheck('#off-only'); await g.waitForSelector('.bar.work:has-text("休み検証の会議")');
+  ok('会社用の共有ページ: チェックを外すと、業務の予定も出る', (await g.locator('.bar.work').count()) >= 2 && !(await g.locator('#off-only').isChecked()));
+  await g.check('#off-only'); await g.waitForFunction(() => !document.querySelector('.bar.work'));
+  ok('会社用の共有ページ: もう一度チェックすると、休みだけに戻る', (await g.locator('.bar.off').count()) >= 2);
+  await g.click('.seg label:has-text("リスト")'); await g.waitForSelector('.list-day');
+  ok('会社用の共有ページ（リスト表示）: 休みだけが出る', !(await g.locator('.list-items').allInnerTexts()).join('|').includes('休み検証') && (await g.locator('.list-items .bar.off').count()) >= 2, await g.locator('.list-items').allInnerTexts());
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -5,7 +5,7 @@ mkdir($tmp);
 // 既定は SQLite。MySQL/MariaDB で試す場合: SCHEDULE_TEST_DSN='mysql:host=localhost;dbname=xxx;charset=utf8mb4' SCHEDULE_TEST_USER=.. SCHEDULE_TEST_PASS=.. php tests/run.php
 $dsn = getenv('SCHEDULE_TEST_DSN') ?: "sqlite:$tmp/t.sqlite";
 $dbCfg = var_export(['dsn' => $dsn, 'user' => getenv('SCHEDULE_TEST_USER') ?: null, 'pass' => getenv('SCHEDULE_TEST_PASS') ?: null], true);
-file_put_contents($tmp . '/config.php', "<?php return ['db' => $dbCfg, 'slack_webhook' => '', 'base_url' => 'https://example.test/public/index.php'];");
+file_put_contents($tmp . '/config.php', "<?php return ['db' => $dbCfg, 'slack_webhook' => '', 'base_url' => 'https://example.test/public/index.php', 'mail_file' => '$tmp/mail.log'];");
 putenv('SCHEDULE_CONFIG=' . $tmp . '/config.php');
 
 require_once __DIR__ . '/../src/bootstrap.php';
@@ -1720,6 +1720,29 @@ $fOwner = $a; // 山田
 $fam1 = row('SELECT * FROM users WHERE id = ?', [$fid1]);
 check('家族: 招待すると、家族のアカウントができる（持ち主・一時パスワード・初回に変更）', [$fam1['role'], (int)$fam1['family_of'] === (int)$fOwner['id'], (int)$fam1['must_change_password'], strlen($fpw1) >= 8], ['family', true, 1, true]);
 check('家族: 一時パスワードでログインできる（家族のアカウントとして）', (function () use ($fpw1) { $u = login_attempt('wife@example.com', $fpw1); return $u !== null && $u['role'] === 'family'; })(), true);
+// 招待メール（試験用に、メールを送らず、ファイルへ書く設定）
+$mailLog = $tmp . '/mail.log';
+@unlink($mailLog);
+check('メール: 招待メールが送れる（宛先・件名・ログインのページ・メールアドレス・一時パスワードが入る）', (function () use ($fOwner, $fpw1, $mailLog) {
+    $ok = family_invite_mail($fOwner, '山田 妻', 'wife@example.com', $fpw1);
+    $t = (string)@file_get_contents($mailLog);
+    return [$ok, strpos($t, 'To: wife@example.com') !== false, strpos($t, 'Subject: 【スケジュール管理】ログインのご案内') !== false, strpos($t, 'https://example.test/public/login.php') !== false, strpos($t, '一時パスワード: ' . $fpw1) !== false, strpos($t, $fOwner['name'] . ' さんが') !== false];
+})(), [true, true, true, true, true, true]);
+check('メール: 送信元は、設定がなければ noreply@（base_url のドメイン）', mail_from_address(), 'noreply@example.test');
+check('メール: 宛先が正しくなければ、送らない（false）。改行の入った宛先も送らない', [mail_send('not-an-email', 'a', 'b'), mail_send("x@example.com\r\nBcc: y@example.com", 'a', 'b')], [false, false]);
+check('メール: 件名・名前の改行は、ヘッダーに別の行を足せない形にする', (function () use ($mailLog) {
+    @unlink($mailLog);
+    mail_send('a@example.com', "件名\r\nBcc: evil@example.com", '本文');
+    $t = (string)file_get_contents($mailLog);
+    return [strpos($t, "\nBcc:") === false, strpos($t, 'Subject: 件名 Bcc: evil@example.com') !== false];
+})(), [true, true]);
+check('メール: 送れなかったとき（書き込めない）は、例外ではなく false', (function () use ($mailLog) {
+    @unlink($mailLog);
+    mkdir($mailLog); // 書き込み先がディレクトリだと、書けない
+    try { $r = mail_send('a@example.com', '件名', '本文'); } catch (Throwable $e) { $r = 'exception'; }
+    rmdir($mailLog);
+    return $r;
+})(), false);
 check('家族: 同じメールアドレスでは招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'wife@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
 check('家族: メールアドレスが正しくないと招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'not-an-email'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
 check('家族: 家族のアカウントからは、招待できない', (function () use ($fam1) { try { family_add($fam1, '孫', 'grand@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');

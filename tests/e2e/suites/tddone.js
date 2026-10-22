@@ -19,7 +19,8 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   // 「進行中」→「完了」にする
   const done = async (t) => { await p.click('#todo-mgr .kb-card:has-text("' + t + '") button:has-text("進行中へ")'); await p.waitForSelector('#todo-mgr .kb-card:has-text("' + t + '") button:has-text("完了 ✓")'); await p.click('#todo-mgr .kb-card:has-text("' + t + '") button:has-text("完了 ✓")'); await p.waitForSelector('#todo-mgr .kb-col.done .kb-card:has-text("' + t + '"), #todo-mgr .kb-card.done:has-text("' + t + '")'); };
   await done('日報へ反映するToDo');
-  await p.waitForFunction(() => Array.from(document.querySelectorAll('.memo-single div[data-md=cur] ~ div')).some(d => d.textContent.includes('日報へ反映するToDo')));
+  // 進行中にした時点で、日報には（取り消し線なしで）もう入っている。完了にして、取り消し線が付くまで待つ
+  await p.waitForFunction(() => Array.from(document.querySelectorAll('.memo-single div[data-md=cur] ~ div')).some(d => d.textContent.includes('日報へ反映するToDo') && d.querySelector('s')));
   const after = await memoItems();
   ok('完了にすると、日報の当日の項目に、取り消し線つきで入る（ToDoの印つき）', after.includes('日報へ反映するToDo[s][t]'), after);
   // 保存される

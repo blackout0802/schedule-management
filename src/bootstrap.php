@@ -23,6 +23,8 @@ function app_config(): array
             'timezone' => 'Asia/Tokyo',
             'slack_webhook' => '',
             'base_url' => '',
+            'mail_from' => '',
+            'mail_file' => '',
             'cron_token' => '',
             'poll_seconds' => 20,
             'work_tags' => ['全体会議', '打ち合わせ', '定例業務', '個人作業', 'その他'],

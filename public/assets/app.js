@@ -278,8 +278,9 @@
   var PERSON_HUES = [10, 2, 6, 13, 0, 8, 3, 14, 5, 11, 1, 7, 12, 4, 9, 15]; // COLOR_PRESETS の色相の番号。隣り合う番号の社員の色が離れるように並べてある
   function allView() { return !FAMILY && S.view === 'team' && !whoId(); }
   function personColorOn() { return allView() && store('sched.personColor') !== false; }
-  /* 全社の表示で「休みだけ」にチェックがあるとき: 全員の休みだけを出す（業務の予定・会議室の予約は出さない）。開き直すと戻る（覚えない） */
-  function offOnly() { return !SHARE && !FAMACCT && allView() && !!S.offOnly; }
+  /* 全社の表示で「休みだけ」にチェックがあるとき: 全員の休みだけを出す（業務の予定・会議室の予約は出さない）。開き直すと戻る（覚えない）。
+     会社用の共有リンクの閲覧ページは、最初からチェックが入っている（チェックを外すと、業務の予定も出る） */
+  function offOnly() { return !FAMACCT && allView() && !!S.offOnly; }
   function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3], badge: COLOR_PRESETS[h * 3 + 2] }; } // 休みも、業務と同じ淡い色。違いは、頭の「休」バッジ（濃い色）
   function onColor(hex) { var bg = hexRgb(hex); return contrastRatio(bg, [255, 255, 255]) >= contrastRatio(bg, [20, 32, 51]) ? '#ffffff' : '#14202f'; }
   function pcClass(e) { return personColorOn() && e.kind === 'off' && e.owner_id ? ' pc' : ''; }
@@ -391,10 +392,11 @@
   /* ---------- 家族の招待（設定のページの項目）----------
      家族を招待すると、家族が自分のアカウントでログインして、自分のプライベートのカレンダーを見たり、自分の予定を書き込んだりできる。
      家族に見えるのは、「家族に共有」にした予定（と、共有リンクの範囲）と、家族が入れた予定だけ。業務・ToDo・日報・会議室・設定は見えない。 */
-  function showFamilyCredentials(name, email, pw, again) {
+  function showFamilyCredentials(name, email, pw, again, mail) { // mail = 招待メールの結果（'sent' 送った／'failed' 送れなかった／それ以外 送っていない）
     var url = new URL('login.php', location.href).href;
     var box = el('div', { class: 'form fam-cred' },
-      el('p', { class: 'hint', text: again ? name + ' さんのパスワードをリセットしました。次の内容を、本人に伝えてください。' : name + ' さんを招待しました。次の内容を、本人に伝えてください。' }),
+      el('p', { class: 'hint', text: again ? name + ' さんのパスワードをリセットしました。次の内容を、本人に伝えてください。' : mail === 'sent' ? name + ' さんを招待しました。次の内容を、メールでも送りました（届かないときは、迷惑メールの中を見てもらうか、下の内容を直接伝えてください）。' : name + ' さんを招待しました。次の内容を、本人に伝えてください。' }),
+      mail === 'failed' ? el('p', { class: 'error', role: 'alert', text: '招待メールを送れませんでした（アカウントはできています）。下の内容を、直接伝えてください。サーバーの設定（config.php の mail_from）が必要な場合があります。' }) : null,
       el('dl', { class: 'detail' },
         el('dt', { text: 'ログインのページ' }), el('dd', { text: url }),
         el('dt', { text: 'メールアドレス' }), el('dd', { text: email }),
@@ -442,17 +444,20 @@
             } }))));
       });
       var full = members.length >= max;
+      var sendMail = el('input', { type: 'checkbox', name: 'fam_send_mail', checked: store('sched.famMail') !== false });
       body.appendChild(el('form', { class: 'fam-add', onsubmit: function (e) {
         e.preventDefault(); msg.hidden = true;
         var nm = nameIn.value.trim(), em = mailIn.value.trim();
-        api('family_add', { body: { name: nm, email: em } }).then(function (j) {
+        store('sched.famMail', sendMail.checked); // この端末で覚える
+        api('family_add', { body: { name: nm, email: em, send_mail: sendMail.checked } }).then(function (j) {
           nameIn.value = ''; mailIn.value = '';
-          showFamilyCredentials(nm, em.toLowerCase(), j.password, false); draw(j.members, max);
+          showFamilyCredentials(nm, em.toLowerCase(), j.password, false, j.mail); draw(j.members, max);
         }).catch(function (x) { msg.textContent = x.message; msg.hidden = false; });
       } },
         el('h4', { text: '家族を招待する' }),
         full ? el('p', { class: 'hint', text: '招待できる人数に達しています。使わない人を削除すると、招待できます。' }) : null,
         el('div', { class: 'row' }, el('label', null, '名前', nameIn), el('label', null, 'メールアドレス', mailIn)),
+        el('label', { class: 'check' }, sendMail, ' 招待メールも送る（ログインのページ・メールアドレス・一時パスワードを、メールで届けます）'),
         msg,
         el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn primary', type: 'submit', text: '招待する', disabled: full ? 'disabled' : null }))));
       if (!embedHost) body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
@@ -888,7 +893,7 @@
       })) : null
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px' },
-      el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
+      el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : offOnly() ? '会社の全員の休みだけを表示しています（閲覧専用）。「休みだけ」のチェックを外すと、業務の予定も表示されます。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : offOnly() ? '業務版: 全員の休みだけを表示しています（業務の予定・会議室の予約は隠しています。「休みだけ」のチェックを外すと戻ります）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
   }
 
@@ -1157,7 +1162,7 @@
     var last = new Date(S.year, S.month, 0).getDate();
     for (var i = 1; i <= last; i++) {
       var d = new Date(S.year, S.month - 1, i), ds = ymd(d), hol = S.holidays[ds];
-      var evs = S.events.filter(function (e) { return shownOn(e, ds) && !(hideWork && e.kind === 'work'); });
+      var evs = S.events.filter(function (e) { return shownOn(e, ds) && !(hideWork && e.kind === 'work') && !(offOnly() && e.kind !== 'off'); });
       if (!evs.length && !hol) continue;
       any = true;
       var dayRow = el('div', { class: 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (ds === todayStr ? ' today' : '') },
@@ -3941,6 +3946,7 @@
       S.shareTitle = m.title;
       S.shareMine = !!m.mine; // この共有リンクを作った本人が、ログインして見ているときだけ、自分の画面へ戻れる
       S.view = SHARE.kind === 'family' ? 'me' : 'team';
+      S.offOnly = SHARE.kind === 'company'; // 会社用リンクは、最初は全員の休みだけ
       S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
       document.title = m.title;
       var now = new Date();
