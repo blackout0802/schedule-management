@@ -360,7 +360,7 @@
      日本語入力がオンでも動くよう、文字ではなく、キーの位置（KeyC など）で判定する。 */
   var SHORTCUTS = [
     ['c', 'カレンダーを表示'], ['r', '会議室予約を表示（業務版）'], ['l', 'リストを表示'], ['t', '今月・今週に戻る（今日）'], ['w', '月・週表示の切り替え'], ['← / →', '前の月・週 / 次の月・週'],
-    ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['s', 'システム更新（管理者のみ）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
+    ['n', '予定を追加'], ['d', 'ToDoを表示・閉じる（カレンダー）'], ['b', '業務版に切り替え'], ['p', 'プライベート版に切り替え'], ['?', 'このショートカット一覧']
   ];
   function shortcutKey(e) {
     var m = /^Key([A-Z])$/.exec(e.code || '');
@@ -471,7 +471,6 @@
     else if (k === '?') openShortcuts();
     else if (!SHARE && k === 'n') openEventDialog(null, ymd(new Date()));
     else if (!SHARE && !FAMACCT && k === 'd' && S.mode === 'cal') { if (document.getElementById('todo-panel')) closeTodoPanel(true); else openTodoPanel(); }
-    else if (!SHARE && !FAMACCT && k === 's' && S.me.user.role === 'admin') location.href = 'update.php';
     else if (!SHARE && !FAMACCT && k === 'b') setView('team');
     else if (!SHARE && !FAMACCT && k === 'p') setView('me');
     else done = false;
@@ -482,7 +481,8 @@
   /* 共有リンクの閲覧ページ: 月の移動と、予定の詳細を見るだけ。編集・ToDo・メモは無い */
   function renderShareShell() {
     root.textContent = '';
-    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('span', { class: 'spacer' }), themeSwitch())));
+    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, S.shareMine ? el('a', { class: 'btn small primary', href: 'index.php?view=' + (SHARE.kind === 'family' ? 'me' : 'team'), title: 'この共有を作ったあなたの画面（ログイン中）へ戻る', text: '← 自分の画面に戻る' }) : null,
+      el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('span', { class: 'spacer' }), themeSwitch())));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
     renderToolbar();
   }
@@ -591,18 +591,13 @@
         { id: 'usage', title: '利用状況', admin: true, build: openUsageDialog },
         { id: 'guide', title: '運用の手引き', admin: true, build: function () {
           openModal('運用の手引き', el('div', { class: 'form' },
-            el('p', { class: 'hint', text: '社員の追加と停止、パスワードを忘れたとき、システム更新、バックアップと復元、cron、困ったときの対処を、1ページにまとめました。担当者が代わるときにも、そのまま印刷して渡せます。' }),
+            el('p', { class: 'hint', text: '社員の追加と停止、パスワードを忘れたとき、バックアップと復元、cron、困ったときの対処を、1ページにまとめました。担当者が代わるときにも、そのまま印刷して渡せます。' }),
             el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'guide.php', target: '_blank', rel: 'noopener', text: '運用の手引きを開く' }))));
         } },
         { id: 'backup', title: 'バックアップ', admin: true, build: function () {
           openModal('バックアップ', el('div', { class: 'form' },
             el('p', { class: 'hint', text: 'データ（プライベートの予定も含む）を、パスワードで暗号化した1つのファイルに保存します。パスワードを知らない人は、管理者でも中身を見られません。パスワードを忘れると復元できないので、ご注意ください。' }),
             el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'backup.php', text: 'バックアップの画面を開く' }))));
-        } },
-        { id: 'update', title: 'システム更新', admin: true, build: function () {
-          openModal('システム更新', el('div', { class: 'form' },
-            el('p', { class: 'hint', text: '新しい版の更新ファイル（zip）を選んで、システムを更新します。更新の前の状態に戻すこともできます。ショートカットキー「s」でも開けます。' }),
-            el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'update.php', text: 'システム更新の画面を開く' }))));
         } });
     }
     return list;
@@ -3873,6 +3868,7 @@
     api('meta').then(function (m) {
       S.me = { user: { id: 0, name: '閲覧専用', role: 'viewer' }, app_name: m.app_name, work_tags: [], off_tags: [], users: [] };
       S.shareTitle = m.title;
+      S.shareMine = !!m.mine; // この共有リンクを作った本人が、ログインして見ているときだけ、自分の画面へ戻れる
       S.view = SHARE.kind === 'family' ? 'me' : 'team';
       S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
       document.title = m.title;
@@ -3889,6 +3885,10 @@
     S.year = now.getFullYear(); S.month = now.getMonth() + 1; initSpan(now);
     FAMACCT = me.user.role === 'family';
     S.view = store('sched.view') === 'me' || FAMACCT ? 'me' : 'team';
+    if (!FAMACCT && /[?&]view=me(&|$)/.test(location.search)) { // 共有ページから戻ってきたとき（家族用リンク）
+      S.view = 'me'; store('sched.view', 'me');
+      try { history.replaceState(null, '', location.pathname); } catch (e) { /* 履歴を触れなくても、表示には影響しない */ }
+    }
     if (!FAMACCT && /[?&]view=team(&|$)/.test(location.search)) { // 通知のリンクから開いたときは、必ず業務版
       S.view = 'team'; store('sched.view', 'team');
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* 履歴を触れなくても、表示には影響しない */ }

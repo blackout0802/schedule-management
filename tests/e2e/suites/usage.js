@@ -44,7 +44,7 @@ const login = async (b, em, pw, w = 1100) => { const p = await b.newPage({ viewp
   const g = await a.goto(BASE + 'guide.php');
   ok('管理者は、運用の手引きを開ける', g.status() === 200 && (await a.locator('h1').innerText()).includes('運用の手引き'));
   const gt = await a.locator('.paper').innerText();
-  ok('手引きに、更新・バックアップ・cron・パスワード・控えの欄がある', ['システム更新', 'バックアップと復元', 'cron', 'reset_password.php', '控え', 'bin/cron.php notify'].every(w => gt.includes(w)), gt.slice(0, 300));
+  ok('手引きに、新しい版・バックアップ・cron・パスワード・控えの欄がある', ['新しい版にする', 'バックアップと復元', 'cron', 'reset_password.php', '控え', 'bin/cron.php notify'].every(w => gt.includes(w)), gt.slice(0, 300));
   ok('手引きのコマンドが、改行どおりに出る（cd と php が、くっつかない）', /cd [^\n]+\nphp bin\/reset_password\.php/.test(await a.locator('pre').first().innerText()), await a.locator('pre').first().innerText());
   ok('手引きに、いまの版と自動バックアップの状態が入る', /v\d+\.\d+\.\d+/.test(gt) && gt.includes('自動バックアップ') && (gt.includes('設定済み') || gt.includes('まだ設定されていません')));
   ok('印刷ボタンが動く（CSP のもとでも）', await a.evaluate(() => { let called = 0; window.print = () => { called++; }; document.getElementById('print-btn').click(); return called === 1; }));

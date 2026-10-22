@@ -8,7 +8,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page');
   ok('「設定」を押すと、ポップアップではなく、設定のページになる（URL は #settings）', a.url().endsWith('#settings') && (await a.locator('.overlay').count()) === 0 && (await a.locator('.cal').count()) === 0);
   const titles = await a.locator('.set-sec > h3').allInnerTexts();
-  ok('すべての項目が、1ページに並ぶ', ['予定の色', '共有リンク', 'ショートカットキー', '社員の管理', '会社の休業日', 'Slack通知の送り先', 'Slack通知の時間・文面', 'システム更新'].every(t => titles.some(x => x.includes(t))) && !titles.some(x => x.includes('パスワードの変更') || x.includes('ホーム画面に追加')), titles);
+  ok('すべての項目が、1ページに並ぶ', ['予定の色', '共有リンク', 'ショートカットキー', '社員の管理', '会社の休業日', 'Slack通知の送り先', 'Slack通知の時間・文面'].every(t => titles.some(x => x.includes(t))) && !titles.some(x => x.includes('パスワードの変更') || x.includes('ホーム画面に追加')), titles);
   ok('左に、項目の一覧（ジャンプ用）がある', (await a.locator('.set-nav a').count()) === titles.length);
   // 中身が、その場で出ている
   ok('予定の色: パレットが、ページの中に出ている', (await a.locator('#set-colors .cs-sw, #set-colors .pal').count()) > 0);
@@ -16,7 +16,7 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('社員の管理: 社員の表が出ている', (await a.locator('#set-users table').innerText()).includes('山田 花子'));
   ok('Slack通知の送り先・時間・文面が、ページの中で読み込まれる', (await a.locator('#set-slack .slack-status').count()) === 1 && (await a.locator('#set-slackcfg .slack-preview').count()) >= 2);
   ok('ページの中に、「閉じる」ボタンは無い', (await a.locator('.set-sec button:has-text("閉じる")').count()) === 0);
-  ok('システム更新へのリンクがある', (await a.locator('#set-update a[href="update.php"]').count()) === 1);
+  ok('設定のページに、システム更新（zip）の項目は無い', (await a.locator('#set-update').count()) === 0);
   // 画面の色: その場で効く
   ok('画面の色は、設定のページではなく、上の帯のアイコンで変える', (await a.locator('#set-theme').count()) === 0);
   // 社員の編集は、これまでどおりポップアップ

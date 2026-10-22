@@ -55,8 +55,8 @@ const pad = n => String(n).padStart(2, '0');
   const denied = {};
   for (const [a, body] of [['todo_list'], ['users_list'], ['memo_get'], ['rooms_list&from=' + today + '&to=' + today], ['series_list'], ['share_list'], ['usage_get'], ['audit_list'], ['family_list'], ['todo_save', { title: 'x', kind: 'work' }], ['share_create', { kind: 'company' }], ['user_save', { name: 'x', email: 'x@example.com', password: 'password1', role: 'admin' }], ['family_add', { name: 'x', email: 'x2@example.com' }], ['prefs_save', {}], ['backup_snooze', {}], ['event_to_todo', { id: 1 }]]) denied[a] = (await api(f, a, body)).status;
   ok('家族のアカウントは、業務・ToDo・社員・共有・設定などのAPIを使えない（403）', Object.values(denied).every(s => s === 403), denied);
-  const pages = await f.evaluate(async () => { const o = {}; for (const u of ['backup.php', 'update.php', 'guide.php']) o[u] = (await fetch(u)).status; return o; });
-  ok('管理者向けのページ（バックアップ・システム更新・運用の手引き）は、家族のアカウントでは開けない（403）', Object.values(pages).every(x => x === 403), pages);
+  const pages = await f.evaluate(async () => { const o = {}; for (const u of ['backup.php', 'guide.php']) o[u] = (await fetch(u)).status; return o; });
+  ok('管理者向けのページ（バックアップ・運用の手引き）は、家族のアカウントでは開けない（403）', Object.values(pages).every(x => x === 403), pages);
   ok('家族のアカウントは、設定のページ・会議室のページを開けない（カレンダーのまま）', await (async () => { await f.goto(BASE + 'index.php#settings'); await f.waitForSelector('.cal'); const a = (await f.locator('.settings-page').count()) === 0; await f.goto(BASE + 'index.php#rooms'); await f.waitForSelector('.cal'); return a && (await f.locator('#rooms-body').count()) === 0; })());
   const me = await api(f, 'me'); ok('家族の「me」には、社員の一覧が入らない', (me.j.users || []).length === 0 && me.j.user.role === 'family', me.j);
 

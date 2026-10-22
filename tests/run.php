@@ -12,7 +12,6 @@ require_once __DIR__ . '/../src/bootstrap.php';
 require_once __DIR__ . '/../src/auth.php';
 require_once __DIR__ . '/../src/events.php';
 require_once __DIR__ . '/../src/slack.php';
-require_once __DIR__ . '/../src/updater.php';
 require_once __DIR__ . '/../src/share.php';
 require_once __DIR__ . '/../src/backup.php';
 require_once __DIR__ . '/../src/usage.php';
@@ -1027,53 +1026,6 @@ check('通知は1回目だけ true', notify_once('test:1'), true);
 check('同じ通知は2回目 false', notify_once('test:1'), false);
 check('Webhook未設定でも休み通知は例外にならない', notify_offs_for_day($today, '本日') >= 1, true);
 check('通知の二重送信防止(同日2回目は0件)', notify_offs_for_day($today, '本日'), 0);
-
-
-// ---- システム更新（updater） ----
-$U = $tmp . '/upd'; mkdir($U); mkdir("$U/web"); mkdir("$U/app"); mkdir("$U/app/src");
-file_put_contents("$U/app/src/a.php", "<?php // OLD\n");
-file_put_contents("$U/app/src/same.php", "<?php // SAME\n");
-file_put_contents("$U/web/config.php", "SERVER-SECRET");
-$mkzip = function (array $entries, string $name) use ($U) {
-    $z = new ZipArchive(); $path = "$U/$name"; $z->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-    foreach ($entries as $k => $v) { $z->addFromString($k, $v); }
-    $z->close(); return $path;
-};
-$thr = function (callable $f) { try { $f(); return null; } catch (UpdaterException $x) { return $x->getMessage(); } };
-$zipOk = $mkzip([
-    'src/a.php' => "<?php // NEW\n", 'src/same.php' => "<?php // SAME\n", 'src/b.php' => "<?php // B\n",
-    'public/assets/app.js' => '// js', 'public/install.php' => '<?php // 入れてはいけない', 'public/app_path.php' => '<?php // 上書き禁止',
-    'src/config.php' => '<?php // 上書き禁止', 'config.php' => '<?php // 上書き禁止', 'tests/run.php' => '<?php // 対象外', 'src/run.sh' => 'rm -rf /',
-    'src/.htaccess' => 'x', 'public/.env' => 'x',
-], 'ok.zip');
-$um = umask(0); // 新しいファイルが666になってしまうサーバーを想定
-$r = updater_apply($zipOk, "$U/web", "$U/app");
-umask($um);
-check('更新: 作られるファイルの権限は644（誰でも書ける666にならない）', [substr(sprintf('%o', fileperms("$U/web/assets/app.js")), -3), substr(sprintf('%o', fileperms("$U/app/src/a.php")), -3)], ['644', '644']);
-check('更新: 対象の3ファイルだけが変わる', $r['changed'], ['src/a.php', 'src/b.php', 'public/assets/app.js']);
-check('更新: 同じ内容のファイルは変更なし扱い', $r['unchanged'], 1);
-check('更新: 対象外(install/app_path/config/tests/.sh/.htaccess等)は飛ばす', $r['skipped'], 8);
-check('更新: 新しい内容が書き込まれる', [file_get_contents("$U/app/src/a.php"), file_get_contents("$U/web/assets/app.js")], ["<?php // NEW\n", '// js']);
-check('更新: install.php / app_path.php / config.php は作られない・変わらない', [is_file("$U/web/install.php"), is_file("$U/web/app_path.php"), file_get_contents("$U/web/config.php"), is_file("$U/app/src/config.php")], [false, false, 'SERVER-SECRET', false]);
-check('更新: バックアップが作られる', count(updater_backups("$U/app")), 1);
-// 元に戻す
-$n = updater_restore($r['backup'], "$U/web", "$U/app");
-check('復元: 更新前の内容に戻る', [file_get_contents("$U/app/src/a.php"), is_file("$U/app/src/b.php"), is_file("$U/web/assets/app.js")], ["<?php // OLD\n", false, false]);
-// 危険な zip は全体を拒否し、何も書かない
-$before = file_get_contents("$U/app/src/a.php");
-check('拒否: いまより古い版の zip（古い版の弱点を戻されない）', ($thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/version.php' => "<?php\nconst APP_VERSION = '0.0.1';\n", 'src/old.php' => '<?php // OLD'], 'older.zip'), "$U/web", "$U/app"); }) ?? '') !== '' && !is_file("$U/app/src/old.php"), true);
-updater_apply($mkzip(['public/INSTALL.php' => '<?php // 入れてはいけない', 'src/caps_ok.php' => '<?php // OK'], 'caps.zip'), "$U/web", "$U/app");
-check('更新: INSTALL.php（大文字）でも、install.php は、すり替えられない', [is_file("$U/web/INSTALL.php"), is_file("$U/web/install.php"), is_file("$U/app/src/caps_ok.php")], [false, false, true]);
-@unlink("$U/app/src/caps_ok.php");
-check('拒否: ../ を含む zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/x.php' => '<?php', '../evil.php' => '<?php'], 'bad1.zip'), "$U/web", "$U/app"); }) !== null, true);
-check('拒否: 絶対パスを含む zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['/etc/evil.php' => '<?php'], 'bad2.zip'), "$U/web", "$U/app"); }) !== null, true);
-check('拒否: 文法が壊れた PHP を含む zip(全体を中止)', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['src/a.php' => "<?php echo 'x'", 'src/fine.php' => '<?php echo 1;'], 'bad3.zip'), "$U/web", "$U/app"); }) !== null, true);
-check('拒否した更新では、何も書き換わらない', [file_get_contents("$U/app/src/a.php"), is_file("$U/app/src/fine.php"), is_file("$U/app/src/../evil.php")], [$before, false, false]);
-check('拒否: 更新できるファイルが無い zip', $thr(function () use ($mkzip, $U) { updater_apply($mkzip(['README.md' => 'x', 'docs/a.md' => 'x'], 'none.zip'), "$U/web", "$U/app"); }) !== null, true);
-// GitHub の Download ZIP（先頭にフォルダが付く）
-$r2 = updater_apply($mkzip(['repo-main/src/gh.php' => '<?php // GH', 'repo-main/public/assets/gh.css' => 'a{}', 'repo-main/README.md' => 'x', 'repo-main/tests/run.php' => '<?php'], 'gh.zip'), "$U/web", "$U/app");
-check('GitHubのzip: 先頭フォルダを外して適用', [$r2['changed'], is_file("$U/app/src/gh.php"), is_file("$U/web/assets/gh.css")], [['src/gh.php', 'public/assets/gh.css'], true, true]);
-check('復元: 名前の検証(../ を拒否)', $thr(function () use ($U) { updater_restore('../x.zip', "$U/web", "$U/app"); }) !== null, true);
 
 
 // ---- バックアップ（暗号化・復元） ----

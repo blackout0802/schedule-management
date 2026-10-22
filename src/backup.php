@@ -131,7 +131,7 @@ function backup_inspect(string $json): array
         throw new BackupException('バックアップの中身を読み取れません。');
     }
     if ((int)($d['schema_version'] ?? 0) > SCHEMA_VERSION) {
-        throw new BackupException('このバックアップは、いまより新しい版（v' . h((string)($d['app_version'] ?? '?')) . '）で作られています。先にシステム更新で、最新の版にしてください。');
+        throw new BackupException('このバックアップは、いまより新しい版（v' . h((string)($d['app_version'] ?? '?')) . '）で作られています。先に、アプリを最新の版にしてから（自動で反映されます）、もう一度、復元してください。');
     }
     // 社員の表が入っているのに、利用中の管理者が1人もいないバックアップは、復元しない（誰もログインできなくなり、初期設定の画面が開いてしまうため）
     if (isset($d['tables']['users'])) {

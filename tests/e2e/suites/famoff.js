@@ -27,5 +27,26 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const ds = `${t.
   await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=prefs_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ colors: { work: '', rec: '', off: '', private: '' }, offday: { on: false, color: '' } }) }); });
   await f.reload(); await f.waitForSelector('.bar.off');
   ok('本人が「休みの人がいる日」の背景を切っていれば、家族用リンクでも、背景は付かない', (await f.locator('.cell.offday').count()) === 0);
+  // 共有した本人だけが、共有ページから、自分の画面へ戻れる
+  const backBtn = pg => pg.locator('.topbar a:has-text("自分の画面に戻る")');
+  const shareUrl = BASE + 'share.php?t=' + tok;
+  await f.goto(shareUrl); await f.waitForSelector('.cal');
+  ok('共有ページ（ログインしていない人）には、「自分の画面に戻る」は出ない', (await backBtn(f).count()) === 0);
+  await y.goto(shareUrl); await y.waitForSelector('.cal');
+  ok('共有した本人（ログイン中）には、「自分の画面に戻る」が出る', (await backBtn(y).count()) === 1 && (await backBtn(y).getAttribute('href')) === 'index.php?view=me');
+  await backBtn(y).click(); await y.waitForSelector('.view-banner.me');
+  ok('押すと、自分のプライベート版の画面に戻る', y.url().includes('index.php') && !y.url().includes('view='));
+  const o = await (await ctx.browser().newContext({ viewport: { width: 1280, height: 900 } })).newPage(); await o.goto(BASE + 'login.php'); await o.fill('input[name=email]', 'suzuki@example.com'); await o.fill('input[name=password]', 'suzukipass1'); await Promise.all([o.waitForURL('**/index.php'), o.click('button[type=submit]')]);
+  await o.goto(shareUrl); await o.waitForSelector('.cal');
+  ok('ほかの社員（ログイン中）には、出ない', (await backBtn(o).count()) === 0);
+  const mine = await o.evaluate(async (t) => (await (await fetch('share_api.php?t=' + t + '&action=meta')).json()).mine, tok);
+  ok('共有ページの応答には、「本人か」の true/false だけが入る（ほかの情報は入らない）', mine === false);
+  // 会社用リンク: 作った管理者だけ
+  const ad = await (await ctx.browser().newContext({ viewport: { width: 1280, height: 900 } })).newPage(); await ad.goto(BASE + 'login.php'); await ad.fill('input[name=email]', 'admin@example.com'); await ad.fill('input[name=password]', 'adminpass1'); await Promise.all([ad.waitForURL('**/index.php'), ad.click('button[type=submit]')]);
+  const cp = await ad.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; return (await (await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'company' }) })).json()).path; });
+  await ad.goto(BASE + cp); await ad.waitForSelector('.cal');
+  ok('会社用リンクも、作った管理者（ログイン中）には、戻るボタンが出る（業務版へ）', (await backBtn(ad).count()) === 1 && (await backBtn(ad).getAttribute('href')) === 'index.php?view=team');
+  await o.goto(BASE + cp); await o.waitForSelector('.cal');
+  ok('会社用リンクは、作った人以外には、出ない', (await backBtn(o).count()) === 0);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

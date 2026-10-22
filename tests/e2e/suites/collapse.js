@@ -26,7 +26,7 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('開いた項目は、設定のページを開き直しても、開いたまま（この端末に記憶）', (await p.locator('#set-shortcuts.open').count()) === 1 && (await p.locator('#set-holidays.open').count()) === 1 && (await p.locator('#set-colors.open').count()) === 0);
   // ショートカットキー: コンパクト
   const g = await p.locator('#set-shortcuts .sc-grid').evaluate(e => ({ h: e.getBoundingClientRect().height, cols: getComputedStyle(e).gridTemplateColumns.split(' ').length, items: e.querySelectorAll('.sc-item').length, txt: e.innerText }));
-  ok('ショートカットキーは、2列以上に並び、縦が短い（200px以内）', g.cols >= 2 && g.h <= 200 && g.items >= 11 && g.txt.includes('カレンダーを表示') && g.txt.includes('システム更新'), g);
+  ok('ショートカットキーは、2列以上に並び、縦が短い（200px以内）', g.cols >= 2 && g.h <= 200 && g.items >= 11 && g.txt.includes('カレンダーを表示') && g.txt.includes('このショートカット一覧'), g);
   await p.screenshot({ path: 'collapse-open.png' });
   // ? のダイアログも、同じ並び
   await p.keyboard.press('Shift+/'); await p.waitForSelector('.overlay .sc-grid'); const mg = await p.locator('.overlay .sc-grid').evaluate(e => e.getBoundingClientRect().height); ok('「?」のダイアログも、コンパクト', mg <= 220, mg); await p.keyboard.press('Escape');

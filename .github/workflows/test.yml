@@ -134,7 +134,7 @@ jobs:
           fi
       - name: 反映するファイルをそろえる
         if: steps.ready.outputs.ok == 'true'
-        run: python3 tools/make_update.py --stage stage
+        run: python3 tools/stage_deploy.py stage
       - name: サーバーへ反映（FTPS）
         if: steps.ready.outputs.ok == 'true'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

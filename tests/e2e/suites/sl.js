@@ -8,12 +8,10 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
 (async () => {
   fs.writeFileSync(LOG, '');
   const b = await chromium.launch(); const a = await login(b, 'admin@example.com', 'adminpass1');
-  // ---- ショートカット s
-  await a.keyboard.press('?'); await a.waitForSelector('.sc-table'); ok('ショートカット一覧に、s（システム更新）が出る（管理者）', (await a.locator('.sc-table').innerText()).includes('システム更新')); await a.keyboard.press('Escape');
-  const s = await login(b, 'yamada@example.com', 'yamadapass1'); await s.keyboard.press('?'); await s.waitForSelector('.sc-table'); ok('管理者でない人の一覧には、s は出ない', !(await s.locator('.sc-table').innerText()).includes('システム更新')); await s.keyboard.press('Escape');
-  await s.keyboard.press('s'); await s.waitForTimeout(600); ok('管理者でない人が s を押しても、何も起きない', s.url().includes('index.php'));
-  await a.keyboard.press('s'); await a.waitForURL('**/update.php'); ok('管理者が s を押すと、システム更新の画面へ移る', a.url().includes('update.php'));
-  await a.goBack(); await a.waitForSelector('.cal');
+  // ---- ショートカットの一覧に、システム更新（s）は無い（zip での更新は、廃止）
+  await a.keyboard.press('?'); await a.waitForSelector('.sc-table'); ok('ショートカット一覧に、システム更新（s）は出ない', !(await a.locator('.sc-table').innerText()).includes('システム更新')); await a.keyboard.press('Escape');
+  await a.keyboard.press('s'); await a.waitForTimeout(500); ok('s を押しても、何も起きない（システム更新の画面は、無い）', a.url().includes('index.php') && !a.url().includes('update.php'));
+  const s = await login(b, 'yamada@example.com', 'yamadapass1');
   // ---- Slack設定ダイアログ
   await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-slack .slack-status'); ok('設定のページに、Slack通知の項目がある（管理者のみ）', (await a.locator('#set-slack').count()) === 1);
   await s.click('header button:has-text("設定")'); await s.waitForSelector('.settings-page'); ok('管理者でない人の設定には出ない', (await s.locator('#set-slack').count()) === 0); await s.click('button:has-text("カレンダーに戻る")'); await s.waitForSelector('.cal');

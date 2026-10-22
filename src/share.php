@@ -80,6 +80,34 @@ function share_link_find(string $token): ?array
     return $l;
 }
 
+/**
+ * このリンクを共有した本人が、いま、ログインして見ているか（共有ページから、自分の画面へ戻るボタンを出すため）。
+ * 家族用: リンクの持ち主。会社用: 作った（作り直した）管理者。見ている人が、ログインしていなければ（ログインの印が無ければ）、false。
+ * 返すのは true/false だけ（だれがログインしているかは、返さない）。
+ */
+function share_link_is_mine(array $link): bool
+{
+    if (empty($_COOKIE['schedsess'])) { // ログインの印（セッションのクッキー）が無い人には、セッションを作らない
+        return false;
+    }
+    try {
+        $u = current_user();
+    } catch (Throwable $t) {
+        return false;
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    if (!$u || ($u['role'] ?? '') === 'family') {
+        return false;
+    }
+    $uid = (int)$u['id'];
+    if ($link['kind'] === 'family') {
+        return $uid === (int)$link['owner_id'];
+    }
+    return $link['created_by'] !== null ? $uid === (int)$link['created_by'] : ($u['role'] ?? '') === 'admin';
+}
+
 function share_title(array $link): string
 {
     return $link['kind'] === 'company' ? '業務カレンダー（閲覧専用）' : $link['owner_name'] . ' さんの予定（家族用・閲覧専用）';

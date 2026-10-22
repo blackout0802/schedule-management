@@ -4,6 +4,7 @@ require_once __DIR__ . '/app_path.php';
 require_once SCHEDULE_APP_DIR . '/src/bootstrap.php';
 require_once SCHEDULE_APP_DIR . '/src/events.php';
 require_once SCHEDULE_APP_DIR . '/src/share.php';
+require_once SCHEDULE_APP_DIR . '/src/auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -31,7 +32,7 @@ try {
         share_out(['rev' => data_rev(), 'build' => app_build()]);
     }
     if ($action === 'meta') {
-        share_out(['kind' => $link['kind'], 'title' => share_title($link), 'app_name' => cfg('app_name')]);
+        share_out(['kind' => $link['kind'], 'title' => share_title($link), 'app_name' => cfg('app_name'), 'mine' => share_link_is_mine($link)]);
     }
     if ($action === 'log') { // 家族用だけ。会社用リンクには、更新履歴は無い
         share_out($link['kind'] === 'family' ? family_event_log((int)$link['owner_id']) : ['now' => date('Y-m-d H:i:s'), 'last_id' => 0, 'recent_since' => date('Y-m-d H:i:s'), 'entries' => []]);
