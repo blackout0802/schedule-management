@@ -478,11 +478,11 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .temp-pw { font-family: var(--font-mono, ui-monospace, monospace); font-size: 20px; letter-spacing: .08em; text-align: center; font-weight: 700; }
 
 /* ---- 休みの人がいる日のセルを、薄く塗りつぶす（色は「予定の色」で選べる）---- */
-.cal { --offday-bg: color-mix(in srgb, var(--off) 14%, var(--surface)); }
+.cal { --offday-bg: color-mix(in srgb, var(--off) 3%, var(--surface)); }
 .cell.offday:not(.drop) { background: var(--offday-bg); }
 .cell.offday:not(.drop):hover { background: color-mix(in srgb, var(--offday-bg) 94%, var(--ink)); }
-.cs-sample .cell { min-height: 54px; border: 1px solid var(--line); border-radius: 6px; --offday-bg: color-mix(in srgb, var(--off) 14%, var(--surface)); }
-.offday-sw { border: 1px solid var(--line); background: var(--offday-bg, color-mix(in srgb, var(--off) 14%, var(--surface))) !important; }
+.cs-sample .cell { min-height: 54px; border: 1px solid var(--line); border-radius: 6px; --offday-bg: color-mix(in srgb, var(--off) 3%, var(--surface)); }
+.offday-sw { border: 1px solid var(--line); background: var(--offday-bg, color-mix(in srgb, var(--off) 3%, var(--surface))) !important; }
 
 /* ---- ホーム画面に追加 ---- */
 .install .inst-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: var(--surface-2); }
