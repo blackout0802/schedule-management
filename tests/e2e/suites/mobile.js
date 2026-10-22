@@ -17,6 +17,8 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await fit('カレンダー');
   const top = await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height);
   ok('上の帯は2行（タイトル／設定／ユーザー と 業務版・プライベート版）で、90px以内', top <= 90, top);
+  await p.screenshot({ path: 'mobile-top.png', clip: { x: 0, y: 0, width: 390, height: 160 } });
+  ok('スマホでも、版がパソコンと同じ場所（左上のアプリ名のところ）に出る', await p.evaluate(() => { const v = document.querySelector('.topbar .brand .ver'); return !!v && v.offsetWidth > 0 && /^v\d+\.\d+\.\d+$/.test(v.textContent) && v.getBoundingClientRect().right <= window.innerWidth; }));
   ok('上の帯は、画面に張り付かない（スクロールで消える）', await p.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position) === 'static');
   const rows = await p.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { seg: r('.toolbar .seg').top, who: r('#who-sel').top }; });
   ok('表示する人・会議室予約／カレンダー／リスト が、同じ1行に並ぶ', Math.abs(rows.seg - rows.who) < 8, rows);

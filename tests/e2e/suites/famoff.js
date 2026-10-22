@@ -54,5 +54,13 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const ds = `${t.
   ok('会社用リンクも、作った管理者（ログイン中）には、戻るボタンが出る（業務版へ）', (await backBtn(ad).count()) === 1 && (await backBtn(ad).getAttribute('href')) === 'index.php?view=team');
   await o.goto(BASE + cp); await o.waitForSelector('.cal');
   ok('会社用リンクは、作った人以外には、出ない', (await backBtn(o).count()) === 0);
+  // 休みの人がいる日の背景: 会社用リンクも、リンクを作った人の設定のとおり（作った人の画面と同じ色）
+  await ad.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=prefs_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ colors: { work: '', rec: '', off: '', private: '' }, offday: { on: true, color: '#e8fff5' } }) }); });
+  await ad.goto(BASE + 'index.php'); await ad.waitForSelector('#who-sel'); await ad.selectOption('#who-sel', 'all'); await ad.waitForSelector('.cell.offday[data-date="' + ds + '"]');
+  await o.goto(BASE + cp); await o.waitForSelector('.cell.offday[data-date="' + ds + '"]');
+  await ad.mouse.move(0, 0); await o.mouse.move(0, 0); await o.waitForTimeout(150);
+  const cbg = pg => pg.$eval('.cell.offday[data-date="' + ds + '"]', e => getComputedStyle(e).backgroundColor);
+  const adBg = await cbg(ad), coBg = await cbg(o);
+  ok('会社用リンクの「休みの人がいる日」の背景は、リンクを作った人の画面と同じ色', adBg === coBg && adBg !== 'rgba(0, 0, 0, 0)', [adBg, coBg]);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

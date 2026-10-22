@@ -80,7 +80,7 @@ const pad = n => String(n).padStart(2, '0');
   // 家族が、自分の表示名を変える → 持ち主の画面の予定の先頭も、その名前になる
   await f.goto(BASE + 'index.php'); await f.waitForSelector('.cal');
   await f.click('header .uname'); await f.waitForSelector('.menu-list');
-  ok('家族のメニューに「表示名の変更」と、版が出る', (await f.locator('.menu-list button:has-text("表示名の変更")').count()) === 1 && /版 v\d+\.\d+\.\d+/.test(await f.locator('.menu-list .menu-ver').innerText()));
+  ok('家族のメニューに「表示名の変更」が出る', (await f.locator('.menu-list button:has-text("表示名の変更")').count()) === 1);
   await f.click('.menu-list button:has-text("表示名の変更")'); await f.waitForSelector('.modal input[name=fam_display_name]');
   ok('表示名の入力欄には、いまの名前が入っている', (await f.inputValue('.modal input[name=fam_display_name]')) === '山田 妻');
   await f.fill('.modal input[name=fam_display_name]', ''); await f.click('.modal button[type=submit]');
@@ -92,7 +92,7 @@ const pad = n => String(n).padStart(2, '0');
   ok('持ち主のプライベート版の予定の先頭が、家族が決めた表示名になる（名字だけにしない）', yb2.startsWith('ママ｜'), yb2);
   ok('社員（持ち主）は、この方法では名前を変えられない（403）', (await api(y, 'family_name_save', { name: '別名' })).status === 403);
   await y.click('header .uname'); await y.waitForSelector('.menu-list');
-  ok('社員のメニューにも版が出る。「表示名の変更」は出ない', /版 v\d+/.test(await y.locator('.menu-list .menu-ver').innerText()) && (await y.locator('.menu-list button:has-text("表示名の変更")').count()) === 0);
+  ok('社員のメニューには、「表示名の変更」は出ない', (await y.locator('.menu-list button:has-text("表示名の変更")').count()) === 0);
   await y.keyboard.press('Escape'); await y.mouse.click(5, 5);
   await api(f, 'family_name_save', { name: '山田 妻' }); // 以降の確認は、元の名前で
   await y.reload(); await y.waitForSelector('.bar:has-text("妻の買い物")');
