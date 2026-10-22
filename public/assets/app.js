@@ -278,8 +278,9 @@
   var PERSON_HUES = [10, 2, 6, 13, 0, 8, 3, 14, 5, 11, 1, 7, 12, 4, 9, 15]; // COLOR_PRESETS の色相の番号。隣り合う番号の社員の色が離れるように並べてある
   function allView() { return !FAMILY && S.view === 'team' && !whoId(); }
   function personColorOn() { return allView() && store('sched.personColor') !== false; }
-  /* 全社の表示で「休みだけ」にチェックがあるとき: 全員の休みだけを出す（業務の予定・会議室の予約は出さない）。開き直すと戻る（覚えない） */
-  function offOnly() { return !SHARE && !FAMACCT && allView() && !!S.offOnly; }
+  /* 全社の表示で「休みだけ」にチェックがあるとき: 全員の休みだけを出す（業務の予定・会議室の予約は出さない）。開き直すと戻る（覚えない）。
+     会社用の共有リンクの閲覧ページは、最初からチェックが入っている（チェックを外すと、業務の予定も出る） */
+  function offOnly() { return !FAMACCT && allView() && !!S.offOnly; }
   function personColors(id) { var h = PERSON_HUES[id % PERSON_HUES.length]; return { work: COLOR_PRESETS[h * 3], off: COLOR_PRESETS[h * 3], badge: COLOR_PRESETS[h * 3 + 2] }; } // 休みも、業務と同じ淡い色。違いは、頭の「休」バッジ（濃い色）
   function onColor(hex) { var bg = hexRgb(hex); return contrastRatio(bg, [255, 255, 255]) >= contrastRatio(bg, [20, 32, 51]) ? '#ffffff' : '#14202f'; }
   function pcClass(e) { return personColorOn() && e.kind === 'off' && e.owner_id ? ' pc' : ''; }
@@ -888,7 +889,7 @@
       })) : null
     ));
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px' },
-      el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
+      el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : offOnly() ? '会社の全員の休みだけを表示しています（閲覧専用）。「休みだけ」のチェックを外すと、業務の予定も表示されます。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : offOnly() ? '業務版: 全員の休みだけを表示しています（業務の予定・会議室の予約は隠しています。「休みだけ」のチェックを外すと戻ります）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
   }
 
@@ -1157,7 +1158,7 @@
     var last = new Date(S.year, S.month, 0).getDate();
     for (var i = 1; i <= last; i++) {
       var d = new Date(S.year, S.month - 1, i), ds = ymd(d), hol = S.holidays[ds];
-      var evs = S.events.filter(function (e) { return shownOn(e, ds) && !(hideWork && e.kind === 'work'); });
+      var evs = S.events.filter(function (e) { return shownOn(e, ds) && !(hideWork && e.kind === 'work') && !(offOnly() && e.kind !== 'off'); });
       if (!evs.length && !hol) continue;
       any = true;
       var dayRow = el('div', { class: 'list-day' + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (ds === todayStr ? ' today' : '') },
@@ -3941,6 +3942,7 @@
       S.shareTitle = m.title;
       S.shareMine = !!m.mine; // この共有リンクを作った本人が、ログインして見ているときだけ、自分の画面へ戻れる
       S.view = SHARE.kind === 'family' ? 'me' : 'team';
+      S.offOnly = SHARE.kind === 'company'; // 会社用リンクは、最初は全員の休みだけ
       S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
       document.title = m.title;
       var now = new Date();
