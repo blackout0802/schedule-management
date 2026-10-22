@@ -37,6 +37,8 @@ async function login(browser, email, pw) {
   // 今月の予定にルールからの予定が入っている
   await y.page.waitForSelector('.bar:has-text("給与計算の準備")');
   ok('繰り返し予定がカレンダーに出る', await y.page.locator('.bar:has-text("請求処理")').count() >= 1);
+  // 今日の予定を足して確かめる部分は、週表示で（月表示は1日4段まで。繰り返し業務が重なる日（例: 10/23）は、足した予定が「他 n件」に隠れて、日によって落ちていた）
+  await y.page.evaluate(() => localStorage.setItem('sched.span', '"week"')); await y.page.reload(); await y.page.waitForSelector('.cal.wk');
 
   // 予定を追加: 業務・休み
   const today = new Date(); const pad = n => (n < 10 ? '0' : '') + n;
@@ -82,6 +84,7 @@ async function login(browser, email, pw) {
 
   // --- 鈴木さん（別の一般社員）---
   const s = await login(browser, 'suzuki@example.com', 'suzukipass1');
+  await s.page.evaluate(() => localStorage.setItem('sched.span', '"week"')); await s.page.reload(); await s.page.waitForSelector('.cal.wk'); // 全社の表示も、週表示で（同じ理由）
   await s.page.selectOption('#who-sel', 'all'); await s.page.waitForSelector('.bar:has-text("A社")');
   ok('鈴木さんに山田さんの業務・休みが見える', await s.page.locator('.bar:has-text("A社")').count() === 1 && await s.page.locator('.bar.off:has-text("山田")').count() >= 1);
   await s.page.click('.tab[data-view=me]');
