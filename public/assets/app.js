@@ -296,6 +296,9 @@
     var k = surnameOf(e.owner_name);
     return S._dupNames[k] && Object.keys(S._dupNames[k]).length > 1 ? e.owner_name : k;
   }
+  /* プライベート版の、家族が入れた予定の先頭の名前: 家族が決めた表示名を、そのまま出す（名字だけにすると、同じ名字の家族の見分けがつかない）。
+     家族のアカウントから見た持ち主の予定は、これまでどおり（名字。同じ名字の人がいればフルネーム） */
+  function famWho(e) { return FAMACCT && e.owner_name === S.me.family_owner_name ? ownerShort(e) : e.owner_name; }
   /* 凡例（カレンダーの下）: いま表示している月に出てくる社員の、色と名前 */
   function personLegend() {
     var seen = {}, list = [];
@@ -466,6 +469,24 @@
     refresh();
   }
 
+  /* 自分の休みの出し方（業務版・プライベート版で別々に）。プライベート版の設定は、家族用リンク・家族の画面にも使う */
+  function openOffmarkDialog() {
+    var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'icon' };
+    var opts = [['icon', '「休」のアイコンだけ（日付の横）'], ['bar', '帯（名前と、休みの分類）']];
+    var sel = function (name, v) { return el('select', { name: name }, opts.map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === v }); })); };
+    var team = sel('offmark_team', m.team), me = sel('offmark_me', m.me);
+    var msg = el('p', { class: 'hint', role: 'status' });
+    openModal('休みの出し方', el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('offmark_save', { body: { offmark: { team: team.value, me: me.value } } }).then(function (j) { S.me.prefs = j.prefs; msg.textContent = '保存しました'; toast('休みの出し方を保存しました'); renderBoard(); }).catch(fail);
+    } },
+      el('p', { class: 'hint', text: 'カレンダーで、自分の休みの日を、どう出すかを決めます。業務版とプライベート版で、別々に選べます。' }),
+      el('label', null, '業務版（自分の休みだけ。ほかの人の休みは、いつも帯）', team),
+      el('label', null, 'プライベート版（家族用リンク・家族の画面も、この設定になります）', me),
+      msg,
+      el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn primary', type: 'submit', text: '保存' }))));
+  }
+
   function openShortcuts() {
     if (modals.some(function (m) { return m.shortcuts; })) return;
     var rows = SHORTCUTS.filter(function (s) { return s[0] !== 's' || S.me.user.role === 'admin'; }).map(function (s) { return el('div', { class: 'sc-item' }, el('kbd', { text: s[0] }), el('span', { text: s[1] })); });
@@ -542,9 +563,10 @@
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
+    var ver = el('div', { class: 'menu-ver', text: '版 v' + S.me.app_version }); // スマホでは上の帯に版を出さないので、ここで分かるように
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
-      if (FAMACCT) return [item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close), ver];
+      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close), ver];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -601,6 +623,7 @@
     var admin = S.me.user.role === 'admin';
     var list = [
       { id: 'colors', title: '予定の色', build: openColorDialog },
+      { id: 'offmark', title: '休みの出し方', build: openOffmarkDialog },
       { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
       { id: 'family', title: '家族の招待', build: openFamilyDialog },
       { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts }
@@ -1027,7 +1050,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? ownerShort(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
+    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? famWho(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
     return who + (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
@@ -1078,9 +1101,23 @@
     }
     return S.events.concat(S._rbEv);
   }
+  /* 自分の休みを、帯ではなく、日付の横の「休」のアイコンだけで出すか（版ごとの設定「休みの出し方」。初期値は、業務版 = 帯、プライベート版 = アイコン）。
+     家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う（そこに出る休みは、持ち主の休みだけ）。会社用リンクは、いつも帯 */
+  function offMarkIcon() {
+    if (SHARE) return SHARE.kind === 'family' && SHARE.offmark === 'icon';
+    if (FAMACCT) return S.me.family_owner_offmark === 'icon';
+    var m = S.me && S.me.prefs && S.me.prefs.offmark, v = S.view === 'team' ? 'team' : 'me';
+    return (m && m[v] ? m[v] : (v === 'me' ? 'icon' : 'bar')) === 'icon';
+  }
+  function offAsIcon(e) { return e.kind === 'off' && !e.deleted && offMarkIcon() && (!!SHARE || FAMACCT || e.owner_id === S.me.user.id); }
+  /* 日付の横の「休」のアイコン（半休は「半休」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
+  function offMarkFor(e, ds) {
+    return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? '半休' : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
+      onclick: function (ev) { ev.stopPropagation(); if (useDayPopup()) openDayPopup(ds); else openEventDialog(e); } });
+  }
   function weekSegments(days) {
     var segs = [];
-    calEvents().forEach(function (e) {
+    calEvents().filter(function (e) { return !offAsIcon(e); }).forEach(function (e) {
       var cur = null;
       for (var c = 0; c < 7; c++) {
         if (shownOn(e, ymd(days[c]))) { if (cur) cur.e = c; else { cur = { ev: e, s: c, e: c }; segs.push(cur); } } else cur = null;
@@ -1299,7 +1336,7 @@
       var cls = 'cell' + (!wk && d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
         style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
-        el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), hol ? el('span', { class: 'hname', text: hol }) : null)));
+        el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), (function () { var o = S.events.filter(function (e) { return offAsIcon(e) && shownOn(e, s); })[0]; return o ? offMarkFor(o, s) : null; })(), hol ? el('span', { class: 'hname', text: hol }) : null)));
     });
     var hidden = [0, 0, 0, 0, 0, 0, 0];
     pack.segs.forEach(function (g) {
@@ -3528,6 +3565,24 @@
         forced ? el('button', { class: 'btn left', type: 'button', text: 'ログアウト', onclick: doLogout }) : el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }),
         el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
     var ov = openModal(forced ? 'パスワードの変更（初回のみ）' : 'パスワードの変更', form, false, forced);
+  }
+
+  /* 家族のアカウント: 自分の表示名を変える（予定の先頭・持ち主の画面・家族の一覧に出る名前） */
+  function openFamilyNameDialog() {
+    var input = el('input', { name: 'fam_display_name', maxlength: '60', required: true, value: S.me.user.name, autocomplete: 'off' });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('family_name_save', { body: { name: input.value } }).then(function (j) {
+        ov.close(); S.me.user.name = j.name; toast('表示名を「' + j.name + '」にしました');
+        renderShell(); load();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('p', { class: 'hint', text: 'あなたが入れた予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前です。家族が同じ名字のときは、「ママ」「たろう」のように、分かりやすい名前にできます。' }),
+      el('label', null, '表示名（60文字まで）', input), err,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
+    var ov = openModal('表示名の変更', form);
+    input.focus(); input.select();
   }
 
   function doLogout() {

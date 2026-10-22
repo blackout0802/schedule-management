@@ -1211,7 +1211,18 @@ function clean_offday($v): array
     return ['on' => !array_key_exists('on', $v) || !empty($v['on']), 'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $c) ? strtolower($c) : ''];
 }
 
-/** @return array{colors:array<string,string>,offday:array{on:bool,color:string}} 色は '#rrggbb'。空文字なら、標準の色 */
+/**
+ * 自分の休みの出し方（版ごと）。'bar' = これまでの帯（名前と分類）／'icon' = 日付の横の「休」のアイコンだけ。
+ * 初期値は、業務版は帯、プライベート版はアイコン（家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う）
+ */
+function clean_offmark($v): array
+{
+    $v = is_array($v) ? $v : [];
+    $pick = function ($x, string $def): string { return in_array($x, ['bar', 'icon'], true) ? $x : $def; };
+    return ['team' => $pick($v['team'] ?? null, 'bar'), 'me' => $pick($v['me'] ?? null, 'icon')];
+}
+
+/** @return array{colors:array<string,string>,offday:array{on:bool,color:string},offmark:array{team:string,me:string}} 色は '#rrggbb'。空文字なら、標準の色 */
 function get_prefs(array $user): array
 {
     $r = row('SELECT prefs FROM users WHERE id = ?', [$user['id']]);
@@ -1221,7 +1232,7 @@ function get_prefs(array $user): array
         $v = is_array($j) && isset($j['colors'][$k]) ? (string)$j['colors'][$k] : '';
         $colors[$k] = preg_match('/^#[0-9a-fA-F]{6}$/', $v) ? strtolower($v) : '';
     }
-    return ['colors' => $colors, 'offday' => clean_offday(is_array($j) ? ($j['offday'] ?? null) : null)];
+    return ['colors' => $colors, 'offday' => clean_offday(is_array($j) ? ($j['offday'] ?? null) : null), 'offmark' => clean_offmark(is_array($j) ? ($j['offmark'] ?? null) : null)];
 }
 
 /** 色の設定を保存する。#rrggbb 以外（空欄を含む）は「標準の色」に戻す。$offday が null なら、休みの日のセルの設定は、いまのまま */
@@ -1232,7 +1243,17 @@ function save_color_prefs(array $user, array $in, $offday = null): array
         $v = isset($in[$k]) ? (string)$in[$k] : '';
         $colors[$k] = preg_match('/^#[0-9a-fA-F]{6}$/', $v) ? strtolower($v) : '';
     }
-    $off = $offday === null ? get_prefs($user)['offday'] : clean_offday($offday);
-    q('UPDATE users SET prefs = ? WHERE id = ?', [json_encode(['colors' => $colors, 'offday' => $off]), $user['id']]);
-    return ['colors' => $colors, 'offday' => $off];
+    $now = get_prefs($user);
+    $off = $offday === null ? $now['offday'] : clean_offday($offday);
+    q('UPDATE users SET prefs = ? WHERE id = ?', [json_encode(['colors' => $colors, 'offday' => $off, 'offmark' => $now['offmark']]), $user['id']]);
+    return ['colors' => $colors, 'offday' => $off, 'offmark' => $now['offmark']];
+}
+
+/** 自分の休みの出し方（版ごと）を保存する。色の設定は、いまのまま。保存した設定（get_prefs の形）を返す */
+function save_offmark_pref(array $user, $offmark): array
+{
+    $now = get_prefs($user);
+    $now['offmark'] = clean_offmark($offmark);
+    q('UPDATE users SET prefs = ? WHERE id = ?', [json_encode($now), $user['id']]);
+    return $now;
 }

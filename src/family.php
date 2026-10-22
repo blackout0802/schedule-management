@@ -10,7 +10,7 @@
 require_once __DIR__ . '/mail.php';
 
 const FAMILY_MAX = 5; // 1人の持ち主が招待できる家族の数（利用停止の人も数える）
-const FAMILY_ALLOWED_ACTIONS = ['me', 'rev', 'events', 'event_save', 'event_delete', 'event_restore', 'event_move', 'event_duplicate', 'password_change', 'holidays_list'];
+const FAMILY_ALLOWED_ACTIONS = ['me', 'rev', 'events', 'event_save', 'event_delete', 'event_restore', 'event_move', 'event_duplicate', 'password_change', 'holidays_list', 'family_name_save'];
 
 function is_family(array $u): bool
 {
@@ -110,6 +110,23 @@ function family_invite_mail(array $owner, string $name, string $email, string $p
         . "※ パスワードが書かれたメールです。ログインして変更したあとは、このメールを削除してください。\n"
         . "※ 心当たりがないときは、このメールを破棄してください（返信は不要です）。\n";
     return mail_send($email, "【{$app}】ログインのご案内", $body);
+}
+
+/**
+ * 家族のアカウントが、自分の表示名を変える（予定の先頭・持ち主の画面・家族の一覧に出る名前）。変えた名前を返す。
+ * 家族のアカウントだけ（社員の名前は、管理者が「社員の管理」で変える）。
+ */
+function family_set_name(array $user, string $name): string
+{
+    if (!is_family($user)) {
+        throw new RuntimeException('表示名を変えられるのは、家族のアカウントだけです。');
+    }
+    $name = trim((string)preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $name));
+    if ($name === '' || mb_strlen($name) > 60) {
+        throw new RuntimeException('名前を60文字以内で入力してください。');
+    }
+    q('UPDATE users SET name = ? WHERE id = ?', [$name, (int)$user['id']]);
+    return $name;
 }
 
 /** 家族のアカウントを消す。その人の予定も、いっしょに消える */

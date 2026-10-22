@@ -77,6 +77,25 @@ const pad = n => String(n).padStart(2, '0');
   await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal'); await y.click('.tab[data-view=me]'); await y.waitForSelector('.bar:has-text("妻の買い物")');
   const yb = await y.locator('.bar:has-text("妻の買い物")').first().innerText();
   ok('持ち主のプライベート版に、家族の予定が出る（先頭に名前）', yb.includes('山田 妻'), yb);
+  // 家族が、自分の表示名を変える → 持ち主の画面の予定の先頭も、その名前になる
+  await f.goto(BASE + 'index.php'); await f.waitForSelector('.cal');
+  await f.click('header .uname'); await f.waitForSelector('.menu-list');
+  ok('家族のメニューに「表示名の変更」と、版が出る', (await f.locator('.menu-list button:has-text("表示名の変更")').count()) === 1 && /版 v\d+\.\d+\.\d+/.test(await f.locator('.menu-list .menu-ver').innerText()));
+  await f.click('.menu-list button:has-text("表示名の変更")'); await f.waitForSelector('.modal input[name=fam_display_name]');
+  ok('表示名の入力欄には、いまの名前が入っている', (await f.inputValue('.modal input[name=fam_display_name]')) === '山田 妻');
+  await f.fill('.modal input[name=fam_display_name]', ''); await f.click('.modal button[type=submit]');
+  ok('空の表示名では、変えられない（入力欄が必須）', (await f.locator('.modal input[name=fam_display_name]').count()) === 1);
+  await f.fill('.modal input[name=fam_display_name]', 'ママ'); await f.click('.modal button[type=submit]'); await f.waitForFunction(() => !document.querySelector('.modal'));
+  ok('変えると、家族の画面の名前のボタンも新しい名前になる', (await f.locator('header .uname').innerText()).includes('ママ'));
+  await y.reload(); await y.waitForSelector('.bar:has-text("妻の買い物")');
+  const yb2 = await y.locator('.bar:has-text("妻の買い物")').first().innerText();
+  ok('持ち主のプライベート版の予定の先頭が、家族が決めた表示名になる（名字だけにしない）', yb2.startsWith('ママ｜'), yb2);
+  ok('社員（持ち主）は、この方法では名前を変えられない（403）', (await api(y, 'family_name_save', { name: '別名' })).status === 403);
+  await y.click('header .uname'); await y.waitForSelector('.menu-list');
+  ok('社員のメニューにも版が出る。「表示名の変更」は出ない', /版 v\d+/.test(await y.locator('.menu-list .menu-ver').innerText()) && (await y.locator('.menu-list button:has-text("表示名の変更")').count()) === 0);
+  await y.keyboard.press('Escape'); await y.mouse.click(5, 5);
+  await api(f, 'family_name_save', { name: '山田 妻' }); // 以降の確認は、元の名前で
+  await y.reload(); await y.waitForSelector('.bar:has-text("妻の買い物")');
   await y.locator('.bar:has-text("妻の買い物")').first().click(); await y.waitForSelector('.modal');
   ok('持ち主も、家族の予定は編集できない（見るだけ）', (await y.locator('.modal input[name=title]').count()) === 0);
   await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));

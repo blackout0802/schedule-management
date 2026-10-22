@@ -566,6 +566,17 @@ q("DELETE FROM events WHERE start_date >= '2027-07-01' AND start_date <= '2027-0
 save_color_prefs($a, []);
 check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
 check('休みの日のセル: 初期は、オン・標準の色', get_prefs($b)['offday'], ['on' => true, 'color' => '']);
+// 自分の休みの出し方（版ごと）
+check('休みの出し方: 初期は、業務版 = 帯、プライベート版 = アイコン', get_prefs($b)['offmark'], ['team' => 'bar', 'me' => 'icon']);
+save_color_prefs($b, ['work' => '#2155d6']);
+save_offmark_pref($b, ['team' => 'icon', 'me' => 'bar', 'evil' => 'x']);
+check('休みの出し方: 版ごとに保存でき、色の設定は消えない（知らない項目は捨てる）', [get_prefs($b)['offmark'], get_prefs($b)['colors']['work']], [['team' => 'icon', 'me' => 'bar'], '#2155d6']);
+save_color_prefs($b, ['work' => '#c0392b']);
+check('休みの出し方: 色を保存しても、休みの出し方は消えない', [get_prefs($b)['offmark'], get_prefs($b)['colors']['work']], [['team' => 'icon', 'me' => 'bar'], '#c0392b']);
+save_offmark_pref($b, ['team' => 'evil', 'me' => '']);
+check('休みの出し方: 不正な値は、初期値に戻る', get_prefs($b)['offmark'], ['team' => 'bar', 'me' => 'icon']);
+check('休みの出し方: 他の人には影響しない', get_prefs($a)['offmark'], ['team' => 'bar', 'me' => 'icon']);
+save_color_prefs($b, []);
 save_color_prefs($b, [], ['on' => false, 'color' => '#CFE4FC']);
 check('休みの日のセル: オフ・色を保存できる（小文字にそろう）。色の設定とは別に保たれる', [get_prefs($b)['offday'], get_prefs($b)['colors']['work']], [['on' => false, 'color' => '#cfe4fc'], '']);
 save_color_prefs($b, ['work' => '#2155d6']);
@@ -1743,6 +1754,14 @@ check('メール: 送れなかったとき（書き込めない）は、例外�
     rmdir($mailLog);
     return $r;
 })(), false);
+// 家族の表示名（家族が自分で変える）
+$fnErr = function (array $u, string $nm) { try { family_set_name($u, $nm); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } };
+check('家族の表示名: 家族は、自分の表示名を変えられる（前後の空白・改行は整える）', [family_set_name($fam1, "  ママ\n "), row('SELECT name FROM users WHERE id = ?', [$fid1])['name']], ['ママ', 'ママ']);
+check('家族の表示名: 空・61文字以上は変えられない', [$fnErr($fam1, '   '), $fnErr($fam1, str_repeat('あ', 61)), row('SELECT name FROM users WHERE id = ?', [$fid1])['name']], ['ng', 'ng', 'ママ']);
+check('家族の表示名: 社員（持ち主・管理者）は、この方法では変えられない', [$fnErr($fOwner, '別名'), $fnErr($admin, '別名'), row('SELECT name FROM users WHERE id = ?', [$fOwner['id']])['name'] === $fOwner['name']], ['ng', 'ng', true]);
+check('家族の表示名: 持ち主の家族の一覧にも、新しい名前で出る', in_array('ママ', array_column(family_members((int)$fOwner['id']), 'name'), true), true);
+check('家族の表示名: 家族のアカウントが使えるAPIに入っている', in_array('family_name_save', FAMILY_ALLOWED_ACTIONS, true), true);
+family_set_name($fam1, '山田 妻'); // 以降の確認は、元の名前で
 check('家族: 同じメールアドレスでは招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'wife@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
 check('家族: メールアドレスが正しくないと招待できない', (function () use ($fOwner) { try { family_add($fOwner, '別人', 'not-an-email'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
 check('家族: 家族のアカウントからは、招待できない', (function () use ($fam1) { try { family_add($fam1, '孫', 'grand@example.com'); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
