@@ -667,6 +667,35 @@ check('Slack時間: 夕方の通知は、翌営業日の休みを送る', array_
 $sat = strtotime('2031-03-15 09:10:00'); // 土曜日
 $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-03-15', 'end' => '2031-03-15']); $nr();
 check('Slack時間: 土日・休業日は送らない', count(notify_due($sat)), 0);
+// 時刻を指定したテスト送信（cron が、決まった時刻に送れるかの確認）
+// 予約には送り先が要る。送る確認のときは送り先を外して、外へ通信しない（送信は「送れなかった」になるが、時刻の扱いは同じ）
+$wasOn = slack_enabled();
+$dOn = function () { return slack_dest_add('#予約テスト', 'https://hooks.slack.com/services/T0123ABC/B0999ZZZ/testTESTtest1234testTEST'); };
+$dOff = function ($d) { if ($d) { slack_dest_delete($d['id']); } };
+$tt = function ($ymdhm) { return strtotime($ymdhm . ':00'); };
+$td = $wasOn ? null : $dOn();
+slack_test_schedule('09:30', $admin, $tt('2031-03-12 09:00'));
+check('テスト予約: いまより後なら、今日のその時刻に予約される（予約した人も残る）', [slack_test_state($tt('2031-03-12 09:00'))['pending']['at'], slack_test_state()['pending']['by']], ['2031-03-12 09:30', $admin['name']]);
+slack_test_schedule('08:00', $admin, $tt('2031-03-12 09:00'));
+check('テスト予約: いまより前の時刻なら、明日のその時刻（予約は1件だけ。置き換わる）', slack_test_state()['pending']['at'], '2031-03-13 08:00');
+check('テスト予約: おかしい時刻は予約できない', (function () use ($admin) { try { slack_test_schedule('25:00', $admin); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
+slack_test_schedule('09:30', $admin, $tt('2031-03-12 09:00'));
+$dOff($td);
+if (!$wasOn) {
+    check('テスト予約: 送り先が無いと、予約できない', (function () use ($admin) { try { slack_test_schedule('10:00', $admin); return 'ok'; } catch (RuntimeException $x) { return 'ng'; } })(), 'ng');
+}
+check('テスト予約: 時刻の前は送らない（cron が動いても）', [slack_test_due($tt('2031-03-12 09:29')), slack_test_state($tt('2031-03-12 09:29'))['pending'] !== null], [[], true]);
+check('テスト予約: 時刻から15分を過ぎても送られていなければ、「遅れている」と分かる', [slack_test_state($tt('2031-03-12 09:40'))['late'], slack_test_state($tt('2031-03-12 09:46'))['late']], [false, true]);
+$tr = notify_due($tt('2031-03-12 09:35'));
+$tl = slack_test_state()['last'];
+check('テスト予約: 時刻を過ぎて cron（notify）が動くと、1回だけ送る（予定と実際の時刻を記録・予約は消える）', [in_array(true, array_map(function ($m) { return strpos($m, '時刻を指定したテスト送信') === 0; }, $tr), true), $tl['at'], $tl['sent_at'], slack_test_state()['pending']], [true, '2031-03-12 09:30', '2031-03-12 09:35', null]);
+check('テスト予約: もう一度 cron が動いても、二重には送らない', slack_test_due($tt('2031-03-12 09:40')), []);
+$td = $wasOn ? null : $dOn(); slack_test_schedule('09:30', $admin, $tt('2031-03-12 09:00')); $dOff($td);
+$tm = slack_test_due($tt('2031-03-12 12:31'));
+check('テスト予約: 3時間以上 cron が動かなかったときは、送らずに「送れなかった」と記録する', [count($tm), slack_test_state()['last']['sent_at'], slack_test_state()['last']['ok'], slack_test_state()['pending']], [1, null, false, null]);
+$td = $wasOn ? null : $dOn(); slack_test_schedule('10:00', $admin, $tt('2031-03-12 09:00')); slack_test_cancel(); $dOff($td);
+check('テスト予約: 取り消すと、予約は消える', slack_test_state()['pending'], null);
+check('テスト予約: 管理者の画面の状態（slack_status）に、予約の状態が入る', array_keys(slack_status()['sched']), ['pending', 'last', 'cron_at', 'late']);
 // 休みの人がいない営業日にも、「休みなし」と通知する
 q("DELETE FROM events WHERE kind = 'off' AND start_date BETWEEN '2031-03-12' AND '2031-03-15'");
 $in = slack_cfg_defaults(); $in['morning']['time'] = '08:30'; $in['evening']['time'] = '17:00'; slack_cfg_save($in); $nr();

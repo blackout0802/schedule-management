@@ -186,7 +186,7 @@ function slack_status(): array
     }
     return ['configured' => $active !== '', 'active' => $active, 'active_name' => $name, 'masked' => $mask, 'dests' => $dests,
         'source' => $active === '' ? 'none' : ($active === 'config' ? 'config' : 'ui'),
-        'base_url' => (string)cfg('base_url', '') !== '', 'link' => slack_link_kind()];
+        'base_url' => (string)cfg('base_url', '') !== '', 'link' => slack_link_kind(), 'sched' => slack_test_state()];
 }
 
 /**
@@ -509,7 +509,80 @@ function notify_due(?int $now = null): array
             $msg[] = $n > 0 ? "{$label}の休み: {$n} 件を通知しました" : "{$label}は休みなしと通知しました";
         }
     }
-    return array_merge($msg, rooms_notify_due($now)); // 会議室の予約（前日の夕方・当日の朝）
+    return array_merge($msg, rooms_notify_due($now), slack_test_due($now)); // 会議室の予約（前日の夕方・当日の朝）／時刻を指定したテスト送信
+}
+
+// ---- 時刻を指定したテスト送信（cron が、決まった時刻に通知を送れるかの確認）----
+//   管理者が時刻を予約すると、その時刻を過ぎたあと、cron（bin/cron.php notify）が動いたときに、テスト通知を1回だけ送る。
+//   朝・夕方の通知と同じ仕組みで送るので、「決まった時間に届くか」を確かめられる。土日祝でも送る。
+//   app_meta.slack_test_at   … 予約（JSON: {at: 'Y-m-d H:i', by: 予約した人, made: 予約した日時, id: 予約ごとの番号（二重送信の防止用）}）。1件だけ
+//   app_meta.slack_test_last … 最後の結果（JSON: {at, sent_at, ok, error, by}）
+const SLACK_TEST_GRACE = 3 * 3600; // 予定の時刻から、この時間を過ぎても cron が動かなければ、送らずに「送れなかった」とする
+const SLACK_TEST_LATE = 15 * 60;   // 予定の時刻から、この時間を過ぎても送られていなければ、画面で「cron が動いていないかも」と知らせる
+
+/** 時刻（HH:MM）を予約する。いまより後の、いちばん近いその時刻（今日か明日）。予約は1件だけ（前の予約は置き換える） */
+function slack_test_schedule(string $time, array $user, ?int $now = null): array
+{
+    if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
+        throw new RuntimeException('時刻を「09:30」のように入れてください。');
+    }
+    if (!slack_enabled()) {
+        throw new RuntimeException('送り先（Webhook URL）がまだ設定されていません。');
+    }
+    $now = $now ?? time();
+    $at = strtotime(date('Y-m-d', $now) . ' ' . $time . ':00');
+    if ($at <= $now) {
+        $at = strtotime('+1 day', $at);
+    }
+    slack_meta_set('slack_test_at', json_encode(['at' => date('Y-m-d H:i', $at), 'by' => (string)$user['name'], 'made' => date('Y-m-d H:i:s', $now), 'id' => bin2hex(random_bytes(6))], JSON_UNESCAPED_UNICODE));
+    return slack_test_state($now);
+}
+
+function slack_test_cancel(): void
+{
+    slack_meta_set('slack_test_at', '');
+}
+
+/** 予約と、前回の結果と、cron（notify）が最後に動いた日時。late = 予定の時刻を過ぎても、まだ送られていない */
+function slack_test_state(?int $now = null): array
+{
+    $now = $now ?? time();
+    $p = json_decode(slack_meta_get('slack_test_at'), true);
+    $l = json_decode(slack_meta_get('slack_test_last'), true);
+    $p = is_array($p) && isset($p['at']) ? $p : null;
+    return ['pending' => $p, 'last' => is_array($l) ? $l : null, 'cron_at' => slack_meta_get('cron_notify_at') ?: null,
+        'late' => $p !== null && $now >= strtotime($p['at'] . ':00') + SLACK_TEST_LATE];
+}
+
+/** cron（notify）から呼ぶ。予約の時刻を過ぎていれば、テスト通知を送る。@return string[] 実行結果のメッセージ */
+function slack_test_due(?int $now = null): array
+{
+    $now = $now ?? time();
+    $p = slack_test_state($now)['pending'];
+    if (!$p) {
+        return [];
+    }
+    $at = strtotime($p['at'] . ':00');
+    if ($now < $at) {
+        return [];
+    }
+    if (!notify_once('slacktest:' . ($p['id'] ?? $p['at']))) {
+        return []; // 同時に動いた別の cron が、もう送った
+    }
+    slack_test_cancel();
+    if ($now >= $at + SLACK_TEST_GRACE) {
+        slack_meta_set('slack_test_last', json_encode(['at' => $p['at'], 'sent_at' => null, 'ok' => false, 'by' => $p['by'],
+            'error' => '予定の時刻から3時間以内に、cron（notify）が動かなかったため、送っていません。'], JSON_UNESCAPED_UNICODE));
+        return ['時刻を指定したテスト送信: 予定の時刻から3時間を過ぎたため、送りませんでした'];
+    }
+    $name = (string)cfg('app_name', 'スケジュール管理');
+    $md = function (int $t): string { return (int)date('n', $t) . '/' . (int)date('j', $t) . ' ' . date('H:i', $t); };
+    $text = "【{$name}】時刻を指定したテスト送信です。\n予定の時刻: " . $md($at) . '　／　送った時刻: ' . $md($now) . "（cron が自動で送りました）\n"
+        . "この通知が届いていれば、決まった時間の通知（朝・夕方のお休みの通知など）も届きます。（予約: {$p['by']} さん）";
+    $r = slack_post_detailed($text);
+    slack_meta_set('slack_test_last', json_encode(['at' => $p['at'], 'sent_at' => date('Y-m-d H:i', $now), 'ok' => $r['ok'], 'by' => $p['by'],
+        'error' => $r['ok'] ? '' : ($r['error'] !== '' ? $r['error'] : 'HTTP ' . $r['code'])], JSON_UNESCAPED_UNICODE));
+    return ['時刻を指定したテスト送信: ' . ($r['ok'] ? '送りました' : '送れませんでした')];
 }
 
 /** 設定画面のプレビュー（まだ保存していない入力のまま、3つの通知の見本文を作る。実在の社員は使わない） */
