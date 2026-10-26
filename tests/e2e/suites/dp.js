@@ -20,7 +20,8 @@ const BASE = 'http://127.0.0.1:8099/';
   // 日付を押す → ポップアップ
   await a.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('.day-list');
   const tx = await a.locator('.modal').innerText();
-  ok('日付（空き）を押すと、その日の予定がポップアップで出る', tx.includes('全体会議') && tx.includes('10:00') && tx.includes('会議室Aで実施') && tx.includes('有給') && tx.includes('棚卸し作業'), tx);
+  ok('日付（空き）を押すと、その日の予定がポップアップで出る', tx.includes('全体会議') && tx.includes('10:00') && tx.includes('会議室Aで実施') && tx.includes('有給'), tx);
+  ok('本人が休み（有給）の日には、期間のある業務（棚卸し作業 13〜15日）は出さない（休みを優先）', !tx.includes('棚卸し作業'), tx);
   ok('見出しに、日付と曜日が出る', /\d+\/14（.）/.test(await a.locator('.modal h2, .modal .modal-title, .modal header').first().innerText().catch(() => tx)) || /\d+\/14（.）/.test(tx));
   ok('「この日に予定を追加」がある', tx.includes('この日に予定を追加'));
   await a.click('.day-item:has-text("全体会議")'); await a.waitForSelector('.modal input[name=title]'); ok('予定を押すと、編集画面が開く', (await a.inputValue('.modal input[name=title]')) === '全体会議'); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
