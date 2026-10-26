@@ -1062,7 +1062,7 @@
     return (e._biz = r);
   }
   /* その日に表示するか。期間のある「業務」は、土日祝には出さない（全期間が休日なら、そのまま出す） */
-  /* 本人が丸1日休みの日（半休は除く）。繰り返し業務の期間の途中に休みがあっても、その日には業務の帯を出さない（休みを優先） */
+  /* 本人が丸1日休みの日（半休は除く）。期間のある業務の途中に休みがあっても、その日には業務の帯を出さない（休みを優先） */
   function buildLeaveIdx() {
     var idx = {};
     S.events.forEach(function (e) {
@@ -1079,9 +1079,15 @@
     });
     S.offDays = od;
   }
+  /* 期間のある業務に、土日祝でも本人の休みでもない日があるか（全部が休みの日なら、休みの日にも帯を出す） */
+  function hasWorkDay(e) {
+    var lv = S.leaveIdx && S.leaveIdx[e.owner_id] || {};
+    for (var d = parse(e.start), end = parse(e.end), n = 0; d <= end && n < 400; d = addDays(d, 1), n++) { var s = ymd(d); if (!isOffDay(s) && !lv[s]) return true; }
+    return false;
+  }
   function shownOn(e, ds) {
     if (e.start > ds || e.end < ds) return false;
-    if (e.kind === 'work' && e.recurring && e.start !== e.end && S.leaveIdx && S.leaveIdx[e.owner_id] && S.leaveIdx[e.owner_id][ds]) return false;
+    if (e.kind === 'work' && e.start !== e.end && S.leaveIdx && S.leaveIdx[e.owner_id] && S.leaveIdx[e.owner_id][ds] && (e.recurring || hasWorkDay(e))) return false;
     if (e.kind === 'work' && e.start !== e.end && isOffDay(ds) && hasBizDay(e)) return false;
     return true;
   }
@@ -1576,8 +1582,9 @@
       var e = S.events.filter(function (x) { return x.id === p.id; })[0];
       var start = ymd(addDays(parse(date), -p.off));
       if (!e || e.start === start) return;
-      api('event_move', { body: { id: p.id, start: start } }).then(function () {
-        toast('予定を ' + mdw(start) + ' に動かしました'); load();
+      api('event_move', { body: { id: p.id, start: start } }).then(function (j) {
+        var span = daysBetween(e.start, e.end), trimmed = j && j.end && (j.start !== start || daysBetween(j.start, j.end) !== span);
+        toast(trimmed ? '予定を ' + mdw(j.start) + (j.end !== j.start ? '〜' + mdw(j.end) : '') + ' に動かしました（休みの日は除きました）' : '予定を ' + mdw(start) + ' に動かしました'); load();
       }).catch(fail);
     }
   }
