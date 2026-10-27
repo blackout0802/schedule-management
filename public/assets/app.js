@@ -1731,6 +1731,12 @@
       }).catch(fail);
     } }) : null;
 
+    /* 入力欄の今の中身（ToDoの状態を変えたとき、ほかに書き換えた所があれば、いっしょに保存してから閉じる） */
+    function formSnap() {
+      var a = [];
+      for (var i = 0; i < form.elements.length; i++) { var f = form.elements[i]; if (f.name) a.push(f.name + '=' + (f.type === 'checkbox' || f.type === 'radio' ? f.checked : f.value)); }
+      return a.join('&');
+    }
     var form = el('form', { class: 'form', onsubmit: save },
       FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
       !(isNew || isOwner) ? el('p', { class: 'hint', style: 'margin:-6px 0 0', text: '種類を変えられるのは、予定の持ち主だけです。' }) : null,
@@ -1745,7 +1751,7 @@
       famNote,
       hint,
       repeatHint,
-      ev && ev.todo_id ? todoStateBox(ev, ev.owner_id === S.me.user.id) : null,
+      ev && ev.todo_id ? todoStateBox(ev, ev.owner_id === S.me.user.id, function () { if (formSnap() !== snap0) save({ preventDefault: function () {} }); else ov.close(); }) : null,
       ev && S.me.user.role === 'admin' && ev.owner_id !== S.me.user.id ? el('p', { class: 'hint', text: '持ち主: ' + ev.owner_name + '（管理者として編集しています）' }) : null,
       err,
       forgetCb ? el('label', { class: 'check', title: '家族用の画面の「更新履歴」と、取消線の「削除された予定」に、この予定を残しません。テストで入れた予定などを消すときに' }, forgetCb, '削除するとき、家族の更新履歴にも残さない') : null,
@@ -1757,6 +1763,7 @@
     if (ev) tag.value = ev.tag;
     syncKind();
     if (ev) tag.value = ev.tag || tag.value;
+    var snap0 = formSnap();
   }
 
   /* ---------- ToDo ---------- */
@@ -2985,9 +2992,10 @@
         el('button', { class: 'btn', type: 'button', text: 'あとで', onclick: function () { ov.close(); } }))));
     ov.outsideClose = true;
   }
-  /* ToDoから置いた予定の詳細で、元のToDoの状態（未着手・進行中・完了）を見る／変える。変えると、ToDoの一覧・日報・カレンダーの取り消し線にも反映される */
+  /* ToDoから置いた予定の詳細で、元のToDoの状態（未着手・進行中・完了）を見る／変える。変えると、ToDoの一覧・日報・カレンダーの取り消し線にも反映される。
+     変えたあと onChanged があれば呼ぶ（予定の編集画面は、保存を押さなくても閉じる） */
   var TD_STATE_NAME = { todo: '未着手', doing: '進行中', hold: '保留', done: '完了' };
-  function todoStateBox(ev, canChange) {
+  function todoStateBox(ev, canChange, onChanged) {
     var cur = ev.todo_status || (ev.done ? 'done' : 'todo');
     var box = el('div', { class: 'td-state', role: 'group', 'aria-label': 'ToDoの状態' });
     function draw() {
@@ -3001,6 +3009,7 @@
               cur = s; ev.todo_status = s; ev.done = s === 'done'; draw();
               toast(s === 'done' ? '完了にしました（カレンダーでは取り消し線になります）' : s === 'doing' ? '進行中にしました' : s === 'hold' ? '保留にしました' : '未着手に戻しました');
               load(); loadTodos(); syncMemoTodos();
+              if (onChanged) onChanged();
             }).catch(fail);
           } }));
       });
