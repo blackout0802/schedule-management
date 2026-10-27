@@ -122,7 +122,7 @@
 - MariaDB: 手元では `mariadbd --datadir=/tmp/mdb/data --socket=/tmp/mdb/s.sock --port=3399` を起動して、DB `sched_t` を **毎回 DROP/CREATE してから** 実行する。
   `SCHEDULE_TEST_DSN='mysql:host=127.0.0.1;port=3399;dbname=sched_t;charset=utf8mb4' SCHEDULE_TEST_USER=t SCHEDULE_TEST_PASS=tp php tests/run.php`
 - 画面テスト: `bash tests/e2e/run.sh`（全部）／`bash tests/e2e/run.sh tm flog`（指定）。ポート 8099/8098、`TZ=Asia/Tokyo`。全部で約11分。
-  - テストは `tests/e2e/suites/*.js`（68本）。失敗したスイートの `console.log` は出ない。デバッグはファイルに書き出す。
+  - テストは `tests/e2e/suites/*.js`（72本）。失敗したスイートの `console.log` は出ない。デバッグはファイルに書き出す。
   - 設定のテストは、`tests/e2e/lib/preload.js` が全項目を開いた状態にする。
 - 気をつけること:
   - 日付・時刻に依存するテスト（UTC と JST の日の境目、月末の月曜、マウスが残ってホバーの色になる、段の上限で予定が隠れる）は、CI でたまに落ちる。

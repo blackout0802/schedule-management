@@ -263,9 +263,36 @@ delete_series($sid2);
 
 // ---- 予定の移動 ----
 $mv = $mk($a, ['kind' => 'work', 'title' => '移動する業務', 'tag' => '打ち合わせ', 'start' => date('Y-m-d', strtotime('+70 day')), 'end' => date('Y-m-d', strtotime('+72 day'))]);
-$newS = date('Y-m-d', strtotime('+80 day'));
-$m2 = move_event($mv, $newS);
-check('移動: 期間(3日間)を保ったまま動く', [$m2['start_date'], $m2['end_date']], [$newS, date('Y-m-d', strtotime($newS . ' +2 day'))]);
+$m2 = move_event($mv, '2028-02-07'); // 月曜
+check('移動: 期間(3日間)を保ったまま動く', [$m2['start_date'], $m2['end_date']], ['2028-02-07', '2028-02-09']);
+// 期間のある業務は、動かした先の最初と最後の休みの日（土日・祝日・会社の休業日・本人の休み）を削る
+$mvW = $mk($a, ['kind' => 'work', 'title' => '休みを削る業務', 'tag' => '個人作業', 'start' => '2027-03-01', 'end' => '2027-03-05']); // 月〜金
+$m3 = move_event($mvW, '2027-03-10'); // 水〜日 → 土日を削る
+check('移動: 期間のある業務は、最後の土日を削る（日数は増やさない）', [$m3['start_date'], $m3['end_date']], ['2027-03-10', '2027-03-12']);
+$m3 = move_event($m3, '2027-03-13'); // 土〜月 → 土日を削る
+check('移動: 期間のある業務は、最初の土日も削る', [$m3['start_date'], $m3['end_date']], ['2027-03-15', '2027-03-15']);
+q('UPDATE events SET start_date = ?, end_date = ? WHERE id = ?', ['2027-03-22', '2027-03-26', $mvW['id']]); // 月〜金に戻す
+$lvA = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '調整休', 'start' => '2027-04-01', 'end' => '2027-04-02']); // 木・金
+$m3 = move_event(row('SELECT * FROM events WHERE id = ?', [$mvW['id']]), '2027-03-29'); // 月〜金
+check('移動: 本人の休みの日（最後の木・金）も削る', [$m3['start_date'], $m3['end_date']], ['2027-03-29', '2027-03-31']);
+$lvAh = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '午前半休', 'start' => '2027-03-31', 'end' => '2027-03-31']);
+$m3 = move_event(row('SELECT * FROM events WHERE id = ?', [$mvW['id']]), '2027-03-31'); // 水〜金 → 木・金は休みで削る。水の午前半休は残す
+check('移動: 半休の日は働く日なので削らない', [$m3['start_date'], $m3['end_date']], ['2027-03-31', '2027-03-31']);
+$lvB = $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-05-12', 'end' => '2027-05-12']);
+$mvW2 = $mk($a, ['kind' => 'work', 'title' => '休みを削る業務2', 'tag' => '個人作業', 'start' => '2027-05-03', 'end' => '2027-05-04']);
+$m4 = move_event($mvW2, '2027-05-11');
+check('移動: 他の人の休みは関係ない', [$m4['start_date'], $m4['end_date']], ['2027-05-11', '2027-05-12']);
+$m4 = move_event($m4, '2027-05-03'); // 5/3〜4 は祝日 → 全部休みなので、削らない
+check('移動: 全部が休みの日なら、削らずに動かす', [$m4['start_date'], $m4['end_date']], ['2027-05-03', '2027-05-04']);
+$m4 = move_event($m4, '2027-05-05'); // 5/5 祝日・5/6 木
+check('移動: 祝日も削る', [$m4['start_date'], $m4['end_date']], ['2027-05-06', '2027-05-06']);
+$pv = $mk($a, ['kind' => 'private', 'title' => '旅行', 'start' => '2027-03-01', 'end' => '2027-03-02']);
+$m5 = move_event($pv, '2027-03-13');
+check('移動: プライベートの予定は、土日でも削らない', [$m5['start_date'], $m5['end_date']], ['2027-03-13', '2027-03-14']);
+$sg = $mk($a, ['kind' => 'work', 'title' => '1日の業務', 'tag' => '個人作業', 'start' => '2027-03-01', 'end' => '2027-03-01']);
+$m6 = move_event($sg, '2027-03-13');
+check('移動: 1日だけの業務は、土日に動かしても、そのまま', [$m6['start_date'], $m6['end_date']], ['2027-03-13', '2027-03-13']);
+foreach ([$mvW, $mvW2, $pv, $sg, $lvA, $lvAh, $lvB] as $x) { q('DELETE FROM events WHERE id = ?', [$x['id']]); }
 $sid3 = (int)(function () use ($a) { q("INSERT INTO series (owner_id,title,tag,rule_type,p_day,shift,created_at) VALUES (?,?,?,?,?,?,?)", [$a['id'], '移動元ルール', '定例業務', 'day', 10, 'none', now_str()]); return db()->lastInsertId(); })();
 materialize_series($sid3);
 $rec = row('SELECT * FROM events WHERE series_id = ? ORDER BY start_date LIMIT 1', [$sid3]);

@@ -10,6 +10,10 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   p.on('dialog', d => d.accept());
   await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', 'yamada@example.com'); await p.fill('input[name=password]', 'yamadapass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
+  // 今月に今日以降の月曜が無い（月末の月曜を過ぎた）ときは、プレビューは来月から（7か月分）、カレンダーは来月で確かめる
+  const now = new Date(), last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); let monLeft = false;
+  for (let d = now.getDate(); d <= last; d++) if (new Date(now.getFullYear(), now.getMonth(), d).getDay() === 1) monLeft = true;
+  const reloadCal = async () => { await p.reload(); await p.waitForSelector('.cal'); if (!monLeft) { await p.click('button[aria-label="次の月"]'); await p.waitForTimeout(800); } };
   const openForm = async () => { await openSeries(p); await p.waitForSelector('.modal'); await p.click('.modal button:has-text("ルールを追加"), .modal button:has-text("追加")'); await p.waitForSelector('.modal input[name=title]'); };
   await openForm();
   ok('ルールの種類に「毎週・隔週 ○曜日」がある', (await p.locator('.modal select[name=rule_type] option').allInnerTexts()).includes('毎週・隔週 ○曜日'));
@@ -17,10 +21,10 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.fill('.modal input[name=title]', '毎週の定例ミーティング'); await p.selectOption('.modal select[name=p_weekday]', '1'); await p.selectOption('.modal select[name=p_interval]', '1');
   await p.waitForFunction(() => document.querySelector('.modal table.t tbody tr td:nth-child(2)') && /月/.test(document.querySelector('.modal table.t tbody tr td:nth-child(2)').textContent));
   const pv = await p.locator('.modal table.t tbody tr').first().locator('td').nth(1).innerText();
-  ok('プレビューに、月ごとに、毎週月曜の日付が並ぶ', (await p.locator('.modal table.t tbody tr').count()) >= 8 && pv.includes('（月）') && !pv.includes('（火）'), pv);
+  ok('プレビューに、月ごとに、毎週月曜の日付が並ぶ', (await p.locator('.modal table.t tbody tr').count()) >= (monLeft ? 8 : 7) && pv.includes('（月）') && !pv.includes('（火）'), pv);
   await p.fill('.modal input[name=title]', '毎週の定例ミーティング'); await p.click('.modal button[type=submit]'); await p.waitForTimeout(1200);
   await p.keyboard.press('Escape'); await p.waitForTimeout(300); await p.waitForSelector('.cal');
-  await p.reload(); await p.waitForSelector('.cal');
+  await reloadCal();
   const mondays = await p.evaluate(() => Array.from(document.querySelectorAll('.bar')).filter(b => b.textContent.includes('毎週の定例ミーティング')).length);
   ok('カレンダーに、毎週の予定が並ぶ（今日以降の月曜が、今月にある）。月の終わりの週は1回だけのこともある', mondays >= 1, mondays);
   await openSeries(p); await p.waitForSelector('.modal'); await p.waitForSelector('.modal .card:has-text("毎週の定例ミーティング")');
@@ -37,7 +41,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await openSeries(p); await p.waitForSelector('.modal .card:has-text("毎週の定例ミーティング")');
   await p.locator('.modal .card:has-text("毎週の定例ミーティング") button:has-text("編集")').click(); await p.waitForSelector('.modal select[name=p_interval]');
   await p.selectOption('.modal select[name=p_interval]', '2'); await p.check('.modal input[name=todo_auto]'); await p.waitForTimeout(500); await p.click('.modal button[type=submit]'); await p.waitForTimeout(1200);
-  await p.keyboard.press('Escape'); await p.waitForTimeout(300); await p.reload(); await p.waitForSelector('.cal');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(300); await reloadCal();
   const biweekly = await p.locator('.bar:has-text("毎週の定例ミーティング")').count();
   ok('隔週にすると、今月の回数が、およそ半分になる', biweekly <= Math.ceil(before / 2) && biweekly >= 1, [before, biweekly]);
   await openSeries(p); await p.waitForSelector('.modal .card:has-text("毎週の定例ミーティング")');

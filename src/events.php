@@ -295,17 +295,48 @@ function duplicate_event(array $src, array $dates, array $user): array
  * ToDo は持ち主本人にしか返さない。業務版では「業務」のToDoだけを返す（プライベートのToDoを画面共有で見せないため）。
  * ------------------------------------------------------------------ */
 
-/** 予定を別の日に動かす（何日間かは変えない）。繰り返し予定の1回分を動かした場合は、以後ルール変更で上書きしない */
+/**
+ * 予定を別の日に動かす（何日間かは変えない）。繰り返し予定の1回分を動かした場合は、以後ルール変更で上書きしない。
+ * 期間のある「業務」は、動かした先の、最初と最後の休みの日（土日・祝日・会社の休業日・持ち主の丸1日の休み）を削る（日数は増やさない）。
+ * 途中の休みの日は、画面で隠す。全部が休みの日なら、削らずにそのまま動かす。
+ */
 function move_event(array $e, string $newStart): array
 {
     $span = (int)round((strtotime($e['end_date']) - strtotime($e['start_date'])) / 86400);
     $newEnd = date('Y-m-d', strtotime($newStart . " +$span day"));
+    if ($e['kind'] === 'work' && $span > 0) {
+        [$newStart, $newEnd] = trim_off_days((int)$e['owner_id'], $newStart, $newEnd);
+    }
     q('UPDATE events SET start_date = ?, end_date = ?, detached = ?, updated_at = ? WHERE id = ?', [
         $newStart, $newEnd, $e['series_id'] !== null ? 1 : 0, now_str(), $e['id'],
     ]);
     $after = row('SELECT * FROM events WHERE id = ?', [$e['id']]);
     event_changed($e, $after);
     return $after;
+}
+
+/** 期間の最初と最後から、休みの日（土日・祝日・会社の休業日・その人の丸1日の休み。半休は働く日）を削る。全部が休みなら、そのまま返す */
+function trim_off_days(int $ownerId, string $start, string $end): array
+{
+    $hol = holiday_map($start, $end);
+    $leave = [];
+    foreach (rows("SELECT start_date, end_date FROM events WHERE kind = 'off' AND owner_id = ? AND tag NOT LIKE ? AND start_date <= ? AND end_date >= ?", [$ownerId, '%半休%', $end, $start]) as $o) {
+        for ($t = strtotime(max($o['start_date'], $start)), $last = strtotime(min($o['end_date'], $end)); $t <= $last; $t = strtotime('+1 day', $t)) {
+            $leave[date('Y-m-d', $t)] = true;
+        }
+    }
+    $isOff = function (string $d) use ($hol, $leave) {
+        return (int)date('N', strtotime($d)) >= 6 || isset($hol[$d]) || isset($leave[$d]);
+    };
+    $s = $start;
+    $e = $end;
+    while ($s <= $e && $isOff($s)) {
+        $s = date('Y-m-d', strtotime($s . ' +1 day'));
+    }
+    while ($e >= $s && $isOff($e)) {
+        $e = date('Y-m-d', strtotime($e . ' -1 day'));
+    }
+    return $s > $e ? [$start, $end] : [$s, $e];
 }
 
 /** ToDoの状態: todo（未着手）/ doing（進行中）/ hold（保留）/ done（完了）。進行中・保留は、todos.doing の値（1・2）で持つ */
