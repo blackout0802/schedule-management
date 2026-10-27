@@ -37,7 +37,9 @@ const openAdd = async (pg, sel) => { if (!(await pg.locator(sel + ' .todo-add in
   await p.waitForSelector('.toast:has-text("予定に追加しました")'); ok('カードの「日付」ボタンからも、予定にできる', true);
   // 月の切り替え（ドラッグ中に ‹ › に乗せる）
   await openAdd(p, '#todo-mgr'); await p.fill('#todo-mgr .todo-add input[type=text]', '来月へ'); await p.click('#todo-mgr .todo-add button[type=submit]'); await p.waitForSelector('.kb-card:has-text("来月へ")');
-  const c3 = await p.locator('.kb-card:has-text("来月へ")').boundingBox(); await p.mouse.move(c3.x + 30, c3.y + 15); await p.mouse.down(); await p.mouse.move(c3.x + 200, c3.y + 60, { steps: 5 }); await p.waitForTimeout(300); await p.mouse.move(1000, 300, { steps: 6 }); await p.waitForTimeout(300); await p.mouse.move(1275, 300, { steps: 10 }); await p.waitForTimeout(300); await p.waitForSelector('#cal-drop');
+  const c3 = await p.locator('.kb-card:has-text("来月へ")').boundingBox(); await p.mouse.move(c3.x + 30, c3.y + 15); await p.mouse.down(); await p.mouse.move(c3.x + 200, c3.y + 60, { steps: 5 }); await p.waitForTimeout(300); await p.mouse.move(1000, 300, { steps: 6 }); await p.waitForTimeout(300); await p.mouse.move(1275, 300, { steps: 10 }); await p.waitForTimeout(300);
+  for (let i = 0; i < 10 && !(await p.locator('#cal-drop').count()); i++) { await p.mouse.move(1270 + (i % 2) * 6, 300 + i, { steps: 3 }); await p.waitForTimeout(200); } // 右端で dragover が届かないことがあるので、少し動かして待つ
+  await p.waitForSelector('#cal-drop');
   const nb = await p.locator('#cal-drop button[aria-label="次の月"]').boundingBox(); await p.mouse.move(nb.x + nb.width / 2, nb.y + nb.height / 2, { steps: 10 }); await p.waitForTimeout(1000);
   const head = await p.locator('#cal-drop .cd-head b').innerText(); ok('ドラッグしたまま「›」に乗せると、来月に切り替わる', head !== `${t.getFullYear()}年${t.getMonth() + 1}月`, head);
   await p.keyboard.press('Escape'); await p.mouse.up(); await p.waitForTimeout(300);
