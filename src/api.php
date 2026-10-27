@@ -627,6 +627,18 @@ function handle_api(): void
             }
             api_out(['ok' => true, 'event_id' => (int)$ev['id']]);
 
+        case 'todo_unschedule': // ToDo の日付を外す（カレンダーの予定を消して、ToDo だけに戻す）
+            $t = find_todo((int)($in['id'] ?? 0), $user);
+            if (!$t) {
+                api_fail('ToDoが見つかりません。', 404);
+            }
+            try {
+                $n = unschedule_todo($t, $user);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'removed' => $n]);
+
         case 'event_to_todo':
             $e = find_event((int)($in['id'] ?? 0), $user);
             if (!$e) {

@@ -371,6 +371,12 @@ $_SESSION = [];
 $back = event_to_todo($ev, $a);
 check('予定→ToDo: ToDoから置いた予定は、元のToDoに戻る（増えない）', [(int)$back['id'], $back['title'], $back['kind'], $back['tag']], [(int)$todoA['id'], '見積書を作る', 'work', '個人作業']);
 check('予定→ToDo: 予定は消える', row('SELECT id FROM events WHERE id = ?', [$ev['id']]), null);
+// ToDo の日付を外す（カレンダーの予定を消して、ToDo だけに戻す。状態は変えない）
+$un = schedule_todo(find_todo((int)$todoA['id'], $a), $dd, $a);
+check('日付を外す: 他の人は外せない（ToDoが見つからない）', find_todo((int)$todoA['id'], $b), null);
+check('日付を外す: 外した予定の数', unschedule_todo(find_todo((int)$todoA['id'], $a), $a), 1);
+check('日付を外す: 予定は消え、ToDoは残る（進行中のまま・置いた日なし）', [row('SELECT id FROM events WHERE id = ?', [$un['id']]), todo_status_of(find_todo((int)$todoA['id'], $a)), array_column(array_filter($todosAll($a), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched')], [null, 'doing', [null]]);
+check('日付を外す: 置いていないToDoは、外せない（エラー）', (function () use ($todoA, $a) { try { unschedule_todo(find_todo((int)$todoA['id'], $a), $a); return false; } catch (RuntimeException $x) { return true; } })(), true);
 $sd1 = schedule_todo(find_todo((int)$todoA['id'], $a), $dd, $a);
 q('DELETE FROM todos WHERE id = ?', [$todoA['id']]); todo_detach_events('SELECT ' . (int)$todoA['id'], []);
 check('ToDoを消すと、結びついた予定は、ふつうの予定として残る', [row('SELECT todo_id FROM events WHERE id = ?', [$sd1['id']])['todo_id'], row('SELECT id FROM events WHERE id = ?', [$sd1['id']]) !== null], [null, true]);

@@ -2310,19 +2310,31 @@
     sync();
   }
 
+  /* ToDo の「日付」。カレンダーに置いてある ToDo は、今の日付を出し、変える・外す（日付を空にして決定しても外れる）ができる */
   function openTodoScheduleDialog(t) {
-    var date = el('input', { type: 'date', required: true, value: ymd(new Date()) });
+    var placed = !!t.sched;
+    var date = el('input', { type: 'date', required: !placed, value: placed ? t.sched : ymd(new Date()) });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    var unschedule = function () {
+      api('todo_unschedule', { body: { id: t.id } }).then(function () {
+        ov.close(); toast('日付を外しました（カレンダーから消えて、ToDoは残ります）'); loadTodos(); load();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    };
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
+      if (placed && !date.value) return unschedule();
+      if (placed && date.value === t.sched) { ov.close(); return; }
       api('todo_schedule', { body: { id: t.id, date: date.value } }).then(function () {
-        ov.close(); toast('予定に追加しました（ToDoは「進行中」になりました）: ' + mdw(date.value)); loadTodos(); load();
+        ov.close(); toast(placed ? '日付を ' + mdw(date.value) + ' に変えました' : '予定に追加しました（ToDoは「進行中」になりました）: ' + mdw(date.value)); loadTodos(); load();
       }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
     } },
-      el('div', { class: 'notice' }, el('b', { text: t.title }), el('p', { text: (t.kind === 'private' ? 'プライベートの予定になります（本人以外には見えません）。' : '業務の予定になり、会社の全員に表示されます。') + 'ToDoは自動で「進行中」になり、完了にすると、カレンダーの予定に取り消し線が付きます。' })),
+      el('div', { class: 'notice' }, el('b', { text: t.title }), el('p', { text: (t.kind === 'private' ? 'プライベートの予定になります（本人以外には見えません）。' : '業務の予定になり、会社の全員に表示されます。') + 'ToDoは自動で「進行中」になり、完了にすると、カレンダーの予定に取り消し線が付きます。' }),
+        placed ? el('p', { text: 'いまは ' + mdw(t.sched) + ' に置いてあります。日付を変えると予定が動き、「日付を外す」（または日付を空にして決定）で、カレンダーから外れます（ToDoは残ります）。' }) : null),
       el('label', null, '日付', date), err,
-      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '予定にする' })));
-    var ov = openModal('日付を選んで予定にする', form);
+      el('div', { class: 'actions' },
+        placed ? el('button', { class: 'btn danger left', type: 'button', text: '日付を外す', title: 'カレンダーの予定を消して、ToDoだけに戻す', onclick: unschedule }) : null,
+        el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: placed ? '日付を変える' : '予定にする' })));
+    var ov = openModal(placed ? '日付を変える・外す' : '日付を選んで予定にする', form);
   }
 
   /* ---------- メモ（日報用） ----------
