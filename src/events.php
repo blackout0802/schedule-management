@@ -628,6 +628,24 @@ function schedule_todo(array $todo, string $date, array $user): array
     return $event;
 }
 
+/** ToDo をカレンダーから外す（結びついた予定を消す。ToDo は残り、状態は変えない）。外した予定の数を返す */
+function unschedule_todo(array $todo, array $user): int
+{
+    $list = rows('SELECT * FROM events WHERE todo_id = ? AND owner_id = ? ORDER BY id', [$todo['id'], $user['id']]);
+    if (!$list) {
+        throw new RuntimeException('このToDoは、カレンダーに置いていません。');
+    }
+    foreach ($list as $e) {
+        if ($e['series_id'] !== null) {
+            throw new RuntimeException('毎月の繰り返しから作られた予定は、カレンダーから外せません。');
+        }
+    }
+    foreach ($list as $e) {
+        event_to_todo($e, $user);
+    }
+    return count($list);
+}
+
 /**
  * カレンダーで作った（ToDoと結びついていない）予定を、ToDoリストにも入れる。予定とToDoは結びつき、状態（未着手・進行中・完了）は、どちらからでも変えられる。
  * 入れられるのは、自分の業務・プライベートの予定（休みは入れない）。毎月の繰り返しから作られた予定は、その1回分だけが ToDo になる（完了にすると、その回だけ取り消し線）。入れたら ToDo を、入れなかったら null を返す
