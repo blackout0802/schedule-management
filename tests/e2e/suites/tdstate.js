@@ -17,29 +17,39 @@ const pad = n => String(n).padStart(2, '0');
   ok('ToDoをカレンダーに置くと、進行中になる', !sc.error, sc);
   await p.reload(); await p.waitForSelector('.cal');
   const bar = () => p.locator('.bar:has-text("詳細から状態を変えるToDo")');
-  await bar().first().click(); await p.waitForSelector('.modal');
-  // 日の一覧が出る場合は、その予定を選ぶ
-  if (!(await p.locator('.modal input[name=title]').count())) { await p.locator('.modal :text("詳細から状態を変えるToDo")').first().click(); await p.waitForSelector('.modal input[name=title]'); }
+  // 予定を開く（日の一覧が出る場合は、その予定を選ぶ）
+  const openDlg = async () => {
+    await bar().first().click(); await p.waitForSelector('.modal');
+    if (!(await p.locator('.modal input[name=title]').count())) { await p.locator('.modal :text("詳細から状態を変えるToDo")').first().click(); await p.waitForSelector('.modal input[name=title]'); }
+  };
+  // 状態を押すと、保存を押さなくても、画面が閉じる
+  const setSt = async (name) => { await p.click('.modal .td-state .btn:has-text("' + name + '")'); await p.waitForFunction(() => !document.querySelector('.modal')); };
+  await openDlg();
   const box = p.locator('.modal .td-state');
   ok('予定の詳細に「ToDoの状態」が出る', await box.count() === 1);
   const on = async () => (await p.locator('.modal .td-state .btn.on').allInnerTexts()).join('|');
   ok('いまの状態（進行中）が選ばれている', (await on()) === '進行中', await on());
   ok('4つのボタン（未着手・進行中・保留・完了）', (await p.locator('.modal .td-state .btn').allInnerTexts()).join('|') === '未着手|進行中|保留|完了');
-  await p.click('.modal .td-state .btn:has-text("保留")'); await p.waitForFunction(() => document.querySelector('.modal .td-state .btn.on')?.textContent === '保留');
+  await setSt('保留');
+  ok('状態を変えると、保存を押さなくても、画面が閉じる', await p.locator('.modal').count() === 0);
   const holdSt = await p.evaluate(async () => { const j = await (await fetch('api.php?action=todo_list&view=team')).json(); const t = j.todos.find(x => x.title === '詳細から状態を変えるToDo'); return t ? t.status : null; });
   ok('詳細から「保留」にすると、ToDoも保留になる（カンバンの保留の列）', holdSt === 'hold', holdSt);
-  await p.click('.modal .td-state .btn:has-text("進行中")'); await p.waitForFunction(() => document.querySelector('.modal .td-state .btn.on')?.textContent === '進行中');
-  await p.click('.modal .td-state .btn:has-text("完了")'); await p.waitForFunction(() => document.querySelector('.modal .td-state .btn.on')?.textContent === '完了');
+  await openDlg(); ok('開き直すと、保留が選ばれている', (await on()) === '保留', await on());
+  await setSt('進行中');
+  await openDlg(); await setSt('完了');
   await p.waitForSelector('.bar.done:has-text("詳細から状態を変えるToDo")');
   ok('完了にすると、カレンダーの予定に取り消し線が付く', await p.locator('.bar.done:has-text("詳細から状態を変えるToDo")').count() >= 1);
   const todos = await p.evaluate(async () => { const j = await (await fetch('api.php?action=todo_list&view=team')).json(); return { done: j.done.map(t => t.title), open: j.todos.map(t => t.title) }; });
   ok('ToDoの一覧でも、完了になっている', todos.done.includes('詳細から状態を変えるToDo') && !todos.open.includes('詳細から状態を変えるToDo'), todos);
-  await p.click('.modal .td-state .btn:has-text("未着手")'); await p.waitForFunction(() => document.querySelector('.modal .td-state .btn.on')?.textContent === '未着手');
+  await openDlg(); await setSt('未着手');
   await p.waitForFunction(() => !document.querySelector('.bar.done'));
   ok('未着手に戻すと、取り消し線が消える', await p.locator('.bar.done').count() === 0);
   const st2 = await p.evaluate(async () => { const j = await (await fetch('api.php?action=todo_list&view=team')).json(); const t = j.todos.find(t => t.title === '詳細から状態を変えるToDo'); return t && t.status; });
   ok('ToDoの一覧でも、未着手に戻っている（予定はカレンダーに残る）', st2 === 'todo' && await bar().count() >= 1, st2);
-  await p.click('.modal .td-state .btn:has-text("進行中")'); await p.waitForFunction(() => document.querySelector('.modal .td-state .btn.on')?.textContent === '進行中');
+  // ほかの欄も書き換えてから状態を変えると、書き換えた所も保存して閉じる
+  await openDlg(); await p.fill('.modal textarea[name=note]', '状態といっしょに保存するメモ'); await setSt('進行中');
+  await openDlg(); ok('書き換えたメモも、保存されている', (await p.locator('.modal textarea[name=note]').inputValue()) === '状態といっしょに保存するメモ');
+  await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.modal'));
   const st3 = await p.evaluate(async () => { const j = await (await fetch('api.php?action=todo_list&view=team')).json(); const t = j.todos.find(t => t.title === '詳細から状態を変えるToDo'); return t && t.status; });
   ok('進行中にできる', st3 === 'doing', st3);
   // 別の人（管理者）は、見るだけ（ボタンが押せない）
