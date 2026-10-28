@@ -52,7 +52,11 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   ok('会社用の共有ページ: チェックを外すと、業務の予定も出る', (await g.locator('.bar.work').count()) >= 2 && !(await g.locator('#off-only').isChecked()));
   await g.check('#off-only'); await g.waitForFunction(() => !document.querySelector('.bar.work'));
   ok('会社用の共有ページ: もう一度チェックすると、休みだけに戻る', (await g.locator('.bar.off').count()) >= 2);
-  await g.click('.seg label:has-text("リスト")'); await g.waitForSelector('.list-day');
-  ok('会社用の共有ページ（リスト表示）: 休みだけが出る', !(await g.locator('.list-items').allInnerTexts()).join('|').includes('休み検証') && (await g.locator('.list-items .bar.off').count()) >= 2, await g.locator('.list-items').allInnerTexts());
+  // 共有ページは、カレンダーだけ（自分の画面で「リスト」を選んでいても、共有ページはカレンダーで開く）
+  ok('会社用の共有ページ: 「カレンダー／リスト」の切り替えは出ない', await g.locator('.toolbar .seg label:has-text("リスト")').count() === 0);
+  await g.evaluate(() => localStorage.setItem('sched.mode', '"list"')); await g.reload(); await g.waitForSelector('.cal'); await g.waitForSelector('.bar.off');
+  ok('会社用の共有ページ: 自分の画面でリストを選んでいても、カレンダーで開く', await g.locator('.list-day').count() === 0 && await g.locator('.cal').count() === 1);
+  await g.keyboard.press('l'); await g.waitForTimeout(300);
+  ok('会社用の共有ページ: l キーでも、リストにならない', await g.locator('.list-day').count() === 0 && await g.locator('.cal').count() === 1);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

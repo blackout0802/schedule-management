@@ -14,10 +14,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   ok('続きの方には「…」が付く', o.length === 2 && o[1].t.includes('…') && !o[0].t.includes('…'), o);
   const path = JSON.parse(await p.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'company' }) }); return await r.text(); })).path;
   const sp = await b.newPage({ viewport: { width: 1200, height: 860 } }); await sp.goto('http://127.0.0.1:8099/' + path); await sp.waitForSelector('.cal');
-  await sp.click('.toolbar .seg label:has-text("リスト")'); await sp.waitForTimeout(800);
-  ok('共有ページで「リスト」を押すと、予定のリストに切り替わる', await sp.locator('.list').count() === 1 && await sp.locator('.cal').count() === 0);
-  await sp.screenshot({ path: 'sh-list2.png' });
-  await sp.click('.toolbar .seg label:has-text("カレンダー")'); await sp.waitForSelector('.cal'); ok('カレンダーに戻せる', true);
+  ok('共有ページは、カレンダーだけ（「リスト」の切り替えは出ない）', await sp.locator('.toolbar .seg label:has-text("リスト")').count() === 0 && await sp.locator('.cal').count() === 1);
   await p.screenshot({ path: 'seg.png', clip: { x: 0, y: 380, width: 1200, height: 320 } });
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

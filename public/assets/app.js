@@ -518,7 +518,7 @@
     var done = true;
     if (k === 'c') setMode('cal');
     else if (k === 'r' && !SHARE && !FAMACCT && S.view === 'team') openRoomsPage();
-    else if (k === 'l' && !FAMILY && !FAMACCT) setMode('list');
+    else if (k === 'l' && !SHARE && !FAMACCT) setMode('list');
     else if (k === 't') goToday();
     else if (k === 'w' && S.mode === 'cal' && S.page === 'main') setSpan(S.span === 'week' ? 'month' : 'week');
     else if (k === 'ArrowLeft') navMonth(-1);
@@ -916,8 +916,8 @@
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
       todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全員の休みだけを表示します（業務の予定・会議室の予約は隠します）。開き直すと、元に戻ります' },
         el('input', { type: 'checkbox', id: 'off-only', checked: offOnly(), onchange: function () { S.offOnly = this.checked; renderToolbar(); renderBoard(); } }), '休みだけ'),
-      (SHARE && SHARE.kind === 'family') || FAMACCT ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
-        (!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
+      SHARE || FAMACCT ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' }, // 共有ページは、カレンダーだけ
+        (S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
         })),
       todoOnly && !SHARE && S.view === 'team' ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
@@ -3388,6 +3388,7 @@
         el('p', { class: 'hint', text: '取得方法: Slack の「アプリを追加」→「Incoming Webhooks」→「Slack に追加」→ 送り先のチャンネルを選ぶと、URL が表示されます。チャンネルごとに1つずつ作り、ここに名前を付けて保存します（最大10件）。URL は画面に全部は出さず、サーバーに保存されます。' }),
         err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: '追加して保存' }))));
       body.appendChild(el('div', { class: 'slack-test' }, el('h3', { text: 'テスト送信' + (st.configured ? '（送り先: ' + st.active_name + '）' : '') }), el('div', { class: 'actions', style: 'justify-content:flex-start' }, t1), result));
+      body.appendChild(slackSchedBox(st, draw));
       if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。「送り先を追加」に、チャンネル名と Webhook URL を入れて保存してください。' }));
       body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
         : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
@@ -3396,6 +3397,34 @@
       body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
     }
     api('slack_status').then(function (j) { draw(j.slack); }).catch(function (x) { fail(x); ov.close(); });
+  }
+
+  /* 時刻を指定したテスト送信（cron が、決まった時刻に通知を送れるかの確認）。予約・取り消し・結果・cron が最後に動いた日時 */
+  function slackSchedBox(st, redraw) {
+    var sc = st.sched || {}, p = sc.pending, l = sc.last;
+    var md = function (s) { if (!s) return ''; var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(s); return m ? (+m[2]) + '/' + (+m[3]) + ' ' + m[4] : s; };
+    var soon = new Date(Date.now() + 5 * 60000), tm = el('input', { type: 'time', id: 'slack-sched-time', value: pad(soon.getHours()) + ':' + pad(soon.getMinutes()), 'aria-label': '送る時刻' });
+    var msg = el('p', { class: 'slack-sched-st ng', role: 'alert', hidden: true }); // 送り先の追加の欄のエラー（.error）とは別にする
+    var go = function (action, body) { msg.hidden = true; api(action, { body: body }).then(function (j) { redraw(j.slack); }).catch(function (x) { msg.textContent = x.message; msg.hidden = false; }); };
+    var rows = [];
+    if (p) {
+      rows.push(el('div', { class: 'slack-sched-st ' + (sc.late ? 'ng' : 'wait'), role: 'status' },
+        sc.late ? '✕ 予定の時刻（' + md(p.at) + '）を過ぎても、まだ送られていません。サーバーの cron（bin/cron.php notify）が動いていない可能性があります。' : '予約中: ' + md(p.at) + ' を過ぎたら、cron が自動で送ります（予約: ' + p.by + ' さん）。',
+        el('button', { class: 'btn small', type: 'button', text: '予約を取り消す', style: 'margin-left:8px', onclick: function () { go('slack_test_cancel', {}); } })));
+    }
+    if (l) {
+      rows.push(el('div', { class: 'slack-sched-st ' + (l.ok ? 'ok' : 'ng') }, l.ok
+        ? '✓ 前回: 予定 ' + md(l.at) + ' → ' + md(l.sent_at) + ' に、cron が送りました。Slack に届いているか確認してください。'
+        : '✕ 前回: 予定 ' + md(l.at) + (l.sent_at ? ' → ' + md(l.sent_at) + ' に送ろうとしましたが、送れませんでした（' + l.error + '）。' : ' … ' + l.error)));
+    }
+    return el('div', { class: 'slack-sched' },
+      el('h3', { text: '時刻を指定してテスト送信（決まった時間に届くかの確認）' }),
+      el('p', { class: 'hint', text: '時刻を予約すると、その時刻を過ぎたあと、サーバーの cron（bin/cron.php notify）が動いたときに、テスト通知を1回だけ送ります。朝・夕方の通知と同じ仕組みなので、決まった時間に届くかを確かめられます（cron が5分おきなら、最大5分ほど遅れて届きます）。' }),
+      el('div', { class: 'actions', style: 'justify-content:flex-start;align-items:center' }, el('label', { class: 'inline' }, '送る時刻 ', tm),
+        el('button', { class: 'btn', type: 'button', text: p ? '予約し直す' : '予約する', disabled: !st.configured, onclick: function () { go('slack_test_schedule', { time: timeVal(tm) }); } }),
+        el('button', { class: 'btn small ghost', type: 'button', text: '最新の状態を見る', onclick: function () { api('slack_status').then(function (j) { redraw(j.slack); }).catch(fail); } })),
+      msg, rows,
+      el('p', { class: 'hint', text: 'cron（notify）が最後に動いた日時: ' + (sc.cron_at ? md(sc.cron_at) : 'まだ記録がありません（cron が設定されていない可能性があります）') }));
   }
 
   /* ---------- Slack通知の時間・文面（管理者） ---------- */
@@ -4040,7 +4069,7 @@
       S.shareMine = !!m.mine; // この共有リンクを作った本人が、ログインして見ているときだけ、自分の画面へ戻れる
       S.view = SHARE.kind === 'family' ? 'me' : 'team';
       S.offOnly = SHARE.kind === 'company'; // 会社用リンクは、最初は全員の休みだけ
-      S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
+      S.mode = 'cal'; // 共有ページは、カレンダーだけ（自分の画面で選んだ「リスト」は、引き継がない）
       document.title = m.title;
       var now = new Date();
       S.year = now.getFullYear(); S.month = now.getMonth() + 1; initSpan(now);

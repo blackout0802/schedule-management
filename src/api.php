@@ -499,6 +499,20 @@ function handle_api(): void
             audit_log('slack', 'update', '通知の時間・文面を変更', '', '朝 ' . ($c['morning']['on'] ? $c['morning']['time'] : 'オフ') . '／夕方 ' . ($c['evening']['on'] ? $c['evening']['time'] : 'オフ') . '／休みなし通知 ' . ($c['empty']['on'] ? 'オン' : 'オフ'));
             api_out(['cfg' => $c, 'preview' => slack_preview($c)]);
 
+        case 'slack_test_schedule': // 時刻を指定したテスト送信を予約する（管理者。cron が決まった時刻に送れるかの確認）
+            require_admin($user);
+            try {
+                slack_test_schedule((string)($in['time'] ?? ''), $user);
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage());
+            }
+            api_out(['slack' => slack_status()]);
+
+        case 'slack_test_cancel': // 時刻を指定したテスト送信の予約を取り消す（管理者）
+            require_admin($user);
+            slack_test_cancel();
+            api_out(['slack' => slack_status()]);
+
         case 'slack_test': // テスト通知を送る（管理者）
             require_admin($user);
             if (!slack_enabled()) {
