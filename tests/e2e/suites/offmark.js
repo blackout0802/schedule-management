@@ -28,9 +28,12 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   ok('プライベート版: 自分の休みは「下の名前｜休み」の帯（休みの種類は出ない・アイコンは出ない）', meBars.includes('花子｜休み') && !meBars.some(t => t.includes('有給')) && (await y.locator('.offmark').count()) === 0, meBars);
   ok('プライベート版: 半休は「名前｜半休」', meBars.includes('花子｜半休'), meBars);
   await y.screenshot({ path: 'offmark-me.png' });
-  // プライベート版の名前を決める（名前のメニュー）
-  await y.click('header .menu button:has-text("山田 花子")'); await y.click('button:has-text("プライベート版の名前")'); await y.waitForSelector('.modal input[name=private_name]');
-  await y.fill('.modal input[name=private_name]', 'はなママ'); await y.click('.modal button[type=submit]'); await y.waitForSelector('.toast:has-text("はなママ")');
+  // プライベート版の名前を決める（設定の「休みの出し方」）
+  ok('名前のメニューには、「プライベート版の名前」は無い（設定の「休みの出し方」にある）', await (async () => { await y.click('header .menu button:has-text("山田 花子")'); const n = await y.locator('button:has-text("プライベート版の名前")').count(); await y.keyboard.press('Escape'); await y.mouse.click(5, 300); return n === 0; })());
+  await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-offmark input[name=private_name]');
+  ok('設定の「休みの出し方」に「プライベート版の名前」の欄がある（空のときは、下の名前が薄く出る）', (await y.getAttribute('#set-offmark input[name=private_name]', 'placeholder')) === '花子');
+  await y.fill('#set-offmark input[name=private_name]', 'はなママ'); await y.locator('#set-offmark').screenshot({ path: 'offmark-set.png' }); await y.click('#set-offmark button:has-text("保存")'); await y.waitForSelector('.toast:has-text("休みの出し方を保存しました")');
+  await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal');
   await y.waitForFunction(() => [...document.querySelectorAll('.bar.off')].some(b => b.textContent === 'はなママ｜休み'));
   ok('プライベート版の名前を決めると、「その名前｜休み」になる（会社の名前は変わらない）', (await y.locator('header .menu button').filter({ hasText: '山田 花子' }).count()) === 1);
   // 業務版（初期値: 帯）
