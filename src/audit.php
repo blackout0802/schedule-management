@@ -154,25 +154,19 @@ function audit_list(array $f): array
 
 /**
  * 管理者の変更履歴を削除する。mode: 'one'（$arg=id）／'older'（$arg=日数。その日数より前のもの）／'all'（すべて）。削除した件数を返す。
- * 削除したこと自体は、「変更履歴を削除（N件）」として、新しく記録に残す（誰が・いつ消したかは分かる。消した中身は残さない）。
+ * 削除したことは、記録に残さない（消したあと、一覧が空になるように。2026-10-28 にユーザーが決めた）。
  */
 function audit_delete(string $mode, int $arg = 0): int
 {
     if ($mode === 'one') {
         $n = q('DELETE FROM audit_log WHERE id = ?', [$arg])->rowCount();
-        $range = '1件を選んで削除';
     } elseif ($mode === 'older') {
         $days = max(1, min(3650, $arg));
         $n = q('DELETE FROM audit_log WHERE at < ?', [date('Y-m-d H:i:s', time() - $days * 86400)])->rowCount();
-        $range = $days . '日より前の履歴を削除';
     } elseif ($mode === 'all') {
         $n = q('DELETE FROM audit_log')->rowCount();
-        $range = 'すべて削除';
     } else {
         return 0;
-    }
-    if ($n > 0) {
-        audit_log('security', 'delete', '変更履歴を削除', '', $n . '件（' . $range . '）');
     }
     return $n;
 }

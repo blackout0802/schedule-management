@@ -191,6 +191,16 @@
     ov.close = close;
     return ov;
   }
+  /* 日付の欄で、年・月・日の一部だけを消すと、ブラウザが「入力が不完全」として、決定を止めてしまう。
+     入れなくてもよい日付の欄なら、空にしたものとして扱い、そのまま決定し直す（入力が必要な欄は、ブラウザの案内のまま） */
+  document.addEventListener('invalid', function (e) {
+    var t = e.target;
+    if (!t || t.type !== 'date' || t.required || !t.validity.badInput || !t.form) return;
+    e.preventDefault();
+    t.value = '';
+    var f = t.form;
+    setTimeout(function () { if (f.requestSubmit) f.requestSubmit(); else f.dispatchEvent(new Event('submit', { cancelable: true })); }, 0);
+  }, true);
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && modals.length && !modals[modals.length - 1].locked) modals[modals.length - 1].close();
     else if (e.key === 'Escape' && !modals.length && document.getElementById('todo-panel')) closeTodoPanel(true);
@@ -756,12 +766,12 @@
     body.appendChild(el('p', { class: 'hint', text: '予定（休み・業務）の追加・変更・削除、繰り返し業務、社員の管理、会社の休業日、共有リンク、Slack通知の設定、パスワードの変更を、1年間残します。プライベートの予定・ToDo・日報メモは、記録しません（管理者にも見せない約束のため）。' }));
     body.appendChild(el('div', { class: 'audit-filters' }, fType, fActor, fQ, el('button', { class: 'btn', type: 'button', text: '最新の状態にする', onclick: function () { load(true); } })));
     body.appendChild(list); body.appendChild(el('div', { class: 'actions', style: 'justify-content:center' }, more));
-    // まとめて削除（古いものだけ／すべて）。削除したこと自体は、「変更履歴を削除（N件）」として残る
+    // まとめて削除（古いものだけ／すべて）。削除したことは記録に残さない（消すと、一覧から消える）
     var olderSel = el('select', { 'aria-label': '削除する期間', style: 'width:auto' },
       [['30', '30日より前'], ['90', '90日より前'], ['180', '半年（180日）より前'], ['365', '1年（365日）より前']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
     body.appendChild(el('div', { class: 'audit-bulk' },
       el('b', { text: '履歴を削除する' }),
-      el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '削除は元に戻せません。削除したことと、その件数は、新しい履歴として残ります（中身は残りません）。' }),
+      el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '削除は元に戻せません（削除したことも、記録には残りません）。' }),
       el('div', { class: 'audit-bulk-row' }, olderSel,
         el('button', { class: 'btn small danger', type: 'button', text: 'より前の履歴を削除', onclick: function () {
           if (!window.confirm('「' + olderSel.options[olderSel.selectedIndex].text + '」の変更履歴を、すべて削除します。元に戻せません。よろしいですか？')) return;
@@ -2310,10 +2320,11 @@
     sync();
   }
 
-  /* ToDo の「日付」。カレンダーに置いてある ToDo は、今の日付を出し、変える・外す（日付を空にして決定しても外れる）ができる */
+  /* ToDo の「日付」。カレンダーに置いてある ToDo は、今の日付を出し、変える・外す（日付を空にして決定しても外れる）ができる。
+     置いていない ToDo で日付を空にして決定したときは、予定にせずに閉じる */
   function openTodoScheduleDialog(t) {
     var placed = !!t.sched;
-    var date = el('input', { type: 'date', required: !placed, value: placed ? t.sched : ymd(new Date()) });
+    var date = el('input', { type: 'date', value: placed ? t.sched : ymd(new Date()) });
     var err = el('p', { class: 'error', role: 'alert', hidden: true });
     var unschedule = function () {
       api('todo_unschedule', { body: { id: t.id } }).then(function () {
@@ -2322,7 +2333,7 @@
     };
     var form = el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      if (placed && !date.value) return unschedule();
+      if (!date.value) { if (placed) return unschedule(); ov.close(); toast('日付が空なので、予定にはしませんでした'); return; }
       if (placed && date.value === t.sched) { ov.close(); return; }
       api('todo_schedule', { body: { id: t.id, date: date.value } }).then(function () {
         ov.close(); toast(placed ? '日付を ' + mdw(date.value) + ' に変えました' : '予定に追加しました（ToDoは「進行中」になりました）: ' + mdw(date.value)); loadTodos(); load();
