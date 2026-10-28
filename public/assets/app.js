@@ -518,7 +518,7 @@
     var done = true;
     if (k === 'c') setMode('cal');
     else if (k === 'r' && !SHARE && !FAMACCT && S.view === 'team') openRoomsPage();
-    else if (k === 'l' && !FAMILY && !FAMACCT) setMode('list');
+    else if (k === 'l' && !SHARE && !FAMACCT) setMode('list');
     else if (k === 't') goToday();
     else if (k === 'w' && S.mode === 'cal' && S.page === 'main') setSpan(S.span === 'week' ? 'month' : 'week');
     else if (k === 'ArrowLeft') navMonth(-1);
@@ -916,8 +916,8 @@
         el('input', { type: 'checkbox', id: 'pc-toggle', checked: store('sched.personColor') !== false, onchange: function () { store('sched.personColor', this.checked); renderBoard(); } }), '人ごとに色分け'),
       todoOnly || !allView() ? null : el('label', { class: 'check pc-opt', title: '全員の休みだけを表示します（業務の予定・会議室の予約は隠します）。開き直すと、元に戻ります' },
         el('input', { type: 'checkbox', id: 'off-only', checked: offOnly(), onchange: function () { S.offOnly = this.checked; renderToolbar(); renderBoard(); } }), '休みだけ'),
-      (SHARE && SHARE.kind === 'family') || FAMACCT ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' },
-        (!SHARE && S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
+      SHARE || FAMACCT ? null : el('div', { class: 'seg', role: 'group', 'aria-label': '表示の切り替え' }, // 共有ページは、カレンダーだけ
+        (S.view === 'team' ? [['rooms', '会議室予約']] : []).concat([['cal', 'カレンダー'], ['list', 'リスト']]).map(function (m) {
           return el('label', { class: 'work', title: m[0] === 'cal' ? 'カレンダー（c）' : m[0] === 'rooms' ? '会議室の予約（r）' : 'リスト（l）' }, el('input', { type: 'radio', name: 'mode', checked: S.mode === m[0], onchange: function () { if (m[0] === 'rooms') openRoomsPage(); else setMode(m[0]); } }), m[1]);
         })),
       todoOnly && !SHARE && S.view === 'team' ? el('div', { class: 'seg pane-seg', role: 'group', 'aria-label': 'ToDoと日報' }, [['todo', 'ToDo'], ['memo', '日報メモ']].map(function (m) {
@@ -4069,7 +4069,7 @@
       S.shareMine = !!m.mine; // この共有リンクを作った本人が、ログインして見ているときだけ、自分の画面へ戻れる
       S.view = SHARE.kind === 'family' ? 'me' : 'team';
       S.offOnly = SHARE.kind === 'company'; // 会社用リンクは、最初は全員の休みだけ
-      S.mode = SHARE.kind === 'family' ? 'cal' : (store('sched.mode') === 'list' ? 'list' : 'cal'); // 家族用はカレンダーだけ
+      S.mode = 'cal'; // 共有ページは、カレンダーだけ（自分の画面で選んだ「リスト」は、引き継がない）
       document.title = m.title;
       var now = new Date();
       S.year = now.getFullYear(); S.month = now.getMonth() + 1; initSpan(now);
