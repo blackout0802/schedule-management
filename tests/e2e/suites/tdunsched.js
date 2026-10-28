@@ -30,9 +30,28 @@ const pad = n => String(n).padStart(2, '0');
   await p.waitForSelector('.toast:has-text("日付を外しました")');
   const t2 = await todo('日付を空にするToDo');
   ok('日付を空にして決定しても、外れる（入力してくださいで止まらない）', t2 && t2.sched === null, t2);
-  // 3) 置いていないToDoは、これまでどおり（日付は必須・「日付を外す」なし）
+  // 3) 置いていないToDo: 「日付を外す」は出ない。日付を空にして決定すると、予定にせずに閉じる（入力してくださいで止まらない）
   await openDate('日付を外すToDo');
   ok('置いていないToDoには「日付を外す」は出ず、「予定にする」', await p.locator('.modal button:has-text("日付を外す")').count() === 0 && await p.locator('.modal button:has-text("予定にする")').count() === 1);
-  await p.keyboard.press('Escape');
+  await p.fill('.modal input[type=date]', ''); await p.click('.modal button[type=submit]');
+  await p.waitForSelector('.toast:has-text("予定にはしませんでした")'); await p.waitForFunction(() => !document.querySelector('.modal'));
+  const t3 = await todo('日付を外すToDo');
+  ok('置いていないToDoで日付を空にして決定すると、予定にせずに閉じる', t3 && t3.sched === null, t3);
+  // 4) 年・月・日の一部だけを消した（入力が不完全な）ときも、空として扱って決定できる（置いてあるToDoなら、外れる）
+  await mk('一部だけ消すToDo'); await p.reload(); await p.waitForSelector('.kanban');
+  await openDate('一部だけ消すToDo');
+  await p.click('.modal input[type=date]', { position: { x: 12, y: 10 } }); await p.keyboard.press('Backspace');
+  const bad = await p.evaluate(() => document.querySelector('.modal input[type=date]').validity.badInput);
+  await p.click('.modal button[type=submit]');
+  await p.waitForSelector('.toast:has-text("日付を外しました")');
+  const t4 = await todo('一部だけ消すToDo');
+  ok('日付の一部だけを消して決定しても、止まらずに外れる', bad && t4 && t4.sched === null, [bad, t4]);
+  // 5) ほかの任意の日付欄（ToDoの期限日）も、一部だけ消して保存できる
+  await api('todo_save', { id: t4.id, title: '一部だけ消すToDo', kind: 'work', tag: '個人作業', due: day }); await p.reload(); await p.waitForSelector('.kanban');
+  await p.locator('.kb-card:has-text("一部だけ消すToDo") button:has-text("編集")').first().click(); await p.waitForSelector('.modal input[name=due]');
+  await p.click('.modal input[name=due]', { position: { x: 12, y: 10 } }); await p.keyboard.press('Backspace');
+  await p.click('.modal button[type=submit]'); await p.waitForSelector('.toast:has-text("ToDoを更新しました")');
+  const t5 = await todo('一部だけ消すToDo');
+  ok('期限日も、一部だけ消して保存すると、期限日なしになる', t5 && !t5.due, t5);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

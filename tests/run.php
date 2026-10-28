@@ -1212,12 +1212,10 @@ foreach ([[200, '古い履歴A'], [100, '古い履歴B'], [10, '新しい履歴C
 }
 $auOne = (int)row('SELECT id FROM audit_log WHERE label = ?', ['新しい履歴D'])['id'];
 check('変更履歴の削除: 1件だけ消せる', [audit_delete('one', $auOne), (bool)row('SELECT id FROM audit_log WHERE id = ?', [$auOne])], [1, false]);
-$lastRec = row("SELECT label, detail, type, action FROM audit_log ORDER BY id DESC LIMIT 1");
-check('変更履歴の削除: 消したことが、新しい履歴として残る（中身は残さない）', [$lastRec['label'], $lastRec['type'], $lastRec['action'], strpos($lastRec['detail'], '新しい履歴D') === false, strpos($lastRec['detail'], '1件') !== false], ['変更履歴を削除', 'security', 'delete', true, true]);
-check('変更履歴の削除: 存在しない番号は、何も消さず、記録も増やさない', [audit_delete('one', 999999), $au0()], [0, 4]);
-check('変更履歴の削除: 90日より前を消す（200日前・100日前が消える）', [audit_delete('older', 90), array_column(rows("SELECT label FROM audit_log WHERE label NOT LIKE '変更履歴を削除'"), 'label')], [2, ['新しい履歴C']]);
-$beforeAll = $au0();
-check('変更履歴の削除: すべて削除し、削除の記録だけが残る', [audit_delete('all'), $au0(), row('SELECT label FROM audit_log')['label']], [$beforeAll, 1, '変更履歴を削除']);
+check('変更履歴の削除: 消したことは、記録に残さない（件数が1つ減るだけ）', $au0(), 3);
+check('変更履歴の削除: 存在しない番号は、何も消さない', [audit_delete('one', 999999), $au0()], [0, 3]);
+check('変更履歴の削除: 90日より前を消す（200日前・100日前が消える）', [audit_delete('older', 90), array_column(rows('SELECT label FROM audit_log'), 'label')], [2, ['新しい履歴C']]);
+check('変更履歴の削除: すべて削除すると、空になる', [audit_delete('all'), $au0()], [1, 0]);
 check('変更履歴の削除: 知らないモードは、何もしない', audit_delete('x'), 0);
 
 
