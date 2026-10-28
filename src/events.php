@@ -1262,13 +1262,13 @@ function clean_offday($v): array
 
 /**
  * 自分の休みの出し方（版ごと）。'bar' = これまでの帯（名前と分類）／'icon' = 日付の横の「休」のアイコンだけ。
- * 初期値は、業務版は帯、プライベート版はアイコン（家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う）
+ * 初期値は、どちらも帯（プライベート版の帯は「プライベート版の名前｜休み」。v1.94.0 までは、プライベート版の初期値はアイコンだった）。家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う
  */
 function clean_offmark($v): array
 {
     $v = is_array($v) ? $v : [];
     $pick = function ($x, string $def): string { return in_array($x, ['bar', 'icon'], true) ? $x : $def; };
-    return ['team' => $pick($v['team'] ?? null, 'bar'), 'me' => $pick($v['me'] ?? null, 'icon')];
+    return ['team' => $pick($v['team'] ?? null, 'bar'), 'me' => $pick($v['me'] ?? null, 'bar')];
 }
 
 /** @return array{colors:array<string,string>,offday:array{on:bool,color:string},offmark:array{team:string,me:string}} 色は '#rrggbb'。空文字なら、標準の色 */

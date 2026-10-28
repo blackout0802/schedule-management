@@ -129,6 +129,43 @@ function family_set_name(array $user, string $name): string
     return $name;
 }
 
+const PRIVATE_NAME_MAX = 20;
+
+/** プライベート版・家族用の画面で使う、本人の名前。決めていなければ、下の名前（名前に空白が無ければ、そのまま） */
+function private_name_of(array $u): string
+{
+    $p = trim((string)($u['private_name'] ?? ''));
+    if ($p !== '') {
+        return $p;
+    }
+    $parts = preg_split('/[\s　]+/u', trim((string)($u['name'] ?? '')));
+    return count($parts) >= 2 ? (string)end($parts) : trim((string)($u['name'] ?? ''));
+}
+
+/** 本人が決めたプライベート版の名前（決めていなければ ''）。家族用リンクでは、決めたときだけ名前を出す */
+function private_name_set(int $userId): string
+{
+    try {
+        return (string)(row('SELECT private_name FROM users WHERE id = ?', [$userId])['private_name'] ?? '');
+    } catch (PDOException $e) { // 更新した直後で、列がまだ無いとき
+        return '';
+    }
+}
+
+/** 社員が、プライベート版の名前を決める（空にすると、下の名前に戻る）。会社の名前（users.name）は変えない。決めた名前（空なら ''）を返す */
+function set_private_name(array $user, string $name): string
+{
+    if (is_family($user)) {
+        throw new RuntimeException('家族のアカウントは、「表示名の変更」で名前を変えてください。');
+    }
+    $name = trim((string)preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $name));
+    if (mb_strlen($name) > PRIVATE_NAME_MAX) {
+        throw new RuntimeException('名前を' . PRIVATE_NAME_MAX . '文字以内で入力してください。');
+    }
+    q('UPDATE users SET private_name = ? WHERE id = ?', [$name, (int)$user['id']]);
+    return $name;
+}
+
 /** 家族のアカウントを消す。その人の予定も、いっしょに消える */
 function family_delete(array $owner, int $id): bool
 {

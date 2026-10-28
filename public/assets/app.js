@@ -308,7 +308,14 @@
   }
   /* プライベート版の、家族が入れた予定の先頭の名前: 家族が決めた表示名を、そのまま出す（名字だけにすると、同じ名字の家族の見分けがつかない）。
      家族のアカウントから見た持ち主の予定は、これまでどおり（名字。同じ名字の人がいればフルネーム） */
-  function famWho(e) { return FAMACCT && e.owner_name === S.me.family_owner_name ? ownerShort(e) : e.owner_name; }
+  function famWho(e) { return FAMACCT && e.owner_name === S.me.family_owner_name ? (S.me.family_owner_pname || ownerShort(e)) : e.owner_name; }
+  /* プライベート版・家族用の画面の休み: 「プライベート版の名前｜休み」（休みの分類は出さない。半休だけは「半休」）。家族用リンクは、名前を決めたときだけ名前を出す */
+  function privOffLabel(e) {
+    var w = /半休/.test(e.tag || '') ? '半休' : '休み';
+    if (FAMILY) return (SHARE.pname ? SHARE.pname + '｜' : '') + w;
+    if (FAMACCT) return famWho(e) + '｜' + w;
+    return (S.me.user.pname || e.owner_name) + '｜' + w;
+  }
   /* 凡例（カレンダーの下）: いま表示している月に出てくる社員の、色と名前 */
   function personLegend() {
     var seen = {}, list = [];
@@ -481,10 +488,9 @@
 
   /* 自分の休みの出し方（業務版・プライベート版で別々に）。プライベート版の設定は、家族用リンク・家族の画面にも使う */
   function openOffmarkDialog() {
-    var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'icon' };
-    var opts = [['icon', '「休」のアイコンだけ（日付の横）'], ['bar', '帯（名前と、休みの分類）']];
-    var sel = function (name, v) { return el('select', { name: name }, opts.map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === v }); })); };
-    var team = sel('offmark_team', m.team), me = sel('offmark_me', m.me);
+    var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'bar' };
+    var sel = function (name, v, barText) { return el('select', { name: name }, [['icon', '「休」のアイコンだけ（日付の横）'], ['bar', barText]].map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === v }); })); };
+    var team = sel('offmark_team', m.team, '帯（名前と、休みの分類）'), me = sel('offmark_me', m.me, '帯（「' + (S.me.user.pname || '名前') + '｜休み」）');
     var msg = el('p', { class: 'hint', role: 'status' });
     openModal('休みの出し方', el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
@@ -575,7 +581,7 @@
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      return [item('プライベート版の名前', openPrivateNameDialog, close, 'プライベート版・家族用の画面に出る、自分の名前を決める'), item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -1047,9 +1053,9 @@
 
   /* full = true のときは、休みも「名前 分類（件名）」の全部（ポップアップ・ホバーの説明用）。カレンダーの帯では、全社の表示のとき、「休」バッジ＋姓だけに詰める */
   function eventLabel(e, first, compact, full) {
-    var t;
-    if (e.kind === 'off' && SHARE && SHARE.kind === 'family') {
-      t = '休み'; // 家族用の共有には、名前も休みの種類も出さない
+    var t, privOff = e.kind === 'off' && (FAMILY || FAMACCT || (!full && !SHARE && S.view === 'me' && e.owner_id === S.me.user.id));
+    if (privOff) {
+      t = privOffLabel(e); // 家族用の共有・家族の画面・自分のプライベート版: 「名前｜休み」（休みの種類は出さない）
     } else if (e.kind === 'off' && !full && allView() && e.owner_name) {
       t = ownerShort(e) + (personColorOn() && !compact ? '' : '｜休'); // 全社の表示: 姓が先（業務の「姓｜件名」と同じ並び）。そのあとに「休」バッジ（狭い画面・色分けなしでは「｜休」）。同じ姓の人がいるときは、ownerShort がフルネームにする
     } else if (e.kind === 'off' && compact) {
@@ -1059,7 +1065,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? famWho(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
+    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!privOff && !full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? famWho(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
     return who + (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
@@ -1116,13 +1122,13 @@
     }
     return S.events.concat(S._rbEv);
   }
-  /* 自分の休みを、帯ではなく、日付の横の「休」のアイコンだけで出すか（版ごとの設定「休みの出し方」。初期値は、業務版 = 帯、プライベート版 = アイコン）。
+  /* 自分の休みを、帯ではなく、日付の横の「休」のアイコンだけで出すか（版ごとの設定「休みの出し方」。初期値は、どちらも帯。プライベート版の帯は「名前｜休み」）。
      家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う（そこに出る休みは、持ち主の休みだけ）。会社用リンクは、いつも帯 */
   function offMarkIcon() {
     if (SHARE) return SHARE.kind === 'family' && SHARE.offmark === 'icon';
     if (FAMACCT) return S.me.family_owner_offmark === 'icon';
     var m = S.me && S.me.prefs && S.me.prefs.offmark, v = S.view === 'team' ? 'team' : 'me';
-    return (m && m[v] ? m[v] : (v === 'me' ? 'icon' : 'bar')) === 'icon';
+    return (m && m[v] ? m[v] : 'bar') === 'icon';
   }
   function offAsIcon(e) { return e.kind === 'off' && !e.deleted && offMarkIcon() && (!!SHARE || FAMACCT || e.owner_id === S.me.user.id); }
   /* 日付の横の「休」のアイコン（半休は「半休」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
@@ -3649,6 +3655,25 @@
       el('label', null, '表示名（60文字まで）', input), err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
     var ov = openModal('表示名の変更', form);
+    input.focus(); input.select();
+  }
+
+  /* 社員: プライベート版・家族用の画面で使う、自分の名前を決める（会社の名前は変わらない。空にすると、下の名前） */
+  function openPrivateNameDialog() {
+    var input = el('input', { name: 'private_name', maxlength: '20', value: S.me.user.private_name || '', placeholder: S.me.user.pname || '', autocomplete: 'off' });
+    var err = el('p', { class: 'error', role: 'alert', hidden: true });
+    var form = el('form', { class: 'form', onsubmit: function (e) {
+      e.preventDefault();
+      api('private_name_save', { body: { name: input.value } }).then(function (j) {
+        ov.close(); S.me.user.private_name = j.private_name; S.me.user.pname = j.pname;
+        toast(j.private_name ? 'プライベート版の名前を「' + j.pname + '」にしました' : 'プライベート版の名前を、下の名前（' + j.pname + '）に戻しました');
+        renderBoard();
+      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+    } },
+      el('p', { class: 'hint', text: 'プライベート版の休み（「' + (S.me.user.pname || '名前') + '｜休み」）や、家族の画面に出る、あなたの名前です。「パパ」「むねのり」のように決められます。会社の名前（業務版に出る名前）は変わりません。空にすると、下の名前になります。家族用リンクには、ここで名前を決めたときだけ、名前が出ます。' }),
+      el('label', null, '名前（20文字まで）', input), err,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
+    var ov = openModal('プライベート版の名前', form);
     input.focus(); input.select();
   }
 

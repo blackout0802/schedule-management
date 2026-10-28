@@ -1,4 +1,4 @@
-// 自分の休みの出し方（版ごと）: プライベート版は、初めから「休」のアイコンだけ（帯は出ない）。業務版は、初めは帯。
+// 自分の休みの出し方（版ごと）: 初めは、どちらも帯（プライベート版の帯は「プライベート版の名前｜休み」。v1.94.0 から）。
 // 設定の「休みの出し方」で、版ごとに変えられる。家族用リンク・家族の画面は、持ち主のプライベート版の設定に従う
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
 const env = require('../lib/env');
@@ -22,33 +22,41 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   await api(y, 'event_save', { kind: 'off', title: '', tag: '午後半休', start: half, end: half, family_shared: 1 });
   await api(s, 'event_save', { kind: 'off', title: '', tag: '有給', start: day, end: day });
   const cell = (p, d) => p.locator('.cell[data-date="' + d + '"]');
-  // プライベート版（初期値: アイコン）
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.cell[data-date="' + day + '"] .offmark');
-  ok('プライベート版: 自分の休みの日は、日付の横に「休」のアイコンだけ（休みの帯は出ない）', (await cell(y, day).locator('.offmark').innerText()) === '休' && (await y.locator('.bar.off').count()) === 0);
+  // プライベート版（初期値: 帯。「プライベート版の名前｜休み」。決めていなければ下の名前）
+  await y.click('.tab[data-view=me]'); await y.waitForSelector('.bar.off');
+  const meBars = await y.locator('.bar.off').allInnerTexts();
+  ok('プライベート版: 自分の休みは「下の名前｜休み」の帯（休みの種類は出ない・アイコンは出ない）', meBars.includes('花子｜休み') && !meBars.some(t => t.includes('有給')) && (await y.locator('.offmark').count()) === 0, meBars);
+  ok('プライベート版: 半休は「名前｜半休」', meBars.includes('花子｜半休'), meBars);
   await y.screenshot({ path: 'offmark-me.png' });
-  ok('プライベート版: 半休は「半休」のアイコン', (await cell(y, half).locator('.offmark').innerText()) === '半休');
-  ok('アイコンに、休みの内容の説明（ホバー）が付く', (await cell(y, day).locator('.offmark').getAttribute('title')).includes('有給'));
-  await cell(y, day).locator('.offmark').click(); await y.waitForSelector('.modal');
-  ok('アイコンを押すと、その休みが開く', (await y.locator('.modal').innerText()).includes('有給'));
-  await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
+  // プライベート版の名前を決める（名前のメニュー）
+  await y.click('header .menu button:has-text("山田 花子")'); await y.click('button:has-text("プライベート版の名前")'); await y.waitForSelector('.modal input[name=private_name]');
+  await y.fill('.modal input[name=private_name]', 'はなママ'); await y.click('.modal button[type=submit]'); await y.waitForSelector('.toast:has-text("はなママ")');
+  await y.waitForFunction(() => [...document.querySelectorAll('.bar.off')].some(b => b.textContent === 'はなママ｜休み'));
+  ok('プライベート版の名前を決めると、「その名前｜休み」になる（会社の名前は変わらない）', (await y.locator('header .menu button').filter({ hasText: '山田 花子' }).count()) === 1);
   // 業務版（初期値: 帯）
   await y.click('.tab[data-view=team]'); await y.waitForSelector('#who-sel'); await y.selectOption('#who-sel', 'all'); await y.waitForSelector('.bar.off');
   ok('業務版: 初めは、これまでどおり帯（アイコンは出ない）', (await y.locator('.offmark').count()) === 0 && (await y.locator('.bar.off').count()) >= 3);
   // 設定で、版ごとに変える
   await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-offmark select[name=offmark_team]');
-  ok('設定に「休みの出し方」があり、業務版 = 帯、プライベート版 = アイコンが選ばれている', (await y.inputValue('#set-offmark select[name=offmark_team]')) === 'bar' && (await y.inputValue('#set-offmark select[name=offmark_me]')) === 'icon');
-  await y.selectOption('#set-offmark select[name=offmark_team]', 'icon'); await y.selectOption('#set-offmark select[name=offmark_me]', 'bar');
+  ok('設定に「休みの出し方」があり、初めは、どちらも帯が選ばれている', (await y.inputValue('#set-offmark select[name=offmark_team]')) === 'bar' && (await y.inputValue('#set-offmark select[name=offmark_me]')) === 'bar');
+  await y.selectOption('#set-offmark select[name=offmark_team]', 'icon'); await y.selectOption('#set-offmark select[name=offmark_me]', 'icon');
   await y.click('#set-offmark button:has-text("保存")'); await y.waitForSelector('.toast:has-text("休みの出し方を保存しました")');
   await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal'); await y.selectOption('#who-sel', 'all'); await y.waitForSelector('.cell[data-date="' + day + '"] .offmark');
   const teamBars = await y.locator('.bar.off').allInnerTexts();
   ok('業務版をアイコンにすると、自分の休みはアイコン、ほかの人の休みは帯のまま', (await cell(y, day).locator('.offmark').count()) === 1 && teamBars.some(t => t.includes('鈴木')) && !teamBars.some(t => t.includes('山田')), teamBars);
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.bar.off');
-  ok('プライベート版を帯にすると、帯に戻る（アイコンは出ない）', (await y.locator('.offmark').count()) === 0 && (await y.locator('.bar.off').count()) >= 2);
+  await y.click('.tab[data-view=me]'); await y.waitForSelector('.cell[data-date="' + day + '"] .offmark');
+  ok('プライベート版をアイコンにすると、日付の横に「休」のアイコンだけ（休みの帯は出ない）', (await cell(y, day).locator('.offmark').innerText()) === '休' && (await y.locator('.bar.off').count()) === 0);
+  ok('プライベート版: 半休は「半休」のアイコン', (await cell(y, half).locator('.offmark').innerText()) === '半休');
+  ok('アイコンに、休みの内容の説明（ホバー）が付く', (await cell(y, day).locator('.offmark').getAttribute('title')).includes('有給'));
+  await cell(y, day).locator('.offmark').click(); await y.waitForSelector('.modal');
+  ok('アイコンを押すと、その休みが開く', (await y.locator('.modal').innerText()).includes('有給'));
+  await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
+  await api(y, 'offmark_save', { offmark: { team: 'bar', me: 'bar' } });
   // 家族用リンク: 持ち主のプライベート版の設定に従う
   const path = (await api(y, 'share_create', { kind: 'family' })).path;
   const g = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage(); g.on('pageerror', e => console.log('PAGEERR', e.message));
   await g.goto(BASE + path); await g.waitForSelector('.cal'); await g.waitForSelector('.bar.off');
-  ok('家族用リンク: 持ち主のプライベート版が帯なら、帯', (await g.locator('.offmark').count()) === 0);
+  ok('家族用リンク: 持ち主のプライベート版が帯なら、帯。名前を決めていれば「その名前｜休み」', (await g.locator('.offmark').count()) === 0 && (await g.locator('.bar.off').allInnerTexts()).includes('はなママ｜休み'), await g.locator('.bar.off').allInnerTexts());
   await api(y, 'offmark_save', { offmark: { team: 'bar', me: 'icon' } });
   await g.reload(); await g.waitForSelector('.cell[data-date="' + day + '"] .offmark');
   ok('家族用リンク: 持ち主のプライベート版がアイコンなら、休みは「休」のアイコンだけ', (await g.locator('.bar.off').count()) === 0 && (await cell(g, day).locator('.offmark').innerText()) === '休');

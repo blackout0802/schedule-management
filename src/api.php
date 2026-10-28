@@ -181,14 +181,17 @@ function handle_api(): void
         case 'me':
             ensure_schema(); // アプリのファイルを更新したあと、足りないテーブルを自動で作る
             migrate_data(); // 画面を開くたびに、名称変更の反映漏れがないようにする（軽い1文）
+            $user['private_name'] = (string)(row('SELECT private_name FROM users WHERE id = ?', [$user['id']])['private_name'] ?? ''); // 列を足した直後でも読めるよう、ensure_schema のあとで読む
             api_out([
                 'user' => ['id' => (int)$user['id'], 'name' => $user['name'], 'email' => $user['email'], 'role' => $user['role'],
-                    'must_change_password' => (int)$user['must_change_password'] === 1],
+                    'must_change_password' => (int)$user['must_change_password'] === 1,
+                    'private_name' => (string)($user['private_name'] ?? ''), 'pname' => private_name_of($user)], // プライベート版の名前（決めたもの／画面に出すもの）
                 'csrf' => csrf_token(),
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
                 'family_share' => get_family_share($user),
                 'family_owner_name' => is_family($user) ? (string)(row('SELECT name FROM users WHERE id = ?', [family_owner_id($user)])['name'] ?? '') : null, // 家族のアカウントのとき、持ち主の名前
+                'family_owner_pname' => is_family($user) ? private_name_of(row('SELECT name, private_name FROM users WHERE id = ?', [family_owner_id($user)]) ?: []) : null, // 家族のアカウントのとき、持ち主のプライベート版の名前
                 'family_owner_offmark' => is_family($user) ? get_prefs(['id' => family_owner_id($user)])['offmark']['me'] : null, // 家族のアカウントのとき、持ち主の休みの出し方（プライベート版の設定）
                 'backup_alert' => is_admin($user) ? backup_alert_for_screen() : null, // 月1回の手動バックアップのお知らせ（管理者だけ）
                 'prefs' => get_prefs($user),
@@ -876,6 +879,14 @@ function handle_api(): void
                 api_fail($x->getMessage(), is_family($user) ? 400 : 403);
             }
             api_out(['ok' => true, 'name' => $name]);
+
+        case 'private_name_save': // 社員が、プライベート版・家族用の画面で使う、自分の名前を決める（空なら、下の名前）
+            try {
+                $pn = set_private_name($user, (string)($in['name'] ?? ''));
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage());
+            }
+            api_out(['ok' => true, 'private_name' => $pn, 'pname' => private_name_of(['name' => $user['name'], 'private_name' => $pn])]);
 
         case 'family_reset_password': // 家族のパスワードをリセットする（一時パスワードを1度だけ返す）
             $m = family_member_of($user, (int)($in['id'] ?? 0));

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at DATETIME NULL,
   last_seen_at DATETIME NULL,
   family_of INT UNSIGNED NULL,
+  private_name VARCHAR(60) NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL,
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
