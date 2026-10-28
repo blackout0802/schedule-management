@@ -402,10 +402,11 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .slack-add h3 { margin: 0; font-size: 14px; }
 .slack-test { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
 .slack-test h3 { margin: 0; font-size: 14px; }
-.slack-result:empty { display: none; }
-.slack-result { padding: 8px 10px; border-radius: 6px; font-size: 13px; background: var(--surface-2); }
-.slack-result.ok { background: var(--off-soft); color: var(--off); font-weight: 700; }
-.slack-result.ng { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+.slack-result:empty, .slack-sched-st:empty { display: none; }
+.slack-result, .slack-sched-st { padding: 8px 10px; border-radius: 6px; font-size: 13px; background: var(--surface-2); }
+.slack-result.ok, .slack-sched-st.ok { background: var(--off-soft); color: var(--off); font-weight: 700; }
+.slack-result.ng, .slack-sched-st.ng { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+.slack-sched-st { margin-top: 6px; }
 
 /* ---- Slack通知の時間・文面 ---- */
 .slack-cfg .slack-sec { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }

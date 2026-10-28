@@ -53,5 +53,34 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
   fs.writeFileSync(LOG, ''); const d = new Date(); const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   await s.evaluate(async (ds) => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=event_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'off', title: '', tag: '有給', start: ds, end: ds }) }); }, ds); await s.waitForTimeout(800);
   ok('休みを登録しても、その場では通知しない（朝・夕方の通知だけ）', log() === '', log());
+  // ---- 時刻を指定したテスト送信（cron が、決まった時刻に送れるかの確認）
+  const env = require('../lib/env'); const { execFileSync } = require('child_process');
+  const cron = () => execFileSync('php', [env.APP + '/bin/cron.php', 'notify'], { env: process.env, encoding: 'utf8' });
+  const hm = d => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const ymdhm = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + hm(d);
+  const setAt = d => { const j = JSON.parse(env.sql("SELECT meta_value FROM app_meta WHERE meta_key = 'slack_test_at'")); j.at = ymdhm(d); env.sql("UPDATE app_meta SET meta_value = '" + JSON.stringify(j) + "' WHERE meta_key = 'slack_test_at'"); };
+  const refresh = async () => { await a.click('#set-slack button:has-text("最新の状態を見る")'); await a.waitForTimeout(400); };
+  await a.goto(BASE + 'index.php'); await a.waitForSelector('.cal'); await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-slack #slack-sched-time');
+  ok('Slack の設定に「時刻を指定してテスト送信」がある（初めは、5分後の時刻が入っている）', (await a.locator('#set-slack .slack-sched h3').innerText()).includes('時刻を指定してテスト送信') && /^\d{2}:\d{2}$/.test(await a.inputValue('#slack-sched-time')));
+  const at = new Date(Date.now() + 10 * 60000); at.setSeconds(0, 0);
+  await a.fill('#slack-sched-time', hm(at)); await a.click('#set-slack .slack-sched button:has-text("予約する")'); await a.waitForSelector('#set-slack .slack-sched .slack-sched-st.wait');
+  ok('予約すると、「予約中」と、送る日時が出る', (await a.locator('#set-slack .slack-sched .slack-sched-st.wait').innerText()).includes('予約中: ' + (at.getMonth() + 1) + '/' + at.getDate() + ' ' + hm(at)), await a.locator('#set-slack .slack-sched').innerText());
+  fs.writeFileSync(LOG, ''); cron();
+  ok('時刻の前に cron が動いても、送らない', !log().includes('時刻を指定したテスト送信'), log());
+  setAt(new Date(Date.now() - 20 * 60000)); await refresh(); // cron が止まっていて、時刻を20分過ぎた
+  ok('時刻を過ぎても送られていないと、「cron が動いていない可能性」と出る', (await a.locator('#set-slack .slack-sched .slack-sched-st.ng:not([hidden])').innerText()).includes('cron'), await a.locator('#set-slack .slack-sched').innerText());
+  setAt(new Date(Date.now() - 2 * 60000)); cron();
+  ok('時刻を過ぎて cron が動くと、Slack に送る（予定の時刻と、送った時刻が入る）', log().includes('時刻を指定したテスト送信') && log().includes('予定の時刻') && log().includes('送った時刻'), log());
+  await refresh();
+  const done = await a.locator('#set-slack .slack-sched').innerText();
+  ok('画面に、前回の結果（予定 → 送った時刻）と、cron が最後に動いた日時が出る。予約は消える', done.includes('前回: 予定') && done.includes('cron が送りました') && /最後に動いた日時: \d+\/\d+ \d{2}:\d{2}/.test(done) && !done.includes('予約中'), done);
+  await a.locator('#set-slack .slack-sched').screenshot({ path: 'slack-sched.png' });
+  fs.writeFileSync(LOG, ''); cron();
+  ok('送ったあとに cron が動いても、二重には送らない', !log().includes('時刻を指定したテスト送信'), log());
+  await a.fill('#slack-sched-time', hm(at)); await a.click('#set-slack .slack-sched button:has-text("予約する")'); await a.waitForSelector('#set-slack .slack-sched button:has-text("予約を取り消す")');
+  await a.click('#set-slack .slack-sched button:has-text("予約を取り消す")'); await a.waitForFunction(() => !document.querySelector('#set-slack .slack-sched .slack-sched-st.wait'));
+  ok('予約を取り消せる', !(await a.locator('#set-slack .slack-sched').innerText()).includes('予約中'));
+  const sp = await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; return (await fetch('api.php?action=slack_test_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ time: '09:00' }) })).status; });
+  ok('管理者でない人は、予約できない（403）', sp === 403, sp);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();
