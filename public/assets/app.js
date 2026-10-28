@@ -490,15 +490,25 @@
   function openOffmarkDialog() {
     var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'bar' };
     var sel = function (name, v, barText) { return el('select', { name: name }, [['icon', '「休」のアイコンだけ（日付の横）'], ['bar', barText]].map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === v }); })); };
-    var team = sel('offmark_team', m.team, '帯（名前と、休みの分類）'), me = sel('offmark_me', m.me, '帯（「' + (S.me.user.pname || '名前') + '｜休み」）');
+    var team = sel('offmark_team', m.team, '帯（名前と、休みの分類）'), me = sel('offmark_me', m.me, '帯（「プライベート版の名前｜休み」）');
+    // プライベート版の名前（プライベート版の休みの帯・家族の画面に出る、自分の名前。会社の名前は変わらない。空なら下の名前）
+    var pn = el('input', { name: 'private_name', maxlength: '20', value: S.me.user.private_name || '', placeholder: S.me.user.pname || '', autocomplete: 'off' });
     var msg = el('p', { class: 'hint', role: 'status' });
     openModal('休みの出し方', el('form', { class: 'form', onsubmit: function (e) {
       e.preventDefault();
-      api('offmark_save', { body: { offmark: { team: team.value, me: me.value } } }).then(function (j) { S.me.prefs = j.prefs; msg.textContent = '保存しました'; toast('休みの出し方を保存しました'); renderBoard(); }).catch(fail);
+      api('offmark_save', { body: { offmark: { team: team.value, me: me.value } } }).then(function (j) {
+        S.me.prefs = j.prefs;
+        return api('private_name_save', { body: { name: pn.value } });
+      }).then(function (j) {
+        S.me.user.private_name = j.private_name; S.me.user.pname = j.pname; pn.placeholder = j.pname; pn.value = j.private_name;
+        msg.textContent = '保存しました'; toast('休みの出し方を保存しました'); renderBoard();
+      }).catch(fail);
     } },
       el('p', { class: 'hint', text: 'カレンダーで、自分の休みの日を、どう出すかを決めます。業務版とプライベート版で、別々に選べます。' }),
       el('label', null, '業務版（自分の休みだけ。ほかの人の休みは、いつも帯）', team),
       el('label', null, 'プライベート版（家族用リンク・家族の画面も、この設定になります）', me),
+      el('label', null, 'プライベート版の名前（20文字まで）', pn),
+      el('p', { class: 'hint', style: 'margin-top:-6px', text: 'プライベート版の休み（「名前｜休み」）や、家族の画面に出る、あなたの名前です。「パパ」「むねのり」のように決められます。会社の名前（業務版に出る名前）は変わりません。空にすると、下の名前になります。家族用リンクには、ここで名前を決めたときだけ、名前が出ます。' }),
       msg,
       el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn primary', type: 'submit', text: '保存' }))));
   }
@@ -581,7 +591,7 @@
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [item('プライベート版の名前', openPrivateNameDialog, close, 'プライベート版・家族用の画面に出る、自分の名前を決める'), item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -3655,25 +3665,6 @@
       el('label', null, '表示名（60文字まで）', input), err,
       el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '変更する' })));
     var ov = openModal('表示名の変更', form);
-    input.focus(); input.select();
-  }
-
-  /* 社員: プライベート版・家族用の画面で使う、自分の名前を決める（会社の名前は変わらない。空にすると、下の名前） */
-  function openPrivateNameDialog() {
-    var input = el('input', { name: 'private_name', maxlength: '20', value: S.me.user.private_name || '', placeholder: S.me.user.pname || '', autocomplete: 'off' });
-    var err = el('p', { class: 'error', role: 'alert', hidden: true });
-    var form = el('form', { class: 'form', onsubmit: function (e) {
-      e.preventDefault();
-      api('private_name_save', { body: { name: input.value } }).then(function (j) {
-        ov.close(); S.me.user.private_name = j.private_name; S.me.user.pname = j.pname;
-        toast(j.private_name ? 'プライベート版の名前を「' + j.pname + '」にしました' : 'プライベート版の名前を、下の名前（' + j.pname + '）に戻しました');
-        renderBoard();
-      }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
-    } },
-      el('p', { class: 'hint', text: 'プライベート版の休み（「' + (S.me.user.pname || '名前') + '｜休み」）や、家族の画面に出る、あなたの名前です。「パパ」「むねのり」のように決められます。会社の名前（業務版に出る名前）は変わりません。空にすると、下の名前になります。家族用リンクには、ここで名前を決めたときだけ、名前が出ます。' }),
-      el('label', null, '名前（20文字まで）', input), err,
-      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
-    var ov = openModal('プライベート版の名前', form);
     input.focus(); input.select();
   }
 
