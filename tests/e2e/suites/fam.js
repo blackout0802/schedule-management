@@ -50,7 +50,7 @@ const pad = n => String(n).padStart(2, '0');
   ok('家族の画面: 業務版・プライベート版のタブ、設定、ToDo、表示の切り替え、表示する人は出ない', top.tabs === 0 && !top.setBtn && top.seg === 0 && !top.hover && !top.side && !top.who, top);
   ok('家族の画面: 「○○さんの家族」の印と説明が出る', top.pill.includes('山田') && (await f.locator('.view-banner').innerText()).includes('家族のカレンダー'), top.pill);
   const names = await f.locator('.bar').allInnerTexts();
-  ok('家族に見えるのは、共有された予定だけ（共有しない予定・業務は見えない）。持ち主の予定には、名前が付く', names.some(t => t.includes('家族への連絡') && t.includes('山田')) && !names.some(t => t.includes('ひみつ') || t.includes('会社の打ち合わせ')), names);
+  ok('家族に見えるのは、共有された予定だけ（共有しない予定・業務は見えない）。持ち主の予定には、プライベート版の名前（決めていなければ下の名前）が付く', names.some(t => t.includes('家族への連絡') && t.includes('花子')) && !names.some(t => t.includes('ひみつ') || t.includes('会社の打ち合わせ')), names);
   // 家族が、自分の予定を入れる
   await f.keyboard.press('n'); await f.waitForSelector('.modal input[name=title]');
   const dlg = await f.evaluate(() => ({ kind: document.querySelectorAll('.modal input[name=kind]').length, todo: !!document.querySelector('.modal select[name=todo_status]') && !document.querySelector('.modal select[name=todo_status]').closest('label').hidden, fam: !!document.querySelector('.modal input[name=family_shared]') && !document.querySelector('.modal input[name=family_shared]').closest('label').hidden, owner: !document.querySelector('.modal select[name=owner_id]').closest('label').hidden }));

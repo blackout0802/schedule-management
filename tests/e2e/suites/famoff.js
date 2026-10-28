@@ -12,13 +12,14 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const ds = `${t.
   const url = await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'family' }) }); const j = await r.json(); return JSON.stringify(j); });
   const tok = /share\.php\?t=([0-9a-f]+)/.exec(url)[1];
   const offmark = mode => y.evaluate(async (mode) => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=offmark_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ offmark: { team: 'bar', me: mode } }) }); }, mode);
-  // 初期値（プライベート版 = 「休」のアイコン）: 家族用リンクも、アイコンだけ。説明（ホバー）にも、休みの種類は出ない
+  // プライベート版をアイコンにしたとき: 家族用リンクも、アイコンだけ。説明（ホバー）にも、休みの種類は出ない
+  await offmark('icon');
   const f = await (await b.newContext({ viewport: { width: 1280, height: 900 } })).newPage(); await f.goto(BASE + 'share.php?t=' + tok); await f.waitForSelector('.offmark');
   const iconTitle = await f.locator('.offmark').first().getAttribute('title');
-  ok('家族用リンク（初期値）: 休みは「休」のアイコンだけ。説明にも、名前・種類（欠勤）は出ない', (await f.locator('.bar.off').count()) === 0 && (await f.locator('.offmark').first().innerText()) === '休' && !iconTitle.includes('欠勤') && !iconTitle.includes('山田'), iconTitle);
+  ok('家族用リンク（アイコン）: 休みは「休」のアイコンだけ。説明にも、名前・種類（欠勤）は出ない', (await f.locator('.bar.off').count()) === 0 && (await f.locator('.offmark').first().innerText()) === '休' && !iconTitle.includes('欠勤') && !iconTitle.includes('山田'), iconTitle);
   await offmark('bar'); // ここからは、帯の表示で確かめる
   await f.reload(); await f.waitForSelector('.bar.off');
-  const txt = await f.locator('.bar.off').first().innerText(); ok('家族用リンクでは、単に「休み」と表示される', txt.trim() === '休み', txt);
+  const txt = await f.locator('.bar.off').first().innerText(); ok('家族用リンクでは、プライベート版の名前を決めていなければ、単に「休み」と表示される', txt.trim() === '休み', txt);
   ok('名前も分類（欠勤）も出ない', !txt.includes('山田') && !txt.includes('欠勤'), txt);
   const api = await f.evaluate(async (tk) => { const d = new Date(); const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); const r = await fetch('share_api.php?t=' + tk + '&action=events&from=' + m + '-01&to=' + m + '-28'); return await r.text(); }, tok);
   ok('サーバーの応答にも、休みの種類（欠勤）は含まれない', !api.includes('欠勤'), api.slice(0, 200));

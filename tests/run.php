@@ -600,15 +600,24 @@ save_color_prefs($a, []);
 check('色の設定: 空で保存すると、標準の色に戻る', get_prefs($a)['colors'], ['work' => '', 'rec' => '', 'off' => '', 'private' => '']);
 check('休みの日のセル: 初期は、オン・標準の色', get_prefs($b)['offday'], ['on' => true, 'color' => '']);
 // 自分の休みの出し方（版ごと）
-check('休みの出し方: 初期は、業務版 = 帯、プライベート版 = アイコン', get_prefs($b)['offmark'], ['team' => 'bar', 'me' => 'icon']);
+check('休みの出し方: 初期は、業務版もプライベート版も帯（v1.94.0 から。プライベート版の帯は「名前｜休み」）', get_prefs($b)['offmark'], ['team' => 'bar', 'me' => 'bar']);
 save_color_prefs($b, ['work' => '#2155d6']);
 save_offmark_pref($b, ['team' => 'icon', 'me' => 'bar', 'evil' => 'x']);
 check('休みの出し方: 版ごとに保存でき、色の設定は消えない（知らない項目は捨てる）', [get_prefs($b)['offmark'], get_prefs($b)['colors']['work']], [['team' => 'icon', 'me' => 'bar'], '#2155d6']);
 save_color_prefs($b, ['work' => '#c0392b']);
 check('休みの出し方: 色を保存しても、休みの出し方は消えない', [get_prefs($b)['offmark'], get_prefs($b)['colors']['work']], [['team' => 'icon', 'me' => 'bar'], '#c0392b']);
+save_offmark_pref($b, ['team' => 'icon', 'me' => 'icon']);
+check('休みの出し方: 他の人には影響しない', [get_prefs($b)['offmark'], get_prefs($a)['offmark']], [['team' => 'icon', 'me' => 'icon'], ['team' => 'bar', 'me' => 'bar']]);
 save_offmark_pref($b, ['team' => 'evil', 'me' => '']);
-check('休みの出し方: 不正な値は、初期値に戻る', get_prefs($b)['offmark'], ['team' => 'bar', 'me' => 'icon']);
-check('休みの出し方: 他の人には影響しない', get_prefs($a)['offmark'], ['team' => 'bar', 'me' => 'icon']);
+check('休みの出し方: 不正な値は、初期値（帯）に戻る', get_prefs($b)['offmark'], ['team' => 'bar', 'me' => 'bar']);
+// プライベート版の名前（社員が決める。会社の名前は変えない。空なら下の名前）
+check('プライベート版の名前: 決めていなければ、下の名前', private_name_of(['name' => '山田 花子', 'private_name' => '']), '花子');
+check('プライベート版の名前: 全角の空白でも分ける・空白がなければ、そのまま', [private_name_of(['name' => '山田　花子']), private_name_of(['name' => 'ヤマダ'])], ['花子', 'ヤマダ']);
+check('プライベート版の名前: 決めて保存できる（前後の空白は除く）', [set_private_name($b, '  パパ '), private_name_set((int)$b['id']), private_name_of(row('SELECT name, private_name FROM users WHERE id = ?', [$b['id']]))], ['パパ', 'パパ', 'パパ']);
+check('プライベート版の名前: 会社の名前は変わらない', row('SELECT name FROM users WHERE id = ?', [$b['id']])['name'], $b['name']);
+check('プライベート版の名前: 21文字以上は、エラー', (function () use ($b) { try { set_private_name($b, str_repeat('あ', 21)); return false; } catch (RuntimeException $x) { return true; } })(), true);
+check('プライベート版の名前: 空にすると、下の名前に戻る', [set_private_name($b, ''), private_name_set((int)$b['id'])], ['', '']);
+
 save_color_prefs($b, []);
 save_color_prefs($b, [], ['on' => false, 'color' => '#CFE4FC']);
 check('休みの日のセル: オフ・色を保存できる（小文字にそろう）。色の設定とは別に保たれる', [get_prefs($b)['offday'], get_prefs($b)['colors']['work']], [['on' => false, 'color' => '#cfe4fc'], '']);
