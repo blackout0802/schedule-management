@@ -27,8 +27,8 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   await a.waitForFunction(() => !document.querySelector('#set-audit').innerText.includes('履歴テスト休業日1'));
   ok('「180日より前」を削除すると、200日前の記録だけが消える', Number(sql("SELECT COUNT(*) FROM audit_log")) === c0 - 2, [Number(sql("SELECT COUNT(*) FROM audit_log")), c0]);
   // すべて削除
-  a.once('dialog', d => d.accept()); await a.click('#set-audit .audit-bulk button:has-text("すべて削除")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length === 0);
-  ok('すべて削除すると、一覧が空になる（削除の記録も残らない）', (await a.locator('#set-audit').innerText()).includes('該当する履歴はありません') && Number(sql("SELECT COUNT(*) FROM audit_log")) === 0);
+  a.once('dialog', d => d.accept()); await a.click('#set-audit .audit-bulk button:has-text("すべて削除")'); await a.waitForFunction(() => document.querySelectorAll('#set-audit .audit-item').length === 0 && document.querySelector('#set-audit').innerText.includes('該当する履歴はありません')); // 一覧を空にしてから、答えが届いて「該当なし」が出るまで待つ
+  ok('すべて削除すると、一覧が空になる（削除の記録も残らない）', Number(sql("SELECT COUNT(*) FROM audit_log")) === 0); // 画面の「該当なし」は、上で待って確かめ済み（このあと自動更新で一覧が描き直されることがあるので、ここでは見ない）
   // 一般の社員は、削除できない
   await post('holiday_save', { hdate: '2027-01-06', name: '履歴テスト休業日3' }); const c1 = Number(sql("SELECT COUNT(*) FROM audit_log"));
   const y = await login(b, 'yamada@example.com', 'yamadapass1');
