@@ -20,12 +20,19 @@ const rowsOf = (p) => p.locator('.ms-table tbody tr').evaluateAll(trs => trs.map
   ok('業務版・全社: 見出しが「全社員」で、全員が1行ずつ並ぶ（自分が先頭）', h0.includes('全社員') && r.length === 3 && r[0][0] === '山田 花子', [h0, r]);
   ok('表の列: 名前・出勤日・休み・有給・欠勤・その他の休み', JSON.stringify(await p.locator('.ms-table thead th').allInnerTexts()) === '["名前","出勤日","休み","有給","欠勤","その他の休み"]');
   const biz = +/営業日 ([\d.]+)日/.exec(h0)[1];
-  await addOff(p, '欠勤', `${M}-13`, `${M}-13`); await addOff(p, '有給', `${M}-14`, `${M}-15`); await addOff(p, '午前半休', `${M}-16`, `${M}-16`);
+  // 休みを入れる日は、その月の平日（土日・祝日・会社の休業日でない日）から選ぶ（決まった日にすると、月によって土日に当たって落ちる）
+  const last = new Date(y, mo, 0).getDate();
+  const hol = await p.evaluate(async ([M, last]) => (await (await fetch(`api.php?action=events&view=team&from=${M}-01&to=${M}-${last}`)).json()).holidays || {}, [M, last]);
+  const isBiz = d => { const w = new Date(y, mo - 1, d).getDay(); return d <= last && w > 0 && w < 6 && !hol[`${M}-${pad(d)}`]; };
+  let d0 = 8; while (!(isBiz(d0) && isBiz(d0 + 1) && isBiz(d0 + 2) && isBiz(d0 + 3)) && d0 < last) d0++; // 4日続く平日（欠勤・有給2日・半休）
+  let d1 = d0 + 4; while (!(isBiz(d1) && isBiz(d1 + 1)) && d1 < last) d1++; // 鈴木の有給2日（2日続く平日）
+  const D = d => `${M}-${pad(d)}`;
+  await addOff(p, '欠勤', D(d0), D(d0)); await addOff(p, '有給', D(d0 + 1), D(d0 + 2)); await addOff(p, '午前半休', D(d0 + 3), D(d0 + 3));
   r = await rowsOf(p); const mine = r.find(x => x[0] === '山田 花子');
   ok('自分の行: 出勤日・休み・有給・欠勤・その他が正しい', mine && mine[1] === (biz - 3.5) + '日' && mine[2] === '3.5日' && mine[3] === '2日' && mine[4] === '1日' && mine[5] === '午前半休 0.5日', mine);
   ok('他の社員の行は、まだ休み0日', r.filter(x => x[0] !== '山田 花子').every(x => x[2] === '0日'), r);
   // 鈴木が休みを入れる → 全社の表に出る
-  const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await addOff(s, '有給', `${M}-20`, `${M}-21`);
+  const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await addOff(s, '有給', D(d1), D(d1 + 1));
   await p.waitForTimeout(500); await p.reload(); await p.waitForSelector('.ms-table'); await p.selectOption('#who-sel', 'all'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3); r = await rowsOf(p); const sz = r.find(x => x[0] === '鈴木 一郎');
   ok('全社の表に、他の社員の休み（鈴木: 有給2日）も出る', sz && sz[2] === '2日' && sz[3] === '2日', sz);
   const hs = await s.locator('.month-sum h3').innerText(); ok('鈴木の画面では、鈴木が先頭', (await rowsOf(s))[0][0] === '鈴木 一郎', hs);
