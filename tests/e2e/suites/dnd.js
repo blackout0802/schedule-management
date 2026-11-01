@@ -19,7 +19,10 @@ const openAdd = async (pg, sel) => { if (!(await pg.locator(sel + ' .todo-add in
   await p.mouse.move(1275, 300, { steps: 10 }); await p.waitForSelector('#cal-drop');
   ok('画面の右端まで持っていくと、カレンダーが開く', await p.locator('#cal-drop .cd-cell').count() >= 28);
   const target = p.locator(`#cal-drop .cd-cell[data-date="${M}-15"]`); const tb = await target.boundingBox();
-  await p.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2, { steps: 12 }); await p.screenshot({ path: 'dnd-panel.png' });
+  await p.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2, { steps: 12 });
+  // カレンダーは、開いたあと件数を読み込んで描き直すことがある（描き直すと強調が消える）。少し待って、日付の上でもう一度動かす
+  await p.waitForTimeout(600); const tb2 = await target.boundingBox(); await p.mouse.move(tb2.x + tb2.width / 2 + 3, tb2.y + tb2.height / 2 + 2, { steps: 3 });
+  await p.screenshot({ path: 'dnd-panel.png' });
   ok('日付の上では、その日が強調される', await target.evaluate(e => e.classList.contains('drop')));
   await p.mouse.up();
   await p.waitForSelector('.toast:has-text("予定に追加しました")'); await p.waitForSelector('.kb-col.doing .kb-card:has-text("ドラッグで予定にするToDo")');

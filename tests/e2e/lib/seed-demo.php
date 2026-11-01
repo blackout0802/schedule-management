@@ -28,11 +28,16 @@ materialize_series((int)db()->lastInsertId());
 echo "seeded\n";
 // 週をまたぐ予定の見え方を確かめるための予定（日付は、月ごとに土曜の位置が違うので、その月の10日以降の最初の土曜から決める）
 $hol = Holidays::national((int)date('Y'));
-$free = function (int $sat) use ($ym, $hol) { // 土曜の前後に、祝日がない
-    for ($i = -2; $i <= 9; $i++) { if (isset($hol[date('Y-m-d', strtotime("$ym-" . sprintf('%02d', $sat) . " $i day"))])) { return false; } }
+$free = function (int $sat) use ($ym, $hol) { // ギャップ業務の平日（木・金・月）に、祝日がない（連休の休みは、祝日に重なってもよい）
+    foreach ([-2, -1, 2] as $i) { if (isset($hol[date('Y-m-d', strtotime("$ym-" . sprintf('%02d', $sat) . " $i day"))])) { return false; } }
     return true;
 };
-$sat = 10; while ((int)date('N', strtotime("$ym-" . sprintf('%02d', $sat))) !== 6 || !$free($sat)) { $sat++; if ($sat > 20) { break; } }
+$last = (int)date('t', strtotime("$ym-01"));
+$sat = null; // 10日以降の土曜を先に探し、無ければ月の初めの方（3日〜）の土曜から探す。連休（土〜月）が、その月に収まること
+foreach (array_merge(range(10, $last - 9), range(3, 9)) as $c) {
+    if ((int)date('N', strtotime("$ym-" . sprintf('%02d', $c))) === 6 && $free($c)) { $sat = $c; break; }
+}
+if ($sat === null) { $sat = 10; while ((int)date('N', strtotime("$ym-" . sprintf('%02d', $sat))) !== 6) { $sat++; } }
 $dd = function (int $n) { return sprintf('%02d', $n); };
 $add($a, 'work', 'ギャップ業務', $dd($sat - 2), $dd($sat + 2), '個人作業'); // 木〜月（土日をはさむ）
 $add($y, 'off', '連休', $dd($sat + 7), $dd($sat + 9), '有給'); // 土〜月（行をまたいで、そのまま続く）
