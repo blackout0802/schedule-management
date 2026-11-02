@@ -101,9 +101,9 @@ jobs:
           if-no-files-found: ignore
 
   # サーバーへの反映。テストがすべて成功した、作業ブランチへの push のときだけ。
-  # 反映するのは、更新用 zip と同じファイル（public / src / sql / bin。config.php・data は含まない）。
-  # 次の4つを、リポジトリの Settings → Secrets and variables → Actions に登録するまでは、何もしない（失敗にもならない）:
-  #   FTP_SERVER（例 ss912764.stars.ne.jp）/ FTP_USERNAME / FTP_PASSWORD / FTP_SERVER_DIR（アプリのフォルダ。config.php と同じ場所）
+  # 反映するのは、一番上の .htaccess と public / src / sql / bin（config.php・data は含まない）。
+  # 次の3つを、リポジトリの Settings → Secrets and variables → Actions に登録するまでは、何もしない（失敗にもならない）:
+  #   FTP_USERNAME / FTP_PASSWORD / FTP_SERVER_DIR（アプリのフォルダ。config.php と同じ場所）
   deploy:
     needs: [unit, mariadb, compat, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/claude/intelligent-brahmagupta-qhk963'
@@ -111,17 +111,20 @@ jobs:
     concurrency:
       group: deploy-server
       cancel-in-progress: false
+    env:
+      SITE_URL: https://schedule-management.skym.ink
+      # 証明書と一致するホスト名（ss912764.stars.ne.jp では一致せず、security: strict で接続できない）
+      FTP_HOST: sv10007.star.ne.jp
     steps:
       - uses: actions/checkout@v4
       - name: Secrets がそろっているか
         id: ready
         env:
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
         run: |
-          if [ -n "$FTP_SERVER" ] && [ -n "$FTP_USERNAME" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$FTP_SERVER_DIR" ]; then
+          if [ -n "$FTP_USERNAME" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$FTP_SERVER_DIR" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             dir="$FTP_SERVER_DIR"
             case "$dir" in */) ;; *) dir="$dir/" ;; esac
@@ -130,19 +133,38 @@ jobs:
             echo "dir=$dir" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::サーバーへの反映は、Secrets（FTP_SERVER・FTP_USERNAME・FTP_PASSWORD・FTP_SERVER_DIR）が未登録のため、行いませんでした。"
+            echo "::notice::サーバーへの反映は、Secrets（FTP_USERNAME・FTP_PASSWORD・FTP_SERVER_DIR）が未登録のため、行いませんでした。"
           fi
       - name: 反映するファイルをそろえる
         if: steps.ready.outputs.ok == 'true'
         run: python3 tools/stage_deploy.py stage
       - name: サーバーへ反映（FTPS）
         if: steps.ready.outputs.ok == 'true'
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        # パスワードを渡すアクションなので、タグではなくコミットで固定する（v4.3.5）
+        uses: SamKirkland/FTP-Deploy-Action@8e83cea8672e3fbcbb9fdafff34debf6ae4c5f65
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          server: ${{ env.FTP_HOST }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
+          security: strict
           local-dir: stage/
           server-dir: ${{ steps.ready.outputs.dir }}
           state-name: .ftp-deploy-sync-state-schedule.json
+      - name: 反映のあとの確認（画面が開く・中のファイルが見えない・SSL の更新の経路が開いている）
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          code() { curl -sS -o /dev/null -m 30 -w '%{http_code}' "$SITE_URL$1"; }
+          status=0
+          c="$(code /public/login.php)"
+          echo "/public/login.php → $c"
+          if [ "$c" != 200 ]; then echo "::error::ログインの画面が開きません（$c）。"; status=1; fi
+          c="$(code /.well-known/acme-challenge/pm-check)"
+          echo "/.well-known/acme-challenge/pm-check → $c"
+          if [ "$c" != 404 ]; then echo "::error::SSL 証明書の更新の経路が開いていません（$c）。"; status=1; fi
+          for path in /.well-known/ /.well-known/acme-challenge/ /config.php /config.sample.php /.htaccess /src/bootstrap.php /sql/schema.mysql.sql /bin/ /data/ /docs/DEPLOY.md /.ftp-deploy-sync-state-schedule.json; do
+            c="$(code "$path")"
+            echo "$path → $c"
+            if [ "$c" = 200 ]; then echo "::error::$path が外から見えます。すぐに確かめてください。"; status=1; fi
+          done
+          exit "$status"

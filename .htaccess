@@ -1,5 +1,9 @@
 <IfModule mod_authz_core.c>
   Require all denied
+  # SSL 証明書の更新の確認（Let's Encrypt）だけは通す。英数字だけのファイル名に限る
+  <If "%{REQUEST_URI} =~ m#^/\.well-known/acme-challenge/[A-Za-z0-9_-]+$#">
+    Require all granted
+  </If>
 </IfModule>
 <IfModule !mod_authz_core.c>
   Order deny,allow
