@@ -27,10 +27,10 @@ const openAdd = async (pg, sel) => { if (!(await pg.locator(sel + ' .todo-add in
   await p.keyboard.press('c'); await p.waitForSelector('.cal');
   // ---- まとめの行を押す
   await p.selectOption('#who-sel', 'all'); await p.waitForSelector('.ms-table tbody tr.pick'); const rowsN = await p.locator('.ms-table tbody tr').count();
-  await p.locator('.ms-table tbody tr:has-text("鈴木 一郎")').click(); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 1);
+  await p.locator('.ms-table tbody tr:has-text("鈴木 一郎")').click(); await p.waitForFunction(() => { const t = document.querySelector('.ms-table tbody tr.sel th'); return t && t.innerText === '鈴木 一郎'; }); // まとめは全社員のまま、鈴木の行が選ばれる
   const sel = await p.inputValue('#who-sel'); ok('まとめで他の社員の行を押すと、「表示する人」でその人を選んだときと同じになる', (await p.locator('#who-sel option:checked').innerText()) === '鈴木 一郎' && (await p.locator('.view-banner').innerText()).includes('鈴木 一郎さんの予定') && rowsN === 3, [sel, rowsN]);
-  await p.click('.month-sum button:has-text("全社に戻す")'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3); ok('「全社に戻す」で全社へ', (await p.inputValue('#who-sel')) === 'all');
-  await p.locator('.ms-table tbody tr:has-text("山田 花子")').click(); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 1); ok('自分の行を押すと「自分」', (await p.locator('#who-sel option:checked').innerText()) === '自分');
+  await p.click('.month-sum button:has-text("全社に戻す")'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3 && !document.querySelector('.ms-table tbody tr.sel')); ok('「全社に戻す」で全社へ', (await p.inputValue('#who-sel')) === 'all');
+  await p.locator('.ms-table tbody tr:has-text("山田 花子")').click(); await p.waitForFunction(() => { const t = document.querySelector('.ms-table tbody tr.sel th'); return t && t.innerText === '山田 花子'; }); ok('自分の行を押すと「自分」', (await p.locator('#who-sel option:checked').innerText()) === '自分');
   await p.selectOption('#who-sel', 'all'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3);
   // ---- カレンダーの予定 → ToDo（右端のパネル）
   await p.keyboard.press('n'); await p.waitForSelector('.modal'); await p.fill('.modal input[name=title]', 'カレンダーから戻す予定'); await p.fill('.modal input[name=start]', ds); await p.click('.modal button[type=submit]'); await p.waitForSelector('.bar:has-text("カレンダーから戻す予定")');

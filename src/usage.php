@@ -25,6 +25,28 @@ function usage_cron_mark(string $mode): void
     }
 }
 
+/**
+ * cron（notify）から呼ぶ。今日まだ動いていなければ、繰り返し業務を12か月先まで作る（1日1回）。
+ * これで、nightly の cron を別に登録しなくてよい（notify の cron 1つで足りる）。nightly を登録していれば、そちらでも動く
+ * @return string[] 実行結果のメッセージ
+ */
+function nightly_due(?int $now = null): array
+{
+    $now = $now ?? time();
+    try {
+        $last = backup_meta('cron_nightly_at');
+        if ($last !== '' && substr($last, 0, 10) === date('Y-m-d', $now)) {
+            return []; // 今日は作成済み
+        }
+        $n = materialize_all();
+        usage_cron_mark('nightly');
+        return ['繰り返し予定: ' . $n . ' 件を更新しました（1日1回）'];
+    } catch (Throwable $e) {
+        error_log('[schedule nightly] ' . $e->getMessage());
+        return ['繰り返し予定の更新でエラー: ' . $e->getMessage()];
+    }
+}
+
 /** フォルダの直下のファイルの、個数と合計バイト数（. で始まる管理用ファイルは数えない） */
 function usage_dir_stats(string $dir, string $glob = '*'): array
 {

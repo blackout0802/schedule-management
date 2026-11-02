@@ -14,7 +14,9 @@ const rowsOf = (p) => p.locator('.ms-table tbody tr').evaluateAll(trs => trs.map
   const p = await login(b, 'yamada@example.com', 'yamadapass1');
   const now = new Date(); const y = now.getFullYear(), mo = now.getMonth() + 1; const pad = n => (n < 10 ? '0' : '') + n; const M = `${y}-${pad(mo)}`;
   await p.waitForSelector('.month-sum');
-  ok('ログインして開くと、まず自分のまとめ', (await p.locator('.month-sum h3').innerText()).includes('自分'));
+  // ログインして開くと「表示する人」は自分。月のまとめは、それでも全社員（自分の行が選ばれて目立つ）
+  await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3);
+  ok('ログインして開くと、月のまとめは全社員で、自分の行が選ばれている', (await p.locator('.month-sum h3').innerText()).includes('全社員') && (await p.locator('.ms-table tbody tr.sel th').innerText()) === '山田 花子');
   await p.selectOption('#who-sel', 'all'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3);
   const h0 = await p.locator('.month-sum h3').innerText(); let r = await rowsOf(p);
   ok('業務版・全社: 見出しが「全社員」で、全員が1行ずつ並ぶ（自分が先頭）', h0.includes('全社員') && r.length === 3 && r[0][0] === '山田 花子', [h0, r]);
@@ -37,16 +39,21 @@ const rowsOf = (p) => p.locator('.ms-table tbody tr').evaluateAll(trs => trs.map
   ok('全社の表に、他の社員の休み（鈴木: 有給2日）も出る', sz && sz[2] === '2日' && sz[3] === '2日', sz);
   const hs = await s.locator('.month-sum h3').innerText(); ok('鈴木の画面では、鈴木が先頭', (await rowsOf(s))[0][0] === '鈴木 一郎', hs);
   // 自分
-  await p.selectOption('#who-sel', { label: '自分' }); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 1);
-  r = await rowsOf(p); ok('「自分」: 自分だけ1行', r.length === 1 && r[0][0] === '山田 花子' && (await p.locator('.month-sum h3').innerText()).includes('自分'), r);
+  ok('全社のときは、どの行も選ばれていない', await p.locator('.ms-table tbody tr.sel').count() === 0);
+  await p.selectOption('#who-sel', { label: '自分' }); await p.waitForSelector('.ms-table tbody tr.sel');
+  r = await rowsOf(p); ok('「自分」を選んでも、全社員が並び、自分の行が選ばれる', r.length === 3 && (await p.locator('.ms-table tbody tr.sel th').innerText()) === '山田 花子' && (await p.locator('.month-sum h3').innerText()).includes('全社員'), r);
   // 他の社員
-  await p.selectOption('#who-sel', { label: '鈴木 一郎' }); await p.waitForFunction(() => document.querySelector('.ms-table tbody th') && document.querySelector('.ms-table tbody th').innerText.includes('鈴木'));
-  r = await rowsOf(p); ok('「他の社員」を選ぶと、その人だけ1行（鈴木）', r.length === 1 && r[0][0] === '鈴木 一郎' && r[0][2] === '2日' && (await p.locator('.month-sum h3').innerText()).includes('鈴木 一郎さん'), [r, await p.locator('.month-sum h3').innerText()]);
+  await p.selectOption('#who-sel', { label: '鈴木 一郎' }); await p.waitForFunction(() => { const t = document.querySelector('.ms-table tbody tr.sel th'); return t && t.innerText.includes('鈴木'); });
+  r = await rowsOf(p); const sel = await p.locator('.ms-table tbody tr.sel').evaluate(tr => [...tr.children].map(c => c.innerText.trim()));
+  ok('「他の社員」を選んでも、全社員が並び、その人（鈴木）の行が選ばれる', r.length === 3 && sel[0] === '鈴木 一郎' && sel[2] === '2日' && (await p.locator('.month-sum h3').innerText()).includes('全社員'), [r, sel]);
+  // 行を押すと、その人に切り替わる（全社員の表のまま、すぐ次の人へ）
+  const other = r.find(x => x[0] !== '山田 花子' && x[0] !== '鈴木 一郎')[0];
+  await p.locator('.ms-table tbody tr', { hasText: other }).click(); await p.waitForFunction(n => { const t = document.querySelector('.ms-table tbody tr.sel th'); return t && t.innerText === n; }, other);
+  ok('月のまとめの行を押すと、その人に切り替わり、表は全社員のまま', (await rowsOf(p)).length === 3 && (await p.locator('#who-sel option:checked').innerText()).includes(other.split(/\s/)[0]));
   // プライベート版は自分だけ
   await p.click('header >> text=プライベート版'); await p.waitForSelector('.view-banner.me'); ok('プライベート版: カレンダーの下（凡例・月のまとめ）は出ない', (await p.locator('.month-sum').count()) === 0 && (await p.locator('.legend').count()) === 0);
   // コンパクトさ
-  await p.click('header >> text=業務版'); await p.selectOption('#who-sel', { label: '自分' }); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 1);
-  const hgt = await p.locator('.month-sum').evaluate(e => e.getBoundingClientRect().height); ok('自分だけなら、高さは約90px以内（コンパクト）', hgt < 95, hgt);
+  await p.click('header >> text=業務版'); await p.selectOption('#who-sel', { label: '自分' }); await p.waitForSelector('.ms-table tbody tr.sel');
   await p.screenshot({ path: 'sum-self.png', fullPage: true });
   await p.selectOption('#who-sel', 'all'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3); await p.screenshot({ path: 'sum-all.png', fullPage: true });
   // スマホ

@@ -186,7 +186,19 @@ function slack_status(): array
     }
     return ['configured' => $active !== '', 'active' => $active, 'active_name' => $name, 'masked' => $mask, 'dests' => $dests,
         'source' => $active === '' ? 'none' : ($active === 'config' ? 'config' : 'ui'),
-        'base_url' => (string)cfg('base_url', '') !== '', 'link' => slack_link_kind(), 'sched' => slack_test_state()];
+        'base_url' => (string)cfg('base_url', '') !== '', 'link' => slack_link_kind(), 'sched' => slack_test_state(), 'cron' => cron_commands()];
+}
+
+/**
+ * サーバーの cron に登録するコマンド（このサーバーでの、cron.php の本当の場所と、動いている PHP の版から作る）。
+ * PHP のパスは候補（/usr/bin/php8.3 のような形）。サーバーの Cron 設定の画面に例があれば、そちらに合わせる
+ * @return array{php:string,script:string,notify:string,nightly:string}
+ */
+function cron_commands(): array
+{
+    $php = '/usr/bin/php' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+    $script = realpath(APP_ROOT . '/bin/cron.php') ?: APP_ROOT . '/bin/cron.php';
+    return ['php' => $php, 'script' => $script, 'notify' => $php . ' ' . $script . ' notify', 'nightly' => $php . ' ' . $script . ' nightly'];
 }
 
 /**

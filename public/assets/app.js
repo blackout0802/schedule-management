@@ -726,7 +726,7 @@
         ['手動（ダウンロード）', bk.manual_last ? usageAgo(bk.manual_last, j.now) : 'まだ一度もありません']])));
       body.appendChild(sec('自動処理（cron）・通知', kv([
         ['通知用 notify（10分おき）', j.cron.notify ? usageAgo(j.cron.notify, j.now) : 'まだ確認できていません'],
-        ['繰り返し予定 nightly（毎日）', j.cron.nightly ? usageAgo(j.cron.nightly, j.now) : 'まだ確認できていません'],
+        ['繰り返し予定（1日1回。notify が行う）', j.cron.nightly ? usageAgo(j.cron.nightly, j.now) : 'まだ確認できていません'],
         ['Slack通知の送り先', j.slack.configured ? j.slack.name : '未設定']])));
       body.appendChild(sec('件数・システム', kv([
         ['予定 / 繰り返し業務 / ToDo / 日報', j.counts.events + ' / ' + j.counts.series + ' / ' + j.counts.todos + ' / ' + j.counts.memos],
@@ -1331,13 +1331,18 @@
     var m = S.summary;
     if (SHARE || !m || m.month !== S.year + '-' + pad(S.month) || !m.people || !m.people.length) return null;
     var wid = S.view === 'team' ? whoId() : S.me.user.id;
-    var who = S.view === 'team' && !wid ? '全社員' : wid === S.me.user.id ? '自分' : whoName() + 'さん';
+    // 業務版は、選んだ人に関係なく全社員（選んだ人の行を目立たせる。行を押して、すぐ切り替えられる）。
+    // スマホの幅では、カレンダーを1画面に収めるため、人を選んでいるときは、その人の行だけ
+    var onlySel = S.view === 'team' && wid && isPhone();
+    var who = S.view !== 'team' ? '自分' : !onlySel ? '全社員' : wid === S.me.user.id ? '自分' : whoName() + 'さん';
     var tagDays = function (p, tag) { var t = p.by_tag.filter(function (x) { return x.tag === tag; })[0]; return t ? t.days : 0; };
-    var rows = m.people.map(function (p) {
+    var people = m.people.filter(function (p) { return !onlySel || p.id === wid; });
+    var rows = people.map(function (p) {
       var other = p.by_tag.filter(function (x) { return x.tag !== '有給' && x.tag !== '欠勤' && x.days > 0; }).map(function (x) { return x.tag + ' ' + fmtDays(x.days); }).join('・');
       var abs = tagDays(p, '欠勤');
       var pick = S.view === 'team' && !SHARE ? function () { selectWho(String(p.id)); } : null; // 業務版では、行を押すと「表示する人」でその人を選んだときと同じ
-      return el('tr', { class: (p.id === S.me.user.id && m.people.length > 1 ? 'me' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null,
+      var sel = S.view === 'team' && wid && p.id === wid; // 「表示する人」で選んでいる人
+      return el('tr', { class: (p.id === S.me.user.id && people.length > 1 ? 'me' : '') + (sel ? ' sel' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null, 'aria-current': sel ? 'true' : null,
         title: pick ? (p.id === S.me.user.id ? '押すと、自分の予定だけを表示' : '押すと、' + p.name + 'さんの予定だけを表示') : null,
         onclick: pick, onkeydown: pick ? function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } } : null },
         el('th', { scope: 'row', text: p.name }),
@@ -1348,7 +1353,7 @@
         el('td', { class: 'etc', text: other || '—' }));
     });
     return el('section', { class: 'month-sum', 'aria-label': S.month + '月の出勤日と休みの日数' },
-      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' + (S.view === 'team' && m.people.length > 1 ? '　行を押すと、その人の予定だけを表示' : '') }),
+      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' + (S.view === 'team' && people.length > 1 ? '　行を押すと、その人の予定だけを表示' : '') }),
         S.view === 'team' && wid ? el('button', { class: 'btn small', type: 'button', text: '全社に戻す', onclick: function () { selectWho('all'); } }) : null),
       el('div', { class: 'scroll-x' }, el('table', { class: 'ms-table' },
         el('thead', null, el('tr', null, ['名前', '出勤日', '休み', '有給', '欠勤', 'その他の休み'].map(function (h) { return el('th', { scope: 'col', text: h }); }))),
@@ -3440,7 +3445,26 @@
         el('button', { class: 'btn', type: 'button', text: p ? '予約し直す' : '予約する', disabled: !st.configured, onclick: function () { go('slack_test_schedule', { time: timeVal(tm) }); } }),
         el('button', { class: 'btn small ghost', type: 'button', text: '最新の状態を見る', onclick: function () { api('slack_status').then(function (j) { redraw(j.slack); }).catch(fail); } })),
       msg, rows,
-      el('p', { class: 'hint', text: 'cron（notify）が最後に動いた日時: ' + (sc.cron_at ? md(sc.cron_at) : 'まだ記録がありません（cron が設定されていない可能性があります）') }));
+      el('p', { class: 'hint', text: 'cron（notify）が最後に動いた日時: ' + (sc.cron_at ? md(sc.cron_at) : 'まだ記録がありません（cron が設定されていない可能性があります）') }),
+      cronCmdBox(st.cron));
+  }
+  /* サーバーの cron に登録するコマンド（このサーバーでの本当の場所。コピーして、サーバーパネルの「Cron設定」に貼る） */
+  function cronCmdBox(c) {
+    if (!c) return null;
+    var row = function (when, timing, cmd) {
+      var input = el('input', { class: 'cron-cmd', readonly: true, value: cmd, 'aria-label': when + 'のコマンド', onclick: function () { this.select(); } });
+      return el('div', { class: 'cron-row' },
+        el('div', { class: 'cron-when' }, el('b', { text: when }), el('span', { class: 'hint', text: '　' + timing })),
+        el('div', { class: 'row-inline' }, input, el('button', { class: 'btn small', type: 'button', text: 'コピー', onclick: function () {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(cmd).then(function () { toast('コピーしました'); }, function () { input.select(); toast('選択しました。Ctrl + C でコピーしてください'); });
+          else { input.select(); toast('選択しました。Ctrl + C でコピーしてください'); }
+        } })));
+    };
+    return el('div', { class: 'cron-cmds' },
+      el('h3', { text: 'cron に登録するコマンド' }),
+      el('p', { class: 'hint', text: 'サーバーパネルの「Cron設定」（スターサーバーなら、サーバー管理ツールの「Cron設定」）に、次の1つを登録します。このサーバーでの本当の場所なので、そのまま貼り付けられます。Slack の通知のほか、自動バックアップと、繰り返し業務を先の月まで作る処理も、これが1日1回まとめて行います（ほかの cron は要りません）。' }),
+      row('Slack の通知・自動バックアップ・繰り返し業務', '10分おき（分: */10　時・日・月・曜日: *）', c.notify),
+      el('p', { class: 'hint', text: '先頭の ' + c.php + ' は、このサーバーで動いている PHP の版から作った候補です。Cron設定の画面に、PHP のパスの書き方の例があれば、そちらに合わせてください。登録して10分ほどたったら、上の「最新の状態を見る」で、cron が動いた日時が出るか確かめます。' }));
   }
 
   /* ---------- Slack通知の時間・文面（管理者） ---------- */
