@@ -474,7 +474,7 @@ check('月のまとめ（複数人）: 本人の内訳は、他の人と混ざ�
 $sumNames = function (array $l) { return array_column($l, 'name'); };
 $allSum = summary_users($sumO, 'team', 0);
 check('月のまとめに出す人: 業務版で全社なら、全社員（自分が先頭）', [$allSum[0]['id'], count($allSum) === (int)row('SELECT COUNT(*) AS c FROM users WHERE active = 1')['c']], [(int)$sumO['id'], true]);
-check('月のまとめに出す人: 社員を選んだら、その人だけ', array_column(summary_users($sumO, 'team', (int)$sumU['id']), 'id'), [(int)$sumU['id']]);
+check('月のまとめに出す人: 社員を選んでも、全社員のまま（行を押して切り替えやすいように。2026-11-02 ユーザーの指示）', array_column(summary_users($sumO, 'team', (int)$sumU['id']), 'id'), array_column($allSum, 'id'));
 check('月のまとめに出す人: プライベート版は、自分だけ', array_column(summary_users($sumO, 'me', 0), 'id'), [(int)$sumO['id']]);
 check('月のまとめに出す人: 停止中の社員は出ない', (function () use ($sumU, $sumO) { q('UPDATE users SET active = 0 WHERE id = ?', [$sumU['id']]); $r = array_column(summary_users($sumO, 'team', 0), 'id'); q('UPDATE users SET active = 1 WHERE id = ?', [$sumU['id']]); return in_array((int)$sumU['id'], $r, true); })(), false);
 q("DELETE FROM events WHERE owner_id IN (?, ?)", [$sumU['id'], $sumO['id']]);
@@ -1381,6 +1381,10 @@ $has = function (array $w, string $needle): bool { foreach ($w as $x) { if (strp
 check('利用状況: install.php が残っていると、注意に出る', $has($ws, 'install.php'), is_file(dirname(__DIR__) . '/public/install.php'));
 check('利用状況: 自動バックアップが未設定だと、注意に出る', $has($ws, '自動バックアップが設定されていません'), true);
 check('利用状況: cron の記録が無いと、「まだ記録がない」と知らせる（警告ではない）', [$has($ws, 'notify'), (function () use ($rep) { foreach ($rep['warnings'] as $x) { if (strpos($x['text'], 'notify') !== false) { return $x['level']; } } return null; })()], [true, 'info']);
+backup_meta_set('cron_nightly_at', '');
+$nd1 = nightly_due(); $nd2 = nightly_due();
+check('1日1回の繰り返し業務（notify から）: その日の最初の1回だけ作り、印を残す（2回目は何もしない）', [count($nd1) === 1 && strpos($nd1[0], '繰り返し予定') === 0, $nd2, substr(backup_meta('cron_nightly_at'), 0, 10)], [true, [], date('Y-m-d')]);
+check('1日1回の繰り返し業務: 日が変われば、また作る', count(nightly_due(time() + 86400)), 1);
 usage_cron_mark('notify'); usage_cron_mark('nightly'); usage_cron_mark('bogus');
 $rep2 = usage_report();
 check('利用状況: cron が動いた印が残る（種類以外は無視）', [$rep2['cron']['notify'] !== null, $rep2['cron']['nightly'] !== null, backup_meta('cron_bogus_at')], [true, true, '']);

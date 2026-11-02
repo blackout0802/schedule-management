@@ -1029,7 +1029,7 @@ function month_summary(array $user, string $ym): array
 }
 
 /**
- * 月のまとめに出す社員。業務版で全社なら全社員（自分が先頭）、特定の社員を選んでいればその人だけ。プライベート版は自分だけ。
+ * 月のまとめに出す社員。業務版は、いつも全社員（自分が先頭。自分や特定の社員を選んでいても同じ）。プライベート版は自分だけ。
  * @return array<int,array{id:int,name:string}>
  */
 function summary_users(array $user, string $view, int $who): array
@@ -1038,9 +1038,7 @@ function summary_users(array $user, string $view, int $who): array
     if ($view !== 'team') {
         return [['id' => (int)$user['id'], 'name' => $user['name']]];
     }
-    if ($who > 0) {
-        return array_values(array_filter($all, function ($u) use ($who) { return $u['id'] === $who; }));
-    }
+    // 業務版は、「表示する人」で自分や特定の社員を選んでいても、全社員を並べる（行を押して、すぐ別の人に切り替えられるように。選んだ人の行は、画面で目立たせる）
     usort($all, function ($a, $b) use ($user) { return ($b['id'] === (int)$user['id']) <=> ($a['id'] === (int)$user['id']); }); // 自分が先頭
     return $all;
 }

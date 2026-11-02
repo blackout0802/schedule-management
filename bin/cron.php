@@ -1,8 +1,9 @@
 <?php
 // サーバーの cron から毎日実行するスクリプト。
 //
-//   php bin/cron.php nightly   繰り返し業務を12か月先まで作る（深夜 0:30 ごろ）
-//   php bin/cron.php notify    Slack の朝・夕方の通知（5〜10分おきに実行。送る時刻は、画面の「Slack通知の時間・文面」で決める）
+//   php bin/cron.php nightly   繰り返し業務を12か月先まで作る（notify が1日1回行うので、登録しなくてよい。今すぐ作りたいときに）
+//   php bin/cron.php notify    Slack の朝・夕方の通知（5〜10分おきに実行。送る時刻は、画面の「Slack通知の時間・文面」で決める）。
+//                              1日1回、自動バックアップと、繰り返し業務を12か月先まで作る処理（nightly と同じ）も行う。cron は、これ1つで足りる
 //   php bin/cron.php backup    暗号化した自動バックアップを今すぐ作る（data/backups/）。notify の中でも、毎日3時以降に1回、自動で作る
 //   php bin/cron.php morning   今日の休みを Slack へ今すぐ通知（時刻を cron で決める従来の方法。notify を使うなら不要）
 //   php bin/cron.php evening   明日の休みを Slack へ今すぐ通知（同上）
@@ -39,7 +40,7 @@ try {
             usage_cron_mark('nightly');
             break;
         case 'notify':
-            echo implode("\n", array_merge(notify_due(), backup_cron_tasks()) ?: ['送る通知はありません']) . "\n";
+            echo implode("\n", array_merge(notify_due(), backup_cron_tasks(), nightly_due()) ?: ['送る通知はありません']) . "\n"; // nightly_due: 1日1回、繰り返し業務を先の月まで作る（nightly の cron は不要）
             usage_cron_mark('notify');
             break;
         case 'backup':

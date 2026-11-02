@@ -726,7 +726,7 @@
         ['手動（ダウンロード）', bk.manual_last ? usageAgo(bk.manual_last, j.now) : 'まだ一度もありません']])));
       body.appendChild(sec('自動処理（cron）・通知', kv([
         ['通知用 notify（10分おき）', j.cron.notify ? usageAgo(j.cron.notify, j.now) : 'まだ確認できていません'],
-        ['繰り返し予定 nightly（毎日）', j.cron.nightly ? usageAgo(j.cron.nightly, j.now) : 'まだ確認できていません'],
+        ['繰り返し予定（1日1回。notify が行う）', j.cron.nightly ? usageAgo(j.cron.nightly, j.now) : 'まだ確認できていません'],
         ['Slack通知の送り先', j.slack.configured ? j.slack.name : '未設定']])));
       body.appendChild(sec('件数・システム', kv([
         ['予定 / 繰り返し業務 / ToDo / 日報', j.counts.events + ' / ' + j.counts.series + ' / ' + j.counts.todos + ' / ' + j.counts.memos],
@@ -1331,13 +1331,14 @@
     var m = S.summary;
     if (SHARE || !m || m.month !== S.year + '-' + pad(S.month) || !m.people || !m.people.length) return null;
     var wid = S.view === 'team' ? whoId() : S.me.user.id;
-    var who = S.view === 'team' && !wid ? '全社員' : wid === S.me.user.id ? '自分' : whoName() + 'さん';
+    var who = S.view === 'team' ? '全社員' : '自分'; // 業務版は、選んだ人に関係なく全社員（選んだ人の行を目立たせる）
     var tagDays = function (p, tag) { var t = p.by_tag.filter(function (x) { return x.tag === tag; })[0]; return t ? t.days : 0; };
     var rows = m.people.map(function (p) {
       var other = p.by_tag.filter(function (x) { return x.tag !== '有給' && x.tag !== '欠勤' && x.days > 0; }).map(function (x) { return x.tag + ' ' + fmtDays(x.days); }).join('・');
       var abs = tagDays(p, '欠勤');
       var pick = S.view === 'team' && !SHARE ? function () { selectWho(String(p.id)); } : null; // 業務版では、行を押すと「表示する人」でその人を選んだときと同じ
-      return el('tr', { class: (p.id === S.me.user.id && m.people.length > 1 ? 'me' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null,
+      var sel = S.view === 'team' && wid && p.id === wid; // 「表示する人」で選んでいる人
+      return el('tr', { class: (p.id === S.me.user.id && m.people.length > 1 ? 'me' : '') + (sel ? ' sel' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null, 'aria-current': sel ? 'true' : null,
         title: pick ? (p.id === S.me.user.id ? '押すと、自分の予定だけを表示' : '押すと、' + p.name + 'さんの予定だけを表示') : null,
         onclick: pick, onkeydown: pick ? function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } } : null },
         el('th', { scope: 'row', text: p.name }),
@@ -3457,9 +3458,8 @@
     };
     return el('div', { class: 'cron-cmds' },
       el('h3', { text: 'cron に登録するコマンド' }),
-      el('p', { class: 'hint', text: 'サーバーパネルの「Cron設定」（スターサーバーなら、サーバー管理ツールの「Cron設定」）に、次の2つを登録します。このサーバーでの本当の場所なので、そのまま貼り付けられます。' }),
-      row('Slack の通知・自動バックアップ', '10分おき（分: */10　時・日・月・曜日: *）', c.notify),
-      row('繰り返し業務を先の月まで作る', '毎日 0:30（分: 30　時: 0　日・月・曜日: *）', c.nightly),
+      el('p', { class: 'hint', text: 'サーバーパネルの「Cron設定」（スターサーバーなら、サーバー管理ツールの「Cron設定」）に、次の1つを登録します。このサーバーでの本当の場所なので、そのまま貼り付けられます。Slack の通知のほか、自動バックアップと、繰り返し業務を先の月まで作る処理も、これが1日1回まとめて行います（ほかの cron は要りません）。' }),
+      row('Slack の通知・自動バックアップ・繰り返し業務', '10分おき（分: */10　時・日・月・曜日: *）', c.notify),
       el('p', { class: 'hint', text: '先頭の ' + c.php + ' は、このサーバーで動いている PHP の版から作った候補です。Cron設定の画面に、PHP のパスの書き方の例があれば、そちらに合わせてください。登録して10分ほどたったら、上の「最新の状態を見る」で、cron が動いた日時が出るか確かめます。' }));
   }
 

@@ -287,6 +287,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ms-table td.work { color: var(--work); font-weight: 700; } .ms-table td.off { color: var(--off); font-weight: 700; }
 .ms-table td.absent { color: var(--danger); font-weight: 700; }
 .ms-table tr.me { background: var(--surface-2); }
+.ms-table tr.sel { background: var(--work-soft); box-shadow: inset 3px 0 0 var(--work); } /* 「表示する人」で選んでいる人 */
 
 
 /* 業務版: 表示する人の切り替え */

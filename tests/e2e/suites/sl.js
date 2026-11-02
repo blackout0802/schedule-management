@@ -62,7 +62,7 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
   const refresh = async () => { await a.click('#set-slack button:has-text("最新の状態を見る")'); await a.waitForTimeout(400); };
   await a.goto(BASE + 'index.php'); await a.waitForSelector('.cal'); await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-slack #slack-sched-time');
   const cronCmds = await a.locator('#set-slack .cron-cmds input.cron-cmd').evaluateAll(xs => xs.map(x => x.value));
-  ok('cron に登録するコマンドが、このサーバーの本当の場所で出る（notify と nightly）', cronCmds.length === 2 && /^\/usr\/bin\/php\d+\.\d+ \/.+\/bin\/cron\.php notify$/.test(cronCmds[0]) && cronCmds[1].endsWith('/bin/cron.php nightly') && cronCmds[0].includes(process.env.E2E_APP || '/app/'), cronCmds);
+  ok('cron に登録するコマンドが、このサーバーの本当の場所で、1つだけ出る（notify。繰り返し業務も、これが1日1回行う）', cronCmds.length === 1 && /^\/usr\/bin\/php\d+\.\d+ \/.+\/bin\/cron\.php notify$/.test(cronCmds[0]) && cronCmds[0].includes(process.env.E2E_APP || '/app/'), cronCmds);
   await a.locator('#set-slack .cron-cmds').screenshot({ path: 'cron-cmds.png' });
   ok('Slack の設定に「時刻を指定してテスト送信」がある（初めは、5分後の時刻が入っている）', (await a.locator('#set-slack .slack-sched > h3').innerText()).includes('時刻を指定してテスト送信') && /^\d{2}:\d{2}$/.test(await a.inputValue('#slack-sched-time')));
   const at = new Date(Date.now() + 10 * 60000); at.setSeconds(0, 0);
