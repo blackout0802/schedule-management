@@ -1331,14 +1331,18 @@
     var m = S.summary;
     if (SHARE || !m || m.month !== S.year + '-' + pad(S.month) || !m.people || !m.people.length) return null;
     var wid = S.view === 'team' ? whoId() : S.me.user.id;
-    var who = S.view === 'team' ? '全社員' : '自分'; // 業務版は、選んだ人に関係なく全社員（選んだ人の行を目立たせる）
+    // 業務版は、選んだ人に関係なく全社員（選んだ人の行を目立たせる。行を押して、すぐ切り替えられる）。
+    // スマホの幅では、カレンダーを1画面に収めるため、人を選んでいるときは、その人の行だけ
+    var onlySel = S.view === 'team' && wid && isPhone();
+    var who = S.view !== 'team' ? '自分' : !onlySel ? '全社員' : wid === S.me.user.id ? '自分' : whoName() + 'さん';
     var tagDays = function (p, tag) { var t = p.by_tag.filter(function (x) { return x.tag === tag; })[0]; return t ? t.days : 0; };
-    var rows = m.people.map(function (p) {
+    var people = m.people.filter(function (p) { return !onlySel || p.id === wid; });
+    var rows = people.map(function (p) {
       var other = p.by_tag.filter(function (x) { return x.tag !== '有給' && x.tag !== '欠勤' && x.days > 0; }).map(function (x) { return x.tag + ' ' + fmtDays(x.days); }).join('・');
       var abs = tagDays(p, '欠勤');
       var pick = S.view === 'team' && !SHARE ? function () { selectWho(String(p.id)); } : null; // 業務版では、行を押すと「表示する人」でその人を選んだときと同じ
       var sel = S.view === 'team' && wid && p.id === wid; // 「表示する人」で選んでいる人
-      return el('tr', { class: (p.id === S.me.user.id && m.people.length > 1 ? 'me' : '') + (sel ? ' sel' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null, 'aria-current': sel ? 'true' : null,
+      return el('tr', { class: (p.id === S.me.user.id && people.length > 1 ? 'me' : '') + (sel ? ' sel' : '') + (pick ? ' pick' : ''), tabindex: pick ? '0' : null, 'aria-current': sel ? 'true' : null,
         title: pick ? (p.id === S.me.user.id ? '押すと、自分の予定だけを表示' : '押すと、' + p.name + 'さんの予定だけを表示') : null,
         onclick: pick, onkeydown: pick ? function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } } : null },
         el('th', { scope: 'row', text: p.name }),
@@ -1349,7 +1353,7 @@
         el('td', { class: 'etc', text: other || '—' }));
     });
     return el('section', { class: 'month-sum', 'aria-label': S.month + '月の出勤日と休みの日数' },
-      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' + (S.view === 'team' && m.people.length > 1 ? '　行を押すと、その人の予定だけを表示' : '') }),
+      el('h3', null, S.month + '月のまとめ（' + who + '）', el('span', { class: 'ms-biz', text: '営業日 ' + fmtDays(m.biz_days) + '（土日祝・会社の休業日を除く）' + (S.view === 'team' && people.length > 1 ? '　行を押すと、その人の予定だけを表示' : '') }),
         S.view === 'team' && wid ? el('button', { class: 'btn small', type: 'button', text: '全社に戻す', onclick: function () { selectWho('all'); } }) : null),
       el('div', { class: 'scroll-x' }, el('table', { class: 'ms-table' },
         el('thead', null, el('tr', null, ['名前', '出勤日', '休み', '有給', '欠勤', 'その他の休み'].map(function (h) { return el('th', { scope: 'col', text: h }); }))),
