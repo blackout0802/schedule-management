@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """サーバーへ反映するファイルを、フォルダにそろえる（GitHub Actions の自動反映が使う）。
 
-  python3 tools/stage_deploy.py DIR      → public / src / sql / bin のアプリのファイルを、フォルダ DIR にコピーする
+  python3 tools/stage_deploy.py DIR      → 一番上の .htaccess と、public / src / sql / bin のアプリのファイルを、フォルダ DIR にコピーする
 
-入れるもの: public / src / sql / bin
+入れるもの: 一番上の .htaccess（config.php などを外から見えなくする。無ければ止める）、public / src / sql / bin
 入れないもの: config.php、install.php、app_path.php、.htaccess（ドットで始まるファイル）、tests、docs（サーバー固有・不要なもの）
 """
 import os
@@ -23,6 +23,11 @@ stage = os.path.abspath(sys.argv[1])
 
 def targets():
     """反映に入れるファイル（サーバーのアプリのフォルダからの相対パス）"""
+    # 反映から外れると、サーバーからも消えて、config.php が外から見えてしまう。必ず入れる
+    top_htaccess = os.path.join(root, '.htaccess')
+    if not os.path.isfile(top_htaccess):
+        sys.exit('一番上の .htaccess がありません。反映は行いませんでした。')
+    yield top_htaccess, '.htaccess'
     for top in ('public', 'src', 'sql', 'bin'):
         for d, _, files in os.walk(os.path.join(root, top)):
             for f in sorted(files):

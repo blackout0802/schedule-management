@@ -199,7 +199,7 @@ Slack の通知に付く「スケジュールを開く」は、会社用リン�
 
 zip を使わずに、GitHub にプッシュしたあと、テストがすべて成功したら、サーバーへ**自動で**反映する仕組みです（`.github/workflows/test.yml` の `deploy`）。
 
-- 反映するのは、`public`・`src`・`sql`・`bin` の中の、アプリのファイルだけです（`tools/stage_deploy.py` がそろえます）。`config.php`・`data`・`.htaccess` には触りません。
+- 反映するのは、一番上の `.htaccess` と、`public`・`src`・`sql`・`bin` の中の、アプリのファイルだけです（`tools/stage_deploy.py` がそろえます）。`config.php`・`data`、各フォルダの `.htaccess` には触りません。反映のあと、中のファイルが外から見えないことと、SSL 証明書の更新の経路が開いていることを、自動で確かめます。
 - 反映するのは、作業ブランチ（`claude/intelligent-brahmagupta-qhk963`）へのプッシュのときだけです。テストが1つでも失敗すると、反映しません。
 - データベースの変更は、画面を開いたときに自動で行われます。
 
@@ -209,15 +209,14 @@ GitHub のリポジトリ → **Settings → Secrets and variables → Actions �
 
 | 名前 | 入れるもの | 例 |
 |---|---|---|
-| `FTP_SERVER` | FTP のホスト名 | `ss912764.stars.ne.jp` |
-| `FTP_USERNAME` | FTP のユーザー名 | `ss912764` |
+| `FTP_USERNAME` | FTP のユーザー名（アプリのフォルダ専用のアカウントを勧めます。主のアカウントはサーバー全体を書き換えられます） | `ss912764` |
 | `FTP_PASSWORD` | FTP のパスワード | （FileZilla のサイトマネージャーと同じもの） |
 | `FTP_SERVER_DIR` | サーバー側の、アプリのフォルダ（`config.php` と `public` フォルダがある場所）。**最後の `/` は、付け忘れても、自動で補う** | `/schedule-management.skym.ink/public_html/` |
 
 - パスワードは、チャットやファイルには書かず、Secrets の画面にだけ入れてください。登録した値は、あとから見ることはできません（上書きだけできます）。
 - **`FTP_SERVER_DIR` は、`public` フォルダの「1つ上」です**（画面のURLが `…/public/index.php` のとき、`index.php` がある `public` フォルダそのものではありません）。`public` フォルダの中を指すと、ファイルが `public/public/…`・`public/src/…` に入り、画面が新しくならず、外から見えてはいけないファイルが公開されてしまいます（このときは、反映を止めます）。
 - `FTP_SERVER_DIR` は、FileZilla の右側（サーバー側）で、`config.php`・`public`・`src`・`sql`・`bin`・`data` が並んでいるフォルダを開いたときの、上のほうの「リモートサイト」に出るパスです。
-- 接続は、FileZilla と同じ「使用可能なら明示的な FTP over TLS」（FTPS）です。証明書のエラーが出たときは、`deploy` の `security: loose` を足します。
+- 接続先は、ワークフローに `sv10007.star.ne.jp` と書いてあります（証明書を確かめて接続するため。`ss912764.stars.ne.jp` では証明書が一致しません。サーバーを移ったときは、ここも直します）。Secrets の `FTP_SERVER` は使わなくなりました。
 
 ### うまくいったかの確認
 

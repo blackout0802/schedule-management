@@ -1897,6 +1897,15 @@ ensure_schema();
 check('更新: 古いデータベースに family_of の列が足される', (function () { try { db()->query('SELECT family_of FROM users LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
 check('更新: 更新したあとに、家族を招待できる', (function () use ($a) { [$id] = family_add($a, '更新後の家族', 'after-upgrade@example.com'); return family_delete($a, $id); })(), true);
 
+// ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
+$stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
+exec('python3 ' . escapeshellarg(__DIR__ . '/../tools/stage_deploy.py') . ' ' . escapeshellarg($stageDir) . ' 2>&1', $stageOut, $stageRc);
+check('反映: そろえられる', $stageRc, 0);
+check('反映: 一番上の .htaccess が入り、中身は全部を断る', [is_file("$stageDir/.htaccess"), strpos((string)@file_get_contents("$stageDir/.htaccess"), 'Require all denied') !== false], [true, true]);
+check('反映: SSL の更新の経路だけを通す', strpos((string)@file_get_contents("$stageDir/.htaccess"), '/\\.well-known/acme-challenge/[A-Za-z0-9_-]+$') !== false, true);
+check('反映: config.php と install.php を入れない', [is_file("$stageDir/config.php"), is_file("$stageDir/public/install.php")], [false, false]);
+exec('rm -rf ' . escapeshellarg($stageDir));
+
 echo "\n結果: 成功 $pass / 失敗 $fail\n";
 // 後片付け
 $rm = function ($p) use (&$rm) { if (is_dir($p) && !is_link($p)) { foreach (scandir($p) as $f) { if ($f !== '.' && $f !== '..') { $rm($p . '/' . $f); } } @rmdir($p); } else { @unlink($p); } };

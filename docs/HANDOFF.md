@@ -1,6 +1,6 @@
 # 引き継ぎメモ（スケジュール管理アプリ）
 
-新しいセッションの最初に、これを読んでください。最終更新: 2026-11-02 / 現在の版: **v1.96.0**（本番に反映済み・ユーザー確認ずみ。作業ブランチから PR を作り、デプロイ対象のブランチ `claude/intelligent-brahmagupta-qhk963` へ取り込むと、本番に出る）
+新しいセッションの最初に、これを読んでください。最終更新: 2026-11-02 / 現在の版: **v1.96.1**（v1.96.0 までは本番に反映済み・ユーザー確認ずみ。作業ブランチから PR を作り、デプロイ対象のブランチ `claude/intelligent-brahmagupta-qhk963` へ取り込むと、本番に出る）
 
 ## 1. アプリと作業場所
 
@@ -36,9 +36,9 @@
 ## 3. 自動デプロイ（GitHub Actions）
 
 - `.github/workflows/test.yml`。ブランチに push すると、unit（PHP 7.4/8.1/8.3）・mariadb・compat・e2e が走り、**すべて通ったときだけ** `deploy` ジョブが FTPS でサーバーに反映する。
-- 使うのは SamKirkland/FTP-Deploy-Action@v4.3.5。Secrets は `FTP_SERVER` `FTP_USERNAME` `FTP_PASSWORD` `FTP_SERVER_DIR`（ユーザーが登録済み）。
+- 使うのは SamKirkland/FTP-Deploy-Action（v4.3.5 のコミットで固定）。接続先はワークフローの `sv10007.star.ne.jp` で、`security: strict`（証明書を確かめる。`ss912764.stars.ne.jp` は証明書が一致しない）。Secrets は `FTP_USERNAME` `FTP_PASSWORD` `FTP_SERVER_DIR`（ユーザーが登録済み。`FTP_SERVER` は使わなくなった）。
 - `FTP_SERVER_DIR` は **public の親フォルダ**: `/skym.ink/public_html/schedule-management.skym.ink/`。末尾の `/` はワークフローが補う。`/public/` で終わる指定は、ガードが止める。
-- 反映するのは `public/ src/ sql/ bin/`（`tools/stage_deploy.py stage` で 38 ファイルをそろえる）。除外: `install.php` `app_path.php` ドットファイル `config.php`。
+- 反映するのは一番上の `.htaccess` と `public/ src/ sql/ bin/`（`tools/stage_deploy.py stage`）。除外: `install.php` `app_path.php` そのほかのドットファイル `config.php`。一番上の `.htaccess` は v1.96.1 から反映する（SSL 証明書の更新の経路 `/.well-known/acme-challenge/` を通すため。**反映から外すとサーバーからも消えて `config.php` が見えるので、外さない**）。`deploy` ジョブが、反映のあとに中のファイルが見えないことを確かめる。
 - サーバーの `.ftp-deploy-sync-state-schedule.json` は消さない。ローカルで消したファイルは、サーバーからも消える。
 - この作業環境からは、FTP も本番サイトも見えない（HTTPS のプロキシのみ）。Secrets の読み書きもできない。本番の確認はユーザーに頼む。
 - zip でのシステム更新は、v1.77.0 で廃止済み（`update.php` `updater.php` を削除）。
