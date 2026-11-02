@@ -407,6 +407,10 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .slack-result.ok, .slack-sched-st.ok { background: var(--off-soft); color: var(--off); font-weight: 700; }
 .slack-result.ng, .slack-sched-st.ng { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
 .slack-sched-st { margin-top: 6px; }
+.cron-cmds { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.cron-row { margin-top: 10px; }
+.cron-when { margin-bottom: 4px; font-size: 13px; }
+.cron-cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 
 /* ---- Slack通知の時間・文面 ---- */
 .slack-cfg .slack-sec { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }

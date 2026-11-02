@@ -3440,7 +3440,27 @@
         el('button', { class: 'btn', type: 'button', text: p ? '予約し直す' : '予約する', disabled: !st.configured, onclick: function () { go('slack_test_schedule', { time: timeVal(tm) }); } }),
         el('button', { class: 'btn small ghost', type: 'button', text: '最新の状態を見る', onclick: function () { api('slack_status').then(function (j) { redraw(j.slack); }).catch(fail); } })),
       msg, rows,
-      el('p', { class: 'hint', text: 'cron（notify）が最後に動いた日時: ' + (sc.cron_at ? md(sc.cron_at) : 'まだ記録がありません（cron が設定されていない可能性があります）') }));
+      el('p', { class: 'hint', text: 'cron（notify）が最後に動いた日時: ' + (sc.cron_at ? md(sc.cron_at) : 'まだ記録がありません（cron が設定されていない可能性があります）') }),
+      cronCmdBox(st.cron));
+  }
+  /* サーバーの cron に登録するコマンド（このサーバーでの本当の場所。コピーして、サーバーパネルの「Cron設定」に貼る） */
+  function cronCmdBox(c) {
+    if (!c) return null;
+    var row = function (when, timing, cmd) {
+      var input = el('input', { class: 'cron-cmd', readonly: true, value: cmd, 'aria-label': when + 'のコマンド', onclick: function () { this.select(); } });
+      return el('div', { class: 'cron-row' },
+        el('div', { class: 'cron-when' }, el('b', { text: when }), el('span', { class: 'hint', text: '　' + timing })),
+        el('div', { class: 'row-inline' }, input, el('button', { class: 'btn small', type: 'button', text: 'コピー', onclick: function () {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(cmd).then(function () { toast('コピーしました'); }, function () { input.select(); toast('選択しました。Ctrl + C でコピーしてください'); });
+          else { input.select(); toast('選択しました。Ctrl + C でコピーしてください'); }
+        } })));
+    };
+    return el('div', { class: 'cron-cmds' },
+      el('h3', { text: 'cron に登録するコマンド' }),
+      el('p', { class: 'hint', text: 'サーバーパネルの「Cron設定」（スターサーバーなら、サーバー管理ツールの「Cron設定」）に、次の2つを登録します。このサーバーでの本当の場所なので、そのまま貼り付けられます。' }),
+      row('Slack の通知・自動バックアップ', '10分おき（分: */10　時・日・月・曜日: *）', c.notify),
+      row('繰り返し業務を先の月まで作る', '毎日 0:30（分: 30　時: 0　日・月・曜日: *）', c.nightly),
+      el('p', { class: 'hint', text: '先頭の ' + c.php + ' は、このサーバーで動いている PHP の版から作った候補です。Cron設定の画面に、PHP のパスの書き方の例があれば、そちらに合わせてください。登録して10分ほどたったら、上の「最新の状態を見る」で、cron が動いた日時が出るか確かめます。' }));
   }
 
   /* ---------- Slack通知の時間・文面（管理者） ---------- */
