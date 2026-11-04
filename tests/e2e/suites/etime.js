@@ -11,6 +11,13 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('業務の分類の初期値は「個人作業」', (await p.inputValue('.modal select[name=tag]')) === '個人作業', await p.inputValue('.modal select[name=tag]'));
   await p.click('.modal label.off'); ok('休みにすると、分類は、休みの先頭（有給）', (await p.inputValue('.modal select[name=tag]')) === '有給');
   await p.click('.modal label.work'); ok('休みから業務に戻すと、分類は、また「個人作業」', (await p.inputValue('.modal select[name=tag]')) === '個人作業', await p.inputValue('.modal select[name=tag]'));
+  ok('業務の予定では、分類の欄は出ない。休みでは出る（有給などを選ぶ）', !(await p.locator('.modal select[name=tag]').isVisible()) && await (async () => { await p.click('.modal label.off'); const v = await p.locator('.modal select[name=tag]').isVisible(); await p.click('.modal label.work'); return v; })());
+  for (const [w, h] of [[1920, 870], [1366, 650]]) { // スクロールせずに、予定の入力の全部が見える（保存ボタンまで）
+    await p.setViewportSize({ width: w, height: h }); await p.waitForTimeout(200);
+    const fit = await p.evaluate(() => { const r = document.querySelector('.modal').getBoundingClientRect(), s = document.querySelector('.modal button[type=submit]').getBoundingClientRect(); return { bottom: Math.round(r.bottom), save: Math.round(s.bottom), vh: innerHeight }; });
+    ok('予定の追加は、' + w + '×' + h + ' の画面で、スクロールせずに保存ボタンまで見える', fit.bottom <= fit.vh && fit.save <= fit.vh, fit);
+  }
+  await p.setViewportSize({ width: 1280, height: 900 });
   // 終了時刻の自動入力
   await setStart('9:30'); ok('開始を入れると、終了に30分後が入る（9:30 → 10:00）', (await p.inputValue(S)) === '09:30' && (await p.inputValue(E)) === '10:00', [await p.inputValue(S), await p.inputValue(E)]);
   await setStart('10:15'); ok('開始を変えると、自動で入れた終了も、ついてくる（10:15 → 10:45）', (await p.inputValue(E)) === '10:45', await p.inputValue(E));

@@ -1647,13 +1647,13 @@
     var st = timeInput('start_time', ev ? ev.start_time : '');
     var et = timeInput('end_time', ev ? ev.end_time : '');
     autoEndTime(st, et);
-    var note = el('textarea', { name: 'note', maxlength: '500' });
+    var note = el('textarea', { name: 'note', maxlength: '500', rows: '2' });
     note.value = ev ? ev.note : '';
     var impCb = el('input', { type: 'checkbox', name: 'important', checked: !!(ev && ev.important), style: 'width:auto' });
     // ToDoリストにも入れる（進捗を選ぶ）。ToDoから置いた予定は、下の「ToDoの状態」で変えるので、ここには出さない
     var todoSel = el('select', { name: 'todo_status', 'aria-label': 'ToDoリストの進捗' },
       [['', '入れない'], ['todo', '未着手'], ['doing', '進行中'], ['hold', '保留'], ['done', '完了']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
-    var todoLabel = el('label', { class: 'todo-opt' }, 'ToDoリストにも入れる（進捗）', todoSel,
+    var todoLabel = el('label', { class: 'todo-opt' }, 'ToDoにも入れる', todoSel,
       ev && ev.recurring ? el('span', { class: 'hint', text: 'この回だけが ToDo になります（保存すると、この回は、あとでルールを変えても変わらなくなります）。' }) : null);
     var hint = el('p', { class: 'hint' });
     var famTouched = false;
@@ -1702,7 +1702,7 @@
       tag.textContent = '';
       tags.forEach(function (t) { tag.appendChild(el('option', { value: t, text: t, selected: t === cur })); });
       if (k === 'work' && tags.indexOf(cur) < 0) tag.value = tags.indexOf('個人作業') >= 0 ? '個人作業' : tags[0]; // 業務の分類の初期値は「個人作業」（休みから業務に切り替えたときも）
-      tagLabel.hidden = k === 'private';
+      tagLabel.hidden = k !== 'off'; // 業務の予定の分類は、画面に出さない（新しい予定は「個人作業」、登録済みの予定は、いまの分類のまま保存）。休みは、有給などを選ぶ
       syncFam();
       syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
@@ -1713,6 +1713,7 @@
         ownerLabel.hidden = true; todoLabel.hidden = true; repeatHint.hidden = true; tagLabel.hidden = true; famLabel.hidden = true; famNote.hidden = true;
         hint.textContent = '家族のカレンダーに表示されます（' + (S.me.family_owner_name || '') + 'さんと、ほかの家族にも見えます）。';
       }
+      tagRow.hidden = tagLabel.hidden && ownerLabel.hidden; // 業務の予定では、分類も休みを取る人も出ないので、行ごと隠す
       if (k === 'off' && !title.value) title.setAttribute('placeholder', '休み（空のままで可）');
       else if (title.value || !(ev && ev.kind === 'off')) title.removeAttribute('placeholder');
     }
@@ -1768,15 +1769,14 @@
       for (var i = 0; i < form.elements.length; i++) { var f = form.elements[i]; if (f.name) a.push(f.name + '=' + (f.type === 'checkbox' || f.type === 'radio' ? f.checked : f.value)); }
       return a.join('&');
     }
-    var form = el('form', { class: 'form', onsubmit: save },
+    var tagRow = el('div', { class: 'row' }, tagLabel, ownerLabel);
+    var form = el('form', { class: 'form ev-form', onsubmit: save }, // 予定の入力は、スクロールせずに全部が見えるように詰める（日付と時刻を1行に、★と ToDo を1行に）
       FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
       !(isNew || isOwner) ? el('p', { class: 'hint', style: 'margin:-6px 0 0', text: '種類を変えられるのは、予定の持ち主だけです。' }) : null,
       el('label', null, '件名', title),
-      el('div', { class: 'row' }, tagLabel, ownerLabel),
-      el('div', { class: 'row' }, el('label', null, '開始日', start), el('label', null, '終了日', end)),
-      el('div', { class: 'row' }, el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
-      el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする（カレンダーで目立たせる）'),
-      todoLabel,
+      tagRow,
+      el('div', { class: 'row ev-when' }, el('label', null, '開始日', start), el('label', null, '終了日', end), el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
+      el('div', { class: 'ev-opts' }, el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする'), todoLabel),
       el('label', null, 'メモ（任意）', note),
       famLabel,
       famNote,
@@ -1790,7 +1790,7 @@
         ev ? el('button', { class: 'btn', type: 'button', text: '複製', title: 'この予定を、他の日にも作る', onclick: function () { ov.close(); openDuplicateDialog(ev); } }) : null,
         ev && !FA && canReturnToTodo(ev) ? el('button', { class: 'btn', type: 'button', text: 'ToDoに戻す', title: '日付のない ToDo に戻す', onclick: function () { ov.close(); returnEventToTodo(ev.id, null, false); } }) : null,
         el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
-    var ov = openModal(isNew ? '予定を追加' : '予定を編集', form);
+    var ov = openModal(isNew ? '予定を追加' : '予定を編集', form, true);
     if (ev) tag.value = ev.tag;
     syncKind();
     if (ev) tag.value = ev.tag || tag.value;
@@ -2756,6 +2756,38 @@
     var b = memoCalBlock(nh, memoCalOn(memoCal.next).filter(function (e) { return !onCur[e.id]; }));
     return a || b;
   }
+  /* 日報の当日・次回出勤日の項目のうち、カレンダーに無い行を、その日の業務の予定として、まとめて入れる（分類は「個人作業」）。
+     取り消し線の行は、完了の予定として入れる（ToDo を完了で作るので、カレンダーでも取り消し線）。「日報へ」で入れた ToDo の行は、その ToDo をその日に置く。
+     入れた行は、予定とつながる（data-ev）。転記された行（data-tr）は、当日の行の写しなので入れない */
+  function memoToCalendar() {
+    if (!memoEd) return;
+    var jobs = [];
+    [['cur', mHead('cur')], ['next', mHead('next')]].forEach(function (x) {
+      var h = x[1], date = h && h.getAttribute('data-date');
+      if (!h || !date) return;
+      mBlock(h).items.forEach(function (d) {
+        var text = d.textContent.trim();
+        if (!text || d.hasAttribute('data-ev') || d.hasAttribute('data-tr')) return;
+        var td = d.getAttribute('data-todo');
+        if (td && d.getAttribute('data-st') === 'done') return; // 完了した ToDo は、カレンダーに置けない
+        jobs.push({ d: d, date: date, text: text.slice(0, 100), done: mStruck(d), todo: td ? +td : 0 });
+      });
+    });
+    if (!jobs.length) { toast('カレンダーに無い行は、ありません'); return; }
+    if (!window.confirm(jobs.length + '件を、カレンダーに入れます（その日の業務の予定。取り消し線の行は、完了として）。\n\n' + jobs.slice(0, 8).map(function (j) { return '・' + (+j.date.slice(5, 7)) + '/' + (+j.date.slice(8, 10)) + ' ' + j.text; }).join('\n') + (jobs.length > 8 ? '\n…ほか' + (jobs.length - 8) + '件' : ''))) return;
+    var n = 0;
+    var one = function (j) {
+      var call = j.todo ? api('todo_schedule', { body: { id: j.todo, date: j.date } }).then(function (r) { return { id: r.event_id, done: false }; })
+        : api('event_save', { body: { kind: 'work', title: j.text, tag: '個人作業', start: j.date, end: j.date, todo_status: j.done ? 'done' : '' } }).then(function (r) { return { id: r.event.id, done: j.done }; });
+      return call.then(function (r) {
+        j.d.setAttribute('data-ev', String(r.id)); j.d.setAttribute('data-st', r.done ? 'done' : 'todo'); j.d.removeAttribute('data-man'); n++; // これからは、カレンダーの予定とつながる
+      });
+    };
+    jobs.reduce(function (pr, j) { return pr.then(function () { return one(j); }); }, Promise.resolve()).then(function () {
+      toast(n + '件を、カレンダーに入れました');
+    }).catch(fail).then(function () { memoChanged(); load(); loadTodos(); if (S.memo) memoFetchCal(S.memo); });
+  }
+
   /* 当日〜次回出勤日の、自分の業務の予定を読んで、日報に合わせる */
   var memoCalSeq = 0;
   function memoFetchCal(info) {
@@ -2884,7 +2916,8 @@
     box.appendChild(el('div', { class: 'memo-bar' },
       tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
       tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
-      tool('テキストでコピー', '文字だけでコピー（取り消し線は線の文字で表す）', function () { copyMemo(true); })));
+      tool('テキストでコピー', '文字だけでコピー（取り消し線は線の文字で表す）', function () { copyMemo(true); }),
+      tool('カレンダーに入れる', '日報の当日・次回出勤日の項目のうち、カレンダーに無い行を、その日の業務の予定として入れる（取り消し線の行は、完了として）', memoToCalendar)));
     box.appendChild(el('div', { class: 'memo-bar' },
       tool('雛形に戻す', '日報を、雛形（標準は、お疲れ様です〜よろしくお願いいたします。「雛形の設定」で、自分の文面にできる）に置き換える', function () {
         if (memoLines(memoEd).length && !window.confirm('いまの日報を、雛形で置き換えます（当日・次回出勤日の項目は空になります）。よろしいですか？')) return;
