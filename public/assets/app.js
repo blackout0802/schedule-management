@@ -1808,15 +1808,6 @@
     }).catch(fail);
   }
   var todoSeq = 0;
-  /* ToDoを完了にしたら、日報の当日の項目にも、取り消し線つきで入れる（すでに日報に入っていれば、取り消し線にするだけ。syncMemoTodos が行う）。
-     「いま新しく完了になったもの」だけが対象（前回の読み込みで、完了に入っていなかったもの）。業務のToDoだけ（日報は業務） */
-  function memoAddDone() {
-    var seen = S.doneSeen || (S.doneSeen = {}), prev = seen[S.view], now = {};
-    (S.done || []).forEach(function (t) { now[t.id] = true; });
-    seen[S.view] = now;
-    if (!prev || S.view !== 'team' || !memoEd || !S.memo) return;
-    S.done.forEach(function (t) { if (!prev[t.id] && t.kind === 'work') memoAddTodo(t, 'cur', true); });
-  }
   function applyTodos(j) { S.todos = j.todos; S.done = j.done || []; S.others = j.others || { todos: [], done: [] }; S.revTd = j.rev; }
 
   /* dragId を targetId の前（または後）へ。targetId が null なら末尾へ */
@@ -1842,7 +1833,6 @@
 
   /* 細い欄（カレンダーの横）と、リストタブの管理画面の両方を描く */
   function renderTodo() {
-    memoAddDone(); // 完了になったToDoは、日報にも（取り消し線つきで）入れる
     var tp = document.getElementById('todo-panel');
     if (tp && !tp.classList.contains('away') && !S.drag) renderTodoPanel(tp);
     var side = document.getElementById('todo');
@@ -2399,7 +2389,7 @@
     return frag;
   }
   /* 保存された日報の本文 → 編集欄に入れる要素。行の印（日付の行・転記・ToDo）は、戻す */
-  var MEMO_ATTRS = ['data-md', 'data-date', 'data-tr', 'data-todo', 'data-st', 'data-auto'];
+  var MEMO_ATTRS = ['data-md', 'data-date', 'data-tr', 'data-todo', 'data-st', 'data-auto', 'data-ev', 'data-man'];
   function memoBuild(html) {
     var doc = new DOMParser().parseFromString(html || '', 'text/html'), frag = document.createDocumentFragment();
     Array.prototype.forEach.call(doc.body.childNodes, function (n) {
@@ -2432,6 +2422,8 @@
           if (/^\d+$/.test(td || '')) mt = { todo: td, st: n.getAttribute('data-st') || '' };
           if (md === 'cur' || md === 'next') { mt = mt || {}; mt.md = md; mt.date = n.getAttribute('data-date') || ''; mt.auto = n.getAttribute('data-auto') || ''; }
           if (n.getAttribute('data-tr') === '1') { mt = mt || {}; mt.tr = 1; }
+          if (/^\d+$/.test(n.getAttribute('data-ev') || '') && !md) { mt = mt || {}; mt.ev = n.getAttribute('data-ev'); }
+          if (n.getAttribute('data-man') === '1' && !md) { mt = mt || {}; mt.man = 1; }
         }
         meta = mt;
       }
@@ -2451,6 +2443,8 @@
     var a = '';
     if (/^\d+$/.test(m.todo || '')) { a += ' data-todo="' + m.todo + '"'; if (/^(todo|doing|hold|done)$/.test(m.st)) a += ' data-st="' + m.st + '"'; }
     if (m.tr) a += ' data-tr="1"';
+    if (/^\d+$/.test(m.ev || '')) a += ' data-ev="' + m.ev + '"';
+    if (m.man) a += ' data-man="1"';
     return a;
   }
   function linesToSaveHtml(lines) {
@@ -2525,6 +2519,8 @@
       var c = document.createElement('div');
       c.textContent = d.textContent.trim();
       if (d.getAttribute('data-todo')) { c.setAttribute('data-todo', d.getAttribute('data-todo')); c.setAttribute('data-st', d.getAttribute('data-st') || 'todo'); }
+      if (d.getAttribute('data-ev')) c.setAttribute('data-ev', d.getAttribute('data-ev'));
+      if (d.getAttribute('data-man')) c.setAttribute('data-man', '1');
       c.setAttribute('data-tr', '1');
       memoEd.insertBefore(c, blk.ref);
     });
@@ -2548,7 +2544,7 @@
       if (x[0].getAttribute('data-date') === x[1] && x[0].textContent === want) return;
       x[0].setAttribute('data-date', x[1]); x[0].textContent = want; changed = true;
     });
-    if (memoAutoSync()) changed = true;
+    if (memoCalSync()) changed = true;
     if (memoTranscribe()) changed = true;
     memoSig = memoCurSig();
     return changed;
@@ -2637,9 +2633,9 @@
     ['cur', 'next'].forEach(function (k) { var h = mHead(k); if (h) skip = skip.concat(mBlock(h).items); });
     var tmp = document.createElement('div');
     Array.prototype.forEach.call(memoEd.children, function (d) {
-      if (skip.indexOf(d) >= 0 || d.hasAttribute('data-tr') || d.hasAttribute('data-todo')) return;
+      if (skip.indexOf(d) >= 0 || d.hasAttribute('data-tr') || d.hasAttribute('data-todo') || d.hasAttribute('data-ev')) return;
       var c = d.cloneNode(true);
-      ['data-tr', 'data-todo', 'data-st'].forEach(function (a) { c.removeAttribute(a); });
+      ['data-tr', 'data-todo', 'data-st', 'data-ev', 'data-man', 'data-auto'].forEach(function (a) { c.removeAttribute(a); });
       tmp.appendChild(c);
     });
     return linesToSaveHtml(memoLines(tmp));
@@ -2688,52 +2684,72 @@
     });
     return changed;
   }
-  function syncMemoTodos() {
-    if (!memoEd) return;
-    var a = applyTodoState(), b = memoAutoSync();
-    if (a || b) memoChanged();
-  }
+  function syncMemoTodos() { if (memoEd && applyTodoState()) memoChanged(); }
 
-  /* スケジュールに入っている業務のToDoを、日報に自動で入れる（変えたら true）。
-     進行中 = 当日の項目（カレンダーに、先の日付で置いてあるときは、その日付の日報）。
-     未着手 = 日付が決まっているものだけ、その日付の日報（日付 = カレンダーに置いた日。置いていなければ期限日）。
-     保留は入れない。完了は memoAddDone が、取り消し線つきで入れる。
-     一度入れた（または、すでに日報にある）ToDoは、「番号:日付」を当日の見出しの data-auto に控える。日報から消しても、入れ直さない。
-     日報にすでに同じ文言の行があるときも、足さない */
-  var MEMO_AUTO_KEEP = 40;
-  function memoAutoSync() {
-    if (!memoEd || !S.memo || S.view !== 'team' || !S.todos) return false;
-    var ch = mHead('cur'), nh = mHead('next');
-    if (!ch || !nh) return false;
-    var cur = ch.getAttribute('data-date'), next = nh.getAttribute('data-date');
-    if (!cur || !next) return false;
-    var before = ch.getAttribute('data-auto') || '', seen = before.split(',').filter(Boolean), changed = false;
-    S.todos.forEach(function (t) {
-      if (t.kind !== 'work' || t.status === 'hold' || t.status === 'done') return;
-      var start = t.sched || null, key, where = null;
-      if (t.status === 'doing') {
-        key = t.id + ':' + (start || '-');
-        if (!start || start <= cur) where = 'cur'; else if (start <= next) where = 'next';
-      } else {
-        var a = start || t.due || null, b = start ? (t.sched_end || start) : a;
-        if (!a) return;
-        key = t.id + ':' + a;
-        if (a <= cur && cur <= b) where = 'cur'; else if (a <= next && next <= b) where = 'next';
-      }
-      if (!where || seen.indexOf(key) >= 0) return;
-      seen.push(key);
-      var blk = mBlock(where === 'cur' ? ch : nh), title = String(t.title).trim();
-      if (memoEd.querySelector(':scope > div[data-todo="' + String(t.id) + '"]') || blk.items.some(function (d) { return d.textContent.trim() === title; })) return;
+  /* 日報の当日・次回出勤日の項目は、カレンダーの、その日の自分の業務の予定が基準（変えたら true）。
+     memoCal = 当日〜次回出勤日の、自分の業務の予定（memoFetchCal が読む）。
+     予定から入れた行（data-ev）と、以前に自動で入れた ToDo の行（data-todo。data-man の無いもの）は、カレンダーに合わせる:
+     その日の予定に無ければ消し（過去の日の予定が残らない）、あれば残し（ToDo が完了なら取り消し線）、足りなければ足す。
+     自分で書いた行・「日報へ」やドラッグで入れた行（data-man）・転記された行（data-tr）は、触らない。
+     次回出勤日には、当日にもある予定（期間のある予定）は入れない（当日の項目から、取り消し線のないものが転記される） */
+  var memoCal = null;
+  function memoCalOn(date) {
+    return memoCal.events.filter(function (e) { return e.start <= date && e.end >= date; })
+      .sort(function (a, b) { return (a.done ? 1 : 0) - (b.done ? 1 : 0) || (a.start_time || '').localeCompare(b.start_time || '') || a.id - b.id; });
+  }
+  function memoLineSet(d, text, done) {
+    d.textContent = '';
+    if (done) { var sEl = document.createElement('s'); sEl.textContent = text; d.appendChild(sEl); } else d.appendChild(document.createTextNode(text));
+  }
+  function memoCalBlock(h, want) {
+    var changed = false, byId = {}, have = {}, active = document.activeElement === memoEd ? window.getSelection().anchorNode : null;
+    want.forEach(function (e) { byId[e.id] = e; });
+    mBlock(h).items.forEach(function (d) {
+      if (d.hasAttribute('data-tr') || d.hasAttribute('data-man')) return;
+      var ev = d.getAttribute('data-ev'), td = d.getAttribute('data-todo');
+      if (!ev && !td) return; // 自分で書いた行
+      var e = ev ? byId[ev] : null;
+      if (!ev) want.forEach(function (x) { if (!e && x.todo_id === +td && !have[x.id]) e = x; }); // 以前の版で入れた ToDo の行が、今日の予定（カレンダーに置いた ToDo）なら、そのまま予定の行にする
+      if (active && d.contains(active)) { if (e) have[e.id] = true; return; } // 入力中の行は、触らない
+      if (!e || have[e.id]) { d.remove(); changed = true; return; }
+      have[e.id] = true;
+      if (!ev) { d.setAttribute('data-ev', String(e.id)); changed = true; }
+      var st = e.done ? 'done' : 'todo';
+      if ((d.getAttribute('data-st') === 'done') !== !!e.done) { memoLineSet(d, d.textContent.trim() || e.title, e.done); d.setAttribute('data-st', st); changed = true; } // 完了が変わったときだけ、取り消し線を合わせる（自分で付けた線は、そのまま）
+    });
+    var blk = mBlock(h), at = blk.items.length ? blk.after : blk.ref;
+    want.forEach(function (e) {
+      if (have[e.id]) return;
       var d = document.createElement('div');
-      d.setAttribute('data-todo', String(t.id)); d.setAttribute('data-st', t.status || 'todo');
-      d.appendChild(document.createTextNode(t.title));
-      memoEd.insertBefore(d, blk.items.length ? blk.after : blk.ref);
+      d.setAttribute('data-ev', String(e.id));
+      if (e.todo_id) d.setAttribute('data-todo', String(e.todo_id));
+      d.setAttribute('data-st', e.done ? 'done' : 'todo');
+      memoLineSet(d, e.title, e.done);
+      memoEd.insertBefore(d, at);
       changed = true;
     });
-    var joined = seen.slice(-MEMO_AUTO_KEEP).join(',');
-    while (joined.length > 880) { seen.shift(); joined = seen.slice(-MEMO_AUTO_KEEP).join(','); }
-    if (joined !== before) { if (joined) ch.setAttribute('data-auto', joined); else ch.removeAttribute('data-auto'); changed = true; }
     return changed;
+  }
+  function memoCalSync() {
+    if (!memoEd || !memoCal) return false;
+    var ch = mHead('cur'), nh = mHead('next');
+    if (!ch || !nh || ch.getAttribute('data-date') !== memoCal.cur || nh.getAttribute('data-date') !== memoCal.next) return false; // 読んだ予定の日付と、日報の日付が違う（読み直しを待つ）
+    var cur = memoCalOn(memoCal.cur), onCur = {};
+    cur.forEach(function (e) { onCur[e.id] = true; });
+    var a = memoCalBlock(ch, cur);
+    var b = memoCalBlock(nh, memoCalOn(memoCal.next).filter(function (e) { return !onCur[e.id]; }));
+    return a || b;
+  }
+  /* 当日〜次回出勤日の、自分の業務の予定を読んで、日報に合わせる */
+  var memoCalSeq = 0;
+  function memoFetchCal(info) {
+    if (!info || !info.cur || !info.next || !S.me || FAMACCT) return;
+    var seq = ++memoCalSeq;
+    api('events', { params: { from: info.cur, to: info.next, view: 'team', who: String(S.me.user.id) }, quiet: true }).then(function (j) {
+      if (seq !== memoCalSeq) return; // 古い答え
+      memoCal = { cur: info.cur, next: info.next, events: (j.events || []).filter(function (e) { return e.kind === 'work' && e.owner_id === S.me.user.id && !e.deleted; }) };
+      if (memoCalSync()) memoChanged();
+    }).catch(function () { /* 読めなかったときは、次の機会に */ });
   }
 
   /* ToDoを、日報に1行入れる。which = 'cur'（当日・初期値）か 'next'（次回出勤日）。完了なら取り消し線つき */
@@ -2745,8 +2761,8 @@
     var has = quiet ? !!memoEd.querySelector(':scope > div[data-todo="' + String(t.id) + '"]') : blk.items.some(function (d) { return d.getAttribute('data-todo') === String(t.id); });
     if (has) { if (!quiet) toast('「' + t.title + '」は、すでに' + (which === 'next' ? '次回出勤日' : '当日') + 'の日報に入っています'); return; } // 自動の追加は、日報のどこかに入っていれば足さない（取り消し線は、syncMemoTodos が付ける）
     var d = document.createElement('div');
-    d.setAttribute('data-todo', String(t.id)); d.setAttribute('data-st', st);
-    if (st === 'done') { var sEl = document.createElement('s'); sEl.textContent = t.title; d.appendChild(sEl); } else d.appendChild(document.createTextNode(t.title));
+    d.setAttribute('data-todo', String(t.id)); d.setAttribute('data-st', st); d.setAttribute('data-man', '1'); // 自分で入れた行（カレンダーに合わせて消さない）
+    memoLineSet(d, t.title, st === 'done');
     memoEd.insertBefore(d, blk.items.length ? blk.after : blk.ref);
     memoChanged();
     toast(quiet ? '日報（当日）にも、取り消し線で入れました: ' + t.title : '日報（' + (which === 'next' ? '次回出勤日' : '当日') + '）に入れました: ' + t.title + (st === 'done' ? '（完了・取り消し線）' : ''));
@@ -2805,11 +2821,13 @@
     api('memo_get', { quiet: true }).then(function (j) {
       memoBusy = false;
       var first = !S.memo;
-      if (first) { S.memo = j; renderMemo(); return; }
+      if (first) { S.memo = j; renderMemo(); memoFetchCal(j); return; }
       S.memo.history = j.history; S.memo.tpl = j.tpl;
-      if (S.memo.cur === j.cur && S.memo.next === j.next) return;
-      S.memo.cur = j.cur; S.memo.next = j.next; S.memo.today = j.today;
-      if (memoEd && memoReconcile(j)) memoChanged();
+      if (S.memo.cur !== j.cur || S.memo.next !== j.next) {
+        S.memo.cur = j.cur; S.memo.next = j.next; S.memo.today = j.today;
+        if (memoEd && memoReconcile(j)) memoChanged();
+      }
+      memoFetchCal(j); // カレンダーの予定が変わっていれば、日報も合わせる
     }).catch(function () { memoBusy = false; });
   }
   setInterval(function () { if (!document.hidden) memoRefreshDays(true); }, 60000);
@@ -2847,7 +2865,7 @@
     memoEd = null;
     var tool = function (label, title, fn, cls) { return el('button', { class: 'btn small ' + (cls || ''), type: 'button', title: title, onmousedown: function (e) { e.preventDefault(); }, onclick: fn }, label); };
     box.appendChild(el('h2', { text: 'メモ（日報用）' }));
-    box.appendChild(helpText('【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。日付のあとの言葉（予定・To Do）や、挨拶・締めの文は、ここで直接書き換えられます。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。スケジュールに入っている業務のToDo（進行中のもの・日付が決まっている未着手のもの）は、自動で入ります（日報から消せば、入れ直しません）。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。'));
+    box.appendChild(helpText('【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。日付のあとの言葉（予定・To Do）や、挨拶・締めの文は、ここで直接書き換えられます。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。当日・次回出勤日の項目には、その日のカレンダーの自分の業務の予定が、自動で入ります（完了したToDoは取り消し線。その日のカレンダーに無い予定は、残りません）。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。'));
     box.appendChild(el('div', { class: 'memo-bar' },
       tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
       tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
@@ -2855,7 +2873,7 @@
     box.appendChild(el('div', { class: 'memo-bar' },
       tool('雛形に戻す', '日報を、雛形（標準は、お疲れ様です〜よろしくお願いいたします。「雛形の設定」で、自分の文面にできる）に置き換える', function () {
         if (memoLines(memoEd).length && !window.confirm('いまの日報を、雛形で置き換えます（当日・次回出勤日の項目は空になります）。よろしいですか？')) return;
-        memoInit('', S.memo, null); memoSig = memoCurSig(); memoChanged();
+        memoInit('', S.memo, null); memoCalSync(); memoTranscribe(); memoSig = memoCurSig(); memoChanged(); // 雛形に戻しても、カレンダーの予定は入る
       }, 'ghost'),
       tool('雛形の設定', '「雛形に戻す」で戻る文面を、自分の文面に決める', openMemoTemplate, 'ghost'),
       tool('過去の日報', '日が進んだときの、前の日の日報の控えを見る', openMemoHistory, 'ghost')));

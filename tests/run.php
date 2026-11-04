@@ -854,6 +854,7 @@ check('メモ: 出力に残る「<」は、許した目印だけ', preg_match_al
 check('メモ: ToDoの印（data-todo / data-st）は残り、他の属性は消える', sanitize_memo_html('<div data-todo="12" data-st="done" onclick="x()" style="a:b"><s>終わった</s></div>'), '<div data-todo="12" data-st="done"><s>終わった</s></div>');
 check('メモ: ToDoの印は数字と決まった状態だけ（それ以外は捨てる）', sanitize_memo_html('<div data-todo="1;alert(1)" data-st="x"><s>t</s></div><div data-todo="abc">u</div><div data-todo="5" data-st="evil">v</div>'), '<div data-todo="1"><s>t</s></div><div>u</div><div data-todo="5">v</div>');
 check('メモ: div 以外には、ToDoの印は付かない', sanitize_memo_html('<s data-todo="3">t</s>'), '<s>t</s>');
+check('メモ: 予定から入れた行の印（data-ev = 予定の番号）と、自分で入れた行の印（data-man）は残る。数字以外は捨てる', sanitize_memo_html('<div data-ev="12" data-todo="5" data-st="done"><s>a</s></div><div data-ev="x1;y" data-man="1">b</div><s data-ev="3">c</s>'), '<div data-todo="5" data-st="done" data-ev="12"><s>a</s></div><div data-man="1">b</div><s>c</s>');
 check('メモ: 日付の行の data-auto（自動で入れたToDoの控え）は残る。数字・「:」・「-」・「,」だけ', sanitize_memo_html('<div data-md="cur" data-date="2026-03-02" data-auto="12:2026-03-03,15:-">x</div><div data-md="next" data-date="2026-03-03" data-auto="1&quot;onclick=x">y</div>'), '<div data-md="cur" data-date="2026-03-02" data-auto="12:2026-03-03,15:-">x</div><div data-md="next" data-date="2026-03-03" data-auto="1">y</div>');
 check('メモ: 日付の行でなければ、data-auto は付かない', sanitize_memo_html('<div data-auto="1:2026-01-01">a</div><s data-auto="2:-">b</s>'), '<div>a</div><s>b</s>');
 $ms = get_memo_state($a);
