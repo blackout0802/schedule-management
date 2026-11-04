@@ -44,7 +44,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.tap('.pane-seg label:has-text("日報メモ")'); await p.waitForSelector('#memo .memo-editor', { state: 'visible' });
   ok('日報メモに切り替えると、ToDo は隠れて、日報メモが出る', await p.locator('#memo').isVisible() && !(await p.locator('#todo-mgr').isVisible()));
   const s2 = await size(); ok('日報メモ: 横にはみ出さない', s2.w <= s2.vw, s2);
-  ok('日報メモの使い方も、畳まれている', (await p.locator('#memo details.help-sm').count()) === 1);
+  ok('日報メモの上には、長い使い方の説明を出さない（v1.97.0 でなくした）', (await p.locator('#memo details.help-sm').count()) === 0 && !(await p.locator('#memo').innerText()).includes('自動で入れ替わります'));
   await p.tap('.pane-seg label:has-text("ToDo")'); await p.waitForSelector('#todo-mgr', { state: 'visible' });
   await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal');
   // プライベート版
