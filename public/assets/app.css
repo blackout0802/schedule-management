@@ -688,7 +688,7 @@ kbd { border-radius: 6px; }
 .memo-editor div[data-todo] { border-left: 2px solid var(--line); padding-left: 6px; margin-left: -2px; }
 
 /* v1.42 日報は1つの入力欄（【日付】の行は自動） */
-.memo-editor.memo-single { min-height: 340px; max-height: 70vh; }
+.memo-editor.memo-single { min-height: 340px; max-height: none; overflow: visible; resize: none; } /* 日報の欄は、中身に合わせてのびる（スクロールは、右の欄の1つだけにする） */
 .memo-editor.drop { outline: 2px dashed var(--work); outline-offset: 1px; background: var(--work-soft); }
 .memo-editor div[data-md] { font-weight: 700; color: var(--work); }
 .memo-editor div[data-tr] { border-left: 2px solid var(--line); padding-left: 6px; margin-left: -2px; }

@@ -2492,6 +2492,13 @@
   function mBlock(h) {
     var kids = Array.prototype.slice.call(memoEd.children), start = kids.indexOf(h) + 1;
     if (start < kids.length && mBlank(kids[start]) && !kids[start].hasAttribute('data-md')) start++;
+    // 当日の項目は、次回出勤日の見出しの手前まで、ぜんぶ（途中に空行があっても）。空行で区切られた下のかたまりが、日が進んでも残り、古い項目が重なって見えていたため
+    var nh = h.getAttribute('data-md') === 'cur' ? mHead('next') : null, end = nh ? kids.indexOf(nh) : -1;
+    if (end > start) {
+      var its = kids.slice(start, end).filter(function (d) { return !mBlank(d) && !d.hasAttribute('data-md'); });
+      var r0 = its.length ? its[0] : kids[start];
+      return { items: its, ref: r0, after: its.length ? its[its.length - 1].nextSibling : r0 };
+    }
     var k = start; while (k < kids.length && !mBlank(kids[k]) && !kids[k].hasAttribute('data-md')) k++;
     var items = kids.slice(start, k);
     var ref = items.length ? items[0] : (kids[start] || null);
@@ -2514,7 +2521,8 @@
   function memoTranscribe() {
     var ch = mHead('cur'), nh = mHead('next');
     if (!ch || !nh) return false;
-    var want = mBlock(ch).items.filter(function (d) { return !mStruck(d); });
+    var seenT = {};
+    var want = mBlock(ch).items.filter(function (d) { var t = d.textContent.trim(); if (mStruck(d) || seenT[t]) return false; seenT[t] = 1; return true; }); // 同じ文の行が当日に2つあっても、転記は1つ
     var manual = mBlock(nh).items.filter(function (d) { return !d.hasAttribute('data-tr'); }).map(function (d) { return d.textContent.trim(); });
     want = want.filter(function (d) { return manual.indexOf(d.textContent.trim()) < 0; }); // 次回出勤日に、同じ項目を自分で書いてあれば、足さない
     var have = Array.prototype.slice.call(memoEd.querySelectorAll(':scope > div[data-tr]'));
@@ -2537,10 +2545,18 @@
     var changed = false, was = ch.getAttribute('data-date');
     if (was && was < info.cur) {
       memoTranscribe();
-      var moved = mBlock(nh).items;
-      mBlock(ch).items.forEach(function (d) { d.remove(); });
-      var ref = mBlock(ch).ref;
-      moved.forEach(function (d) { d.removeAttribute('data-tr'); memoEd.insertBefore(d, ref); });
+      var moved = mBlock(nh).items, kids = Array.prototype.slice.call(memoEd.children), ci = kids.indexOf(ch), ni = kids.indexOf(nh);
+      if (ci >= 0 && ni > ci) {
+        // 当日の欄（当日の見出しと、次回出勤日の見出しの間）を、空行も含めて、まるごと空にしてから、「空行・次回出勤日の項目・空行」にする
+        kids.slice(ci + 1, ni).forEach(function (d) { d.remove(); });
+        memoEd.insertBefore(mDiv(''), nh);
+        moved.forEach(function (d) { d.removeAttribute('data-tr'); memoEd.insertBefore(d, nh); });
+        memoEd.insertBefore(mDiv(''), nh);
+      } else {
+        mBlock(ch).items.forEach(function (d) { d.remove(); });
+        var ref = mBlock(ch).ref;
+        moved.forEach(function (d) { d.removeAttribute('data-tr'); memoEd.insertBefore(d, ref); });
+      }
       changed = true;
     }
     [[ch, info.cur, 'cur'], [nh, info.next, 'next']].forEach(function (x) {
@@ -2847,7 +2863,6 @@
     memoEd = null;
     var tool = function (label, title, fn, cls) { return el('button', { class: 'btn small ' + (cls || ''), type: 'button', title: title, onmousedown: function (e) { e.preventDefault(); }, onclick: fn }, label); };
     box.appendChild(el('h2', { text: 'メモ（日報用）' }));
-    box.appendChild(helpText('【日付】は自動で入れ替わります（上 = 当日、下 = 次回出勤日）。日付のあとの言葉（予定・To Do）や、挨拶・締めの文は、ここで直接書き換えられます。当日の項目のうち、取り消し線のないものは、次回出勤日に転記されます。スケジュールに入っている業務のToDo（進行中のもの・日付が決まっている未着手のもの）は、自動で入ります（日報から消せば、入れ直しません）。項目は、空行を入れずに並べてください。ToDoのカードを欄へドラッグして、追加もできます。自動で保存されます。'));
     box.appendChild(el('div', { class: 'memo-bar' },
       tool(el('s', { text: '取り消し線' }), '選んだ文字に取り消し線（何も選ばなければ、その行全体）。Ctrl + Shift + X', toggleStrike),
       tool('日報にコピー', '書式つきでコピー（メールなどに貼ると、取り消し線が残る）', function () { copyMemo(false); }, 'primary'),
