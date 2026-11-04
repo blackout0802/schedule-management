@@ -778,6 +778,12 @@ function sanitize_memo_html(string $html): string
             if (preg_match('#data-tr\\s*=\\s*["\']?1#', $m[3])) {
                 $attrs .= ' data-tr="1"'; // 次回出勤日に転記された行
             }
+            if (preg_match('#data-ev\\s*=\\s*["\']?(\\d{1,10})#i', $m[3], $a)) {
+                $attrs .= ' data-ev="' . (int)$a[1] . '"'; // カレンダーの予定から入れた行（予定の番号）
+            }
+            if (preg_match('#data-man\\s*=\\s*["\']?1#', $m[3])) {
+                $attrs .= ' data-man="1"'; // 「日報へ」・ドラッグで、自分で入れた ToDo の行（カレンダーに合わせて消さない）
+            }
             return '<div' . $attrs . '>';
         }
         return '<' . $m[1] . $tag . '>'; // 属性を全て取り除く
@@ -887,7 +893,7 @@ function memo_template_save(string $html, array $user): string
 {
     $key = 'memo_tpl_' . (int)$user['id'];
     $clean = trim($html) === '' ? '' : sanitize_memo_html($html);
-    $clean = preg_replace('#\s+data-(todo|st|tr|auto)="[^"]*"#', '', $clean); // 項目の印は、雛形に持ち込まない
+    $clean = preg_replace('#\s+data-(todo|st|tr|auto|ev|man)="[^"]*"#', '', $clean); // 項目の印は、雛形に持ち込まない
     if ($clean !== '') {
         if (substr_count($clean, 'data-md="cur"') !== 1 || substr_count($clean, 'data-md="next"') !== 1) {
             throw new RuntimeException('日付の行（「【10/15　予定・To Do】」）が、当日・次回出勤日の2つ必要です。');
