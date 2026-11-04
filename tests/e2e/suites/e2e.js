@@ -45,7 +45,7 @@ async function login(browser, email, pw) {
   const ymd = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
   await y.page.keyboard.press('n');
   await y.page.fill('input[name=title]', 'A社 打ち合わせ');
-  await y.page.selectOption('select[name=tag]', '打ち合わせ');
+  ok('業務の予定では、分類の欄は出ない（v1.100.0〜。個人作業で保存）', !(await y.page.locator('.modal select[name=tag]').isVisible()));
   await y.page.fill('input[name=start]', ymd);
   await y.page.click('.modal button[type=submit]');
   await y.page.waitForSelector('.bar:has-text("A社 打ち合わせ")');

@@ -67,6 +67,17 @@ async function login(b, email, pw) {
   await p.evaluate(() => window.dispatchEvent(new Event('focus'))); await p.waitForFunction(() => !Array.from(document.querySelectorAll('.memo-single div[data-ev]')).some(d => d.textContent === '当日の業務A'), null, { timeout: 15000 }).catch(() => {});
   c = await items('cur');
   ok('予定を別の日へ動かすと、日報の当日の項目からも消える', !has(c, '当日の業務A'), c);
+  // 「カレンダーに入れる」: 日報にあってカレンダーに無い行を、その日の業務の予定として入れる（取り消し線の行は完了として。次回出勤日の行も）
+  await p.evaluate(() => { const ed = document.querySelector('.memo-single'); const add = (kind, html) => { const h = ed.querySelector('div[data-md=' + kind + ']'); let d = h.nextElementSibling; if (d && !d.textContent.trim()) d = d.nextElementSibling; const n = document.createElement('div'); n.innerHTML = html; ed.insertBefore(n, d); }; add('cur', '日報から入れる業務'); add('cur', '<s>日報から入れる終わった業務</s>'); add('next', '次回の日報から入れる業務'); ed.dispatchEvent(new Event('input', { bubbles: true })); });
+  await p.click('.memo-bar button:has-text("カレンダーに入れる")'); await p.waitForSelector('.toast:has-text("カレンダーに入れました")');
+  const cal = await p.evaluate(async ([cur, next]) => (await (await fetch('api.php?action=events&view=team&from=' + cur + '&to=' + next)).json()).events.map(e => e.title + '@' + e.start + (e.done ? '[done]' : '') + '|' + e.tag), [cur, next]);
+  ok('カレンダーに無い行が、その日の業務の予定（個人作業）になる。取り消し線の行は完了、次回出勤日の行は次回出勤日に', cal.includes('日報から入れる業務@' + cur + '|個人作業') && cal.includes('日報から入れる終わった業務@' + cur + '[done]|個人作業') && cal.includes('次回の日報から入れる業務@' + next + '|個人作業') && cal.includes('自分で書いた行@' + cur + '|個人作業'), cal);
+  ok('もとからカレンダーにある予定・転記された行は、二重に入れない', cal.filter(x => x.startsWith('当日と次回の業務E@')).length === 1 && cal.filter(x => x.startsWith('日報から入れる業務@')).length === 1, cal);
+  await p.waitForTimeout(1500); await p.reload(); await p.waitForSelector('.memo-single'); await p.waitForTimeout(1500);
+  c = await items('cur');
+  ok('入れた行は、日報に残り（カレンダーの予定とつながる）、取り消し線も残る', has(c, '日報から入れる業務') && c.includes('日報から入れる終わった業務[s]') && c.filter(x => x.startsWith('日報から入れる業務')).length === 1, c);
+  await p.click('.memo-bar button:has-text("カレンダーに入れる")'); await p.waitForSelector('.toast:has-text("カレンダーに無い行は、ありません")');
+  ok('もう一度押しても、増えない（カレンダーに無い行は、ありません）', true);
   // 日が進む: 前の日の予定の行は残らず、新しい当日の予定に入れ替わる（自分で書いた行は残る）
   const prev = addDays(cur, -1);
   await api(p, 'memo_save', { html: head('cur', prev) + '<div><br></div><div data-ev="' + C.id + '">過去の業務C</div><div>昨日の手書き</div><div><br></div>'

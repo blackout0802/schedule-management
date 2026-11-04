@@ -15,7 +15,7 @@ const ok = (n, c) => { console.log((c ? 'OK  ' : 'NG  ') + n); if (!c) fails++; 
   // 業務版で業務の予定を作る（共有なし）
   await p.keyboard.press('n');
   await p.fill('input[name=title]', 'B社 会議'); await p.fill('input[name=start]', ymd);
-  await p.selectOption('select[name=tag]', '打ち合わせ');
+  ok('業務の予定では、分類の欄は出ない', !(await p.locator('.modal select[name=tag]').isVisible()));
   ok('業務版: 家族に共有は初期でオフ', !(await p.locator('input[name=family_shared]').isChecked()));
   await p.click('.modal button[type=submit]');
   await p.waitForSelector('.bar:has-text("B社 会議")');

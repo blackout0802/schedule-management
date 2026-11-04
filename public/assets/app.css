@@ -941,3 +941,14 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .fam-box .fam-add h4 { margin: 0 0 6px; font-size: 14px; }
 .fam-cred dd { word-break: break-all; }
 .fam-pw { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: .06em; user-select: all; }
+/* 予定の入力（予定を追加・編集）: スクロールせずに全部が見えるように詰める */
+.ev-form { gap: 8px; }
+.ev-form > label, .ev-form .row label { gap: 2px; }
+.ev-form textarea { min-height: 44px; }
+.ev-form .row.ev-when { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ev-form .ev-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.ev-form .ev-opts .todo-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ev-form .ev-opts .todo-opt select { width: auto; }
+.ev-form .ev-opts .todo-opt .hint { flex-basis: 100%; }
+.ev-form .row:empty, .ev-form .hint:empty { display: none; }
+@media (max-width: 640px) { .ev-form .row.ev-when { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
