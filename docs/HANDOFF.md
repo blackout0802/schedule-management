@@ -1,6 +1,6 @@
 # 引き継ぎメモ（スケジュール管理アプリ）
 
-新しいセッションの最初に、これを読んでください。最終更新: 2026-11-04 / 現在の版: **v1.96.1**（本番に反映済み。v1.96.0 まではユーザー確認ずみ。作業ブランチから PR を作り、デプロイ対象のブランチ `claude/intelligent-brahmagupta-qhk963` へ取り込むと、本番に出る）
+新しいセッションの最初に、これを読んでください。最終更新: 2026-11-04 / 現在の版: **v1.97.0**（v1.96.1 までは本番に反映済み。v1.96.0 まではユーザー確認ずみ。v1.97.0 は作業ブランチ `claude/schedule-to-daily-report-uars4x` から PR。作業ブランチから PR を作り、デプロイ対象のブランチ `claude/intelligent-brahmagupta-qhk963` へ取り込むと、本番に出る）
 
 ## 1. アプリと作業場所
 
@@ -129,6 +129,14 @@
 - 管理者が「Slack通知の設定・テスト」で時刻を予約すると、その時刻を過ぎたあと、cron（`bin/cron.php notify` → `notify_due()` → `slack_test_due()`）が動いたときに、テスト通知を1回だけ送る（決まった時間に届くかの確認。朝・夕方の通知と同じ仕組み）。`src/slack.php` の `slack_test_schedule()` / `slack_test_cancel()` / `slack_test_state()` / `slack_test_due()`。API `slack_test_schedule` `slack_test_cancel`（管理者）。`slack_status` に `sched` を足した。
 - 記録は `app_meta`: `slack_test_at`（予約。1件。予約ごとの `id` で二重送信を防ぐ）、`slack_test_last`（前回の結果: 予定・送った時刻・成否）。画面に、cron（notify）が最後に動いた日時（`cron_notify_at`）も出す。15分過ぎても送られなければ「cron が動いていない可能性」、3時間過ぎたら送らずに取り消す。土日祝でも送る。
 - 画面テスト `sl` に、予約 → cron で送る → 二重に送らない → 遅れの表示 → 取り消し → 管理者以外は403、を追加（cron は `php bin/cron.php notify` を直接動かし、予約の時刻は SQL でずらす）。
+
+### v1.97.0 で入れたもの（Slack の通知を、時刻ちょうどに送る）
+
+- 2026-11-04: ユーザーが本番で「時刻を指定してテスト送信」を試し、届いた（cron が10分おきのため、少し遅れて）。ユーザーの希望で、時刻ちょうどに送れるようにした。
+- cron（`bin/cron.php notify`）が動いたとき、次の cron までに送る予定（朝・夕方の通知・会議室の前日/当日/1時間前の通知・テスト送信）があれば、その時刻まで待ってから送る（`notify_upcoming()`・`notify_wait()`、`src/slack.php`）。待ったあとは、データベースにつなぎ直す（`db(true)`）。二重送信は、これまでどおり `notify_once` などで防ぐ（待っているあいだに次の cron が動いても大丈夫）。
+- 待つ長さは `config.php` の `notify_wait`（分。初期値 10・最大 15・0 で待たない）。`php bin/cron.php notify --wait=分` で、その回だけ変えられる。Web から cron.php を呼ぶとき（cron_token）は、待たない。
+- 画面テストの設定は `notify_wait = 0`（run.sh。ほかのテストの cron が待たないように）。`sl` で、`--wait=2` を付けて、次の分の0秒ちょうどに送ることを確かめる（約1分かかる）。
+- スターサーバーの cron の最短の間隔は、プランで違う（スタンダード・ビジネスは制限なし、ライト・ドメイン特典は5分）。待つ仕組みなので、間隔は今の10分おきのままでよい。
 
 ## 5. テスト
 

@@ -83,6 +83,13 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
   await a.fill('#slack-sched-time', hm(at)); await a.click('#set-slack .slack-sched button:has-text("予約する")'); await a.waitForSelector('#set-slack .slack-sched button:has-text("予約を取り消す")');
   await a.click('#set-slack .slack-sched button:has-text("予約を取り消す")'); await a.waitForFunction(() => !document.querySelector('#set-slack .slack-sched .slack-sched-st.wait'));
   ok('予約を取り消せる', !(await a.locator('#set-slack .slack-sched').innerText()).includes('予約中'));
+  // 時刻ちょうどに送る: cron が動いたとき、次の cron までに予定があれば、その時刻まで待って送る（画面テストの設定は notify_wait = 0 なので、--wait で指定）
+  await a.fill('#slack-sched-time', hm(at)); await a.click('#set-slack .slack-sched button:has-text("予約する")'); await a.waitForSelector('#set-slack .slack-sched .slack-sched-st.wait');
+  const next = new Date(Date.now() + 60000); next.setSeconds(0, 0); setAt(next); fs.writeFileSync(LOG, '');
+  const t0 = Date.now(); const out = execFileSync('php', [env.APP + '/bin/cron.php', 'notify', '--wait=2'], { env: process.env, encoding: 'utf8', timeout: 180000 }); const t1 = Date.now();
+  ok('cron は、予定の時刻（次の分の0秒）まで待ってから送る', t1 >= next.getTime() - 1000 && t1 < next.getTime() + 15000 && out.includes('時刻を指定したテスト送信: 送りました') && log().includes('時刻を指定したテスト送信'), { out, waited: Math.round((t1 - t0) / 1000) });
+  await refresh();
+  ok('予定の時刻と、送った時刻が同じ（時刻ちょうど）', (await a.locator('#set-slack .slack-sched').innerText()).includes('予定 ' + (next.getMonth() + 1) + '/' + next.getDate() + ' ' + hm(next) + ' → ' + (next.getMonth() + 1) + '/' + next.getDate() + ' ' + hm(next)), await a.locator('#set-slack .slack-sched').innerText());
   const sp = await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; return (await fetch('api.php?action=slack_test_schedule', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ time: '09:00' }) })).status; });
   ok('管理者でない人は、予約できない（403）', sp === 403, sp);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
