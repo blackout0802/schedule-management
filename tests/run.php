@@ -741,6 +741,25 @@ check('テスト予約: 3時間以上 cron が動かなかったときは、送�
 $td = $wasOn ? null : $dOn(); slack_test_schedule('10:00', $admin, $tt('2031-03-12 09:00')); slack_test_cancel(); $dOff($td);
 check('テスト予約: 取り消すと、予約は消える', slack_test_state()['pending'], null);
 check('テスト予約: 管理者の画面の状態（slack_status）に、予約の状態が入る', array_keys(slack_status()['sched']), ['pending', 'last', 'cron_at', 'late']);
+// 時刻ちょうどに送る（cron が動いたとき、次の cron までに送る予定があれば、その時刻まで待って送る）
+$cfgKeep = slack_cfg();
+$in = $cfgKeep; $in['morning']['on'] = true; $in['morning']['time'] = '09:05'; $in['evening']['on'] = true; $in['evening']['time'] = '17:00'; slack_cfg_save($in);
+$rc = rooms_cfg();
+$roomTs = function (string $d) use ($rc) { $o = []; foreach (['notify_prev', 'notify_today'] as $k) { if ($rc[$k]['on']) { $o[] = strtotime($d . ' ' . $rc[$k]['time'] . ':00'); } } return $o; };
+$inWin = function (array $ts, int $from, int $to) { return array_values(array_filter($ts, function ($t) use ($from, $to) { return $t > $from && $t <= $to; })); };
+$up = notify_upcoming($tt('2031-03-12 08:58'), 600);
+$want = $inWin(array_merge([$tt('2031-03-12 09:05')], $roomTs('2031-03-12')), $tt('2031-03-12 08:58'), $tt('2031-03-12 09:08')); sort($want);
+check('時刻ちょうど: 次の cron（10分）までに送る予定の時刻が分かる（朝の通知 9:05。夕方 17:00 は入らない）', $up, $want);
+$in2 = $in; $in2['morning']['time'] = '00:02'; slack_cfg_save($in2);
+check('時刻ちょうど: 日付をまたいでも、次の日の分が分かる（23:55 の cron → 0:02）', in_array($tt('2031-03-13 00:02'), notify_upcoming($tt('2031-03-12 23:55'), 600), true), true);
+slack_cfg_save($in);
+$td = $wasOn ? null : $dOn(); slack_test_schedule('09:03', $admin, $tt('2031-03-12 08:58')); $dOff($td);
+$waited = [];
+$wm = notify_wait($tt('2031-03-12 08:58'), 600, function (int $t) use (&$waited) { $waited[] = date('H:i:s', $t); return $t; });
+$tl = slack_test_state()['last'];
+check('時刻ちょうど: その時刻まで待ってから送る（テスト送信 9:03 → 送った時刻も 9:03 ちょうど。続けて 9:05 の朝の通知の時刻まで待つ）', [array_slice($waited, 0, 2), $tl['at'], $tl['sent_at'], in_array(true, array_map(function ($m) { return strpos($m, '時刻を指定したテスト送信') === 0; }, $wm), true)], [['09:03:00', '09:05:00'], '2031-03-12 09:03', '2031-03-12 09:03', true]);
+check('時刻ちょうど: 次の cron までに予定が無ければ、待たない', notify_wait($tt('2031-03-12 12:00'), 600, function (int $t) { return $t; }), []);
+slack_cfg_save($cfgKeep);
 // 休みの人がいない営業日にも、「休みなし」と通知する
 q("DELETE FROM events WHERE kind = 'off' AND start_date BETWEEN '2031-03-12' AND '2031-03-15'");
 $in = slack_cfg_defaults(); $in['morning']['time'] = '08:30'; $in['evening']['time'] = '17:00'; slack_cfg_save($in); $nr();

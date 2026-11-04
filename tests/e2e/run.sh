@@ -32,7 +32,7 @@ for d in src public sql bin; do cp -R "$ROOT/$d" "$WORK/app/$d"; done
 cp "$ROOT/config.sample.php" "$WORK/app/"; mkdir -p "$WORK/app/data"
 DSN=${E2E_DSN:-sqlite:$WORK/e2e.sqlite}
 cat > "$WORK/config.php" <<PHP
-<?php return ['db' => ['dsn' => '$DSN', 'user' => '${E2E_DB_USER:-}' ?: null, 'pass' => '${E2E_DB_PASS:-}' ?: null], 'slack_webhook' => 'http://127.0.0.1:$HOOK_PORT/hook.php', 'base_url' => 'https://example.com/schedule/', 'mail_file' => '$WORK/mail.log'];
+<?php return ['db' => ['dsn' => '$DSN', 'user' => '${E2E_DB_USER:-}' ?: null, 'pass' => '${E2E_DB_PASS:-}' ?: null], 'slack_webhook' => 'http://127.0.0.1:$HOOK_PORT/hook.php', 'base_url' => 'https://example.com/schedule/', 'mail_file' => '$WORK/mail.log', 'notify_wait' => 0];
 PHP
 export SCHEDULE_CONFIG="$WORK/config.php" E2E_APP="$WORK/app" E2E_SLACK_LOG="$WORK/slack.log" E2E_MAIL_LOG="$WORK/mail.log" TZ=${TZ:-Asia/Tokyo}
 
