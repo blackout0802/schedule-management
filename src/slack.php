@@ -494,7 +494,7 @@ function notify_offs_for_day(string $date, string $label, ?bool &$sent = null): 
 }
 
 /**
- * 時刻を過ぎた朝・夕方の通知を送る。cron から5〜10分おきに呼ぶ（bin/cron.php notify）。
+ * 時刻を過ぎた朝・夕方の通知を送る。cron から10分おきに呼ぶ（bin/cron.php notify。次の cron までに送る予定があれば、その時刻まで待って送る: notify_wait）。
  * 設定した時刻から3時間以内で、まだ送っていなければ送る（同じ日に二重には送らない。土日祝・会社の休業日は送らない）
  * @return string[] 実行結果のメッセージ
  */
@@ -522,6 +522,63 @@ function notify_due(?int $now = null): array
         }
     }
     return array_merge($msg, rooms_notify_due($now), slack_test_due($now)); // 会議室の予約（前日の夕方・当日の朝）／時刻を指定したテスト送信
+}
+
+// ---- 時刻ちょうどに送る ----
+//   cron（notify）は10分おきなので、時刻を過ぎてから次に cron が動くまで、送るのが最大10分遅れる。
+//   そこで、cron が動いたとき、次の cron までに送る予定（朝・夕方の通知・会議室の通知・テスト送信）があれば、
+//   その時刻まで待ってから送る（bin/cron.php notify。待つ長さは config.php の notify_wait（分。初期値10。0 なら待たない））。
+//   待っているあいだに次の cron が動いても、notify_once などで、二重には送らない。
+
+/** これから送る予定の時刻（$now より後で、$now + $window 秒まで）。土日祝などで実際に送るかは、その時刻に notify_due が決める */
+function notify_upcoming(int $now, int $window): array
+{
+    $end = $now + $window;
+    $ts = [];
+    $add = function (int $t) use (&$ts, $now, $end) {
+        if ($t > $now && $t <= $end) {
+            $ts[$t] = true;
+        }
+    };
+    $days = array_unique([date('Y-m-d', $now), date('Y-m-d', $end)]); // 日付をまたぐときは、次の日の分も
+    $cfg = slack_cfg();
+    $rc = rooms_cfg();
+    foreach ($days as $d) {
+        foreach (['morning', 'evening'] as $k) {
+            if ($cfg[$k]['on']) {
+                $add(strtotime($d . ' ' . $cfg[$k]['time'] . ':00'));
+            }
+        }
+        foreach (['notify_prev', 'notify_today'] as $k) {
+            if ($rc[$k]['on']) {
+                $add(strtotime($d . ' ' . $rc[$k]['time'] . ':00'));
+            }
+        }
+    }
+    foreach (rows('SELECT bdate, start_time FROM room_bookings WHERE notify_pre = 1 AND bdate BETWEEN ? AND ?', [date('Y-m-d', $now), date('Y-m-d', strtotime('+1 day', $end))]) as $b) {
+        $add(strtotime($b['bdate'] . ' ' . $b['start_time'] . ':00') - 3600); // 会議室の1時間前の通知
+    }
+    $p = slack_test_state($now)['pending'];
+    if ($p) {
+        $add(strtotime($p['at'] . ':00'));
+    }
+    $ts = array_keys($ts);
+    sort($ts);
+    return $ts;
+}
+
+/**
+ * 次の cron までに送る予定があれば、その時刻まで待ってから送る。$waitUntil($t) は、$t まで待って、いまの時刻を返す（試験では、待たずに $t を返す）。
+ * @return string[] 実行結果のメッセージ
+ */
+function notify_wait(int $now, int $window, callable $waitUntil): array
+{
+    $msg = [];
+    foreach (notify_upcoming($now, $window) as $t) {
+        $now = $waitUntil($t);
+        $msg = array_merge($msg, notify_due($now));
+    }
+    return $msg;
 }
 
 // ---- 時刻を指定したテスト送信（cron が、決まった時刻に通知を送れるかの確認）----

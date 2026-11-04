@@ -3440,7 +3440,7 @@
     }
     return el('div', { class: 'slack-sched' },
       el('h3', { text: '時刻を指定してテスト送信（決まった時間に届くかの確認）' }),
-      el('p', { class: 'hint', text: '時刻を予約すると、その時刻を過ぎたあと、サーバーの cron（bin/cron.php notify）が動いたときに、テスト通知を1回だけ送ります。朝・夕方の通知と同じ仕組みなので、決まった時間に届くかを確かめられます（cron が5分おきなら、最大5分ほど遅れて届きます）。' }),
+      el('p', { class: 'hint', text: '時刻を予約すると、その時刻を過ぎたあと、サーバーの cron（bin/cron.php notify）が動いたときに、テスト通知を1回だけ送ります。朝・夕方の通知と同じ仕組みなので、決まった時間に届くかを確かめられます（cron が10分おきでも、次の cron までに送る予定は、その時刻まで待ってから送るので、時刻ちょうどに届きます）。' }),
       el('div', { class: 'actions', style: 'justify-content:flex-start;align-items:center' }, el('label', { class: 'inline' }, '送る時刻 ', tm),
         el('button', { class: 'btn', type: 'button', text: p ? '予約し直す' : '予約する', disabled: !st.configured, onclick: function () { go('slack_test_schedule', { time: timeVal(tm) }); } }),
         el('button', { class: 'btn small ghost', type: 'button', text: '最新の状態を見る', onclick: function () { api('slack_status').then(function (j) { redraw(j.slack); }).catch(fail); } })),
@@ -3547,7 +3547,7 @@
         el('h3', { text: '休みの人がいない日' }),
         el('label', { class: 'work' }, F.emptyOn, ' 営業日で、休みの人がいない日にも、通知する'),
         el('label', null, '{休み一覧} の代わりに出す文言', F.emptyText), el('div', { class: 'hint', text: '朝の通知の見え方（見本）' }), PV.none));
-      body.appendChild(el('p', { class: 'hint', text: '※ 通知の時刻は、サーバーの cron が「php bin/cron.php notify」を5〜10分おきに動かしているときに、有効になります。設定した時刻から3時間以内に、1回だけ送ります。cron の登録方法は、docs/DEPLOY.md の「9. 毎日の自動処理」にあります。以前の「morning」「evening」の cron を使っている場合は、その時刻に従来どおり送られます（時刻は cron の設定のまま）。' }));
+      body.appendChild(el('p', { class: 'hint', text: '※ 通知の時刻は、サーバーの cron が「php bin/cron.php notify」を10分おきに動かしているときに、有効になります（次の cron までに送る予定は、その時刻まで待ってから送るので、時刻ちょうどに届きます）。設定した時刻から3時間以内に、1回だけ送ります。cron の登録方法は、docs/DEPLOY.md の「9. 毎日の自動処理」にあります。以前の「morning」「evening」の cron を使っている場合は、その時刻に従来どおり送られます（時刻は cron の設定のまま）。' }));
       body.appendChild(err); body.appendChild(result);
       body.appendChild(el('div', { class: 'actions' },
         el('button', { class: 'btn', type: 'button', text: '初期値に戻す（まだ保存しません）', onclick: function () { fill(j.defaults); schedulePreview(); } }),

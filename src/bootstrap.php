@@ -61,9 +61,13 @@ function cfg(string $key, $default = null)
 
 date_default_timezone_set((string)(is_file(config_file_path()) ? cfg('timezone', 'Asia/Tokyo') : 'Asia/Tokyo'));
 
-function db(): PDO
+/** データベースの接続。$fresh = true なら、つなぎ直す（cron で長く待ったあと、接続が切れていることがあるため） */
+function db(bool $fresh = false): PDO
 {
     static $pdo = null;
+    if ($fresh) {
+        $pdo = null;
+    }
     if ($pdo === null) {
         $c = cfg('db');
         $pdo = new PDO($c['dsn'], $c['user'] ?? null, $c['pass'] ?? null, [
