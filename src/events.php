@@ -70,9 +70,10 @@ function list_events(array $user, string $from, string $to, string $view, array 
     } elseif ($view === 'team') {
         // 業務版: プライベート予定は条件にすら含めない
         $where = "e.kind IN ('work','off')";
-        if (!empty($opts['who'])) { // 特定の社員だけ（全社を見ているときは指定なし）
-            $where .= ' AND e.owner_id = ?';
-            $params[] = (int)$opts['who'];
+        if (!empty($opts['who'])) { // 特定の社員だけ（全社を見ているときは指定なし）。一緒にやる人に入っている業務の予定も出す
+            $w = (int)$opts['who'];
+            $where .= " AND (e.owner_id = ? OR (e.kind = 'work' AND (e.participants = ? OR e.participants LIKE ? OR e.participants LIKE ? OR e.participants LIKE ?)))";
+            array_push($params, $w, (string)$w, $w . ',%', '%,' . $w, '%,' . $w . ',%');
         }
     } else {
         // プライベート版: 自分のプライベート予定と、「家族に共有」にした自分の業務・休み（家族が見るものと同じ）だけ。
@@ -135,6 +136,7 @@ function event_for_client(array $e, array $user, ?array $colorsMap = null): arra
         'family_shared' => (int)$e['family_shared'] === 1,
         'important' => (int)($e['important'] ?? 0) === 1,
         'todo_id' => ($e['todo_id'] ?? null) !== null ? (int)$e['todo_id'] : null, // ToDoをカレンダーに置いた予定
+        'participants' => $e['kind'] === 'work' ? rooms_participants_named(event_participant_ids($e)) : [], // 一緒にやる社員（[{id, name}]）
         'done' => ($e['todo_done_at'] ?? null) !== null, // 元のToDoが完了（カレンダーでは取り消し線）
         'todo_status' => ($e['todo_id'] ?? null) === null ? null : (($e['todo_done_at'] ?? null) !== null ? 'done' : ((int)($e['todo_doing'] ?? 0) === 1 ? 'doing' : ((int)($e['todo_doing'] ?? 0) === 2 ? 'hold' : 'todo'))), // 元のToDoの状態（予定の詳細で、変えられる）
         'owner_name' => $e['owner_name'] ?? '',
@@ -199,6 +201,17 @@ function validate_event_input(array $in, array $user): array
     if (mb_strlen($note) > 500) {
         return [null, 'メモは500文字以内にしてください。'];
     }
+    // 一緒にやる社員（業務の予定だけ。社員どうしで共有する。例: 棚卸し）。送られてこなければ、いまのまま（null）
+    $parts = null;
+    if ($kind !== 'work') {
+        $parts = '';
+    } elseif (array_key_exists('participants', $in)) {
+        [$pids, $perr] = rooms_participants_parse($in['participants'], (int)$user['id']);
+        if ($perr !== null) {
+            return [null, str_replace('参加者', '一緒にやる人', $perr)];
+        }
+        $parts = implode(',', $pids);
+    }
     // 持ち主: プライベートは必ず本人。休みだけ、管理者が他の社員分を登録できる
     $owner = (int)$user['id'];
     if ($kind === 'off' && is_admin($user) && !empty($in['owner_id'])) {
@@ -215,6 +228,7 @@ function validate_event_input(array $in, array $user): array
         'family_shared' => family_flag($kind, $in),
         // 「重要」（カレンダーで目立たせる）。指定がなければ、いまの状態のまま
         'important' => array_key_exists('important', $in) ? (empty($in['important']) ? 0 : 1) : null,
+        'participants' => $parts,
     ], null];
 }
 
@@ -226,25 +240,43 @@ function save_event(array $data, array $user, ?array $existing): array
         if ((int)$existing['owner_id'] !== (int)$user['id']) {
             $data['family_shared'] = (int)$existing['family_shared']; // 家族への共有は持ち主だけが決める（管理者の編集では変えない）
         }
-        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, detached=?, updated_at=? WHERE id=?', [
+        $parts = event_parts_clean($data['participants'] ?? null, $existing, (int)$existing['owner_id']);
+        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, participants=?, detached=?, updated_at=? WHERE id=?', [
             $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'], $data['note'],
-            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
+            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $parts, $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
         ]);
         $id = (int)$existing['id'];
         $after = row('SELECT * FROM events WHERE id = ?', [$id]);
         event_changed($existing, $after);
         return $after;
     } else {
-        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,series_id,ym,detached,created_by,created_at,updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
+        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,participants,series_id,ym,detached,created_by,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
             $data['owner_id'], $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'],
-            $data['note'], $data['family_shared'] ?? 1, $data['important'] ?? 0, $user['id'], now_str(), now_str(),
+            $data['note'], $data['family_shared'] ?? 1, $data['important'] ?? 0, event_parts_clean($data['participants'] ?? null, null, (int)$data['owner_id']), $user['id'], now_str(), now_str(),
         ]);
         $id = (int)db()->lastInsertId();
     }
     $after = row('SELECT * FROM events WHERE id = ?', [$id]);
     event_changed(null, $after);
     return $after;
+}
+
+/** 保存する「一緒にやる社員」（番号のカンマ区切り）。null なら、いまのまま。持ち主は入れない。業務の予定でなければ空 */
+function event_parts_clean(?string $parts, ?array $existing, int $ownerId): string
+{
+    if ($parts === null) {
+        return $existing ? (string)($existing['participants'] ?? '') : '';
+    }
+    $ids = array_values(array_filter(array_map('intval', explode(',', $parts)), function ($id) use ($ownerId) { return $id > 0 && $id !== $ownerId; }));
+    return implode(',', $ids);
+}
+
+/** 予定の「一緒にやる社員」の番号 */
+function event_participant_ids(array $e): array
+{
+    $s = trim((string)($e['participants'] ?? ''));
+    return $s === '' ? [] : array_values(array_filter(array_map('intval', explode(',', $s))));
 }
 
 function delete_event(array $e): void

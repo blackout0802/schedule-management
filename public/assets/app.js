@@ -306,6 +306,8 @@
     var k = surnameOf(e.owner_name);
     return S._dupNames[k] && Object.keys(S._dupNames[k]).length > 1 ? e.owner_name : k;
   }
+  /* 業務の予定の先頭に出す人: 持ち主と、一緒にやる人（姓。「石川・太田」） */
+  function evPeople(e) { return [ownerShort(e)].concat((e.participants || []).map(function (u) { return ownerShort({ owner_name: u.name }); })).join('・'); }
   /* プライベート版の、家族が入れた予定の先頭の名前: 家族が決めた表示名を、そのまま出す（名字だけにすると、同じ名字の家族の見分けがつかない）。
      家族のアカウントから見た持ち主の予定は、これまでどおり（名字。同じ名字の人がいればフルネーム） */
   function famWho(e) { return FAMACCT && e.owner_name === S.me.family_owner_name ? (S.me.family_owner_pname || ownerShort(e)) : e.owner_name; }
@@ -1075,7 +1077,7 @@
       if (e.title && e.title !== '休み') t += '（' + e.title + '）';
     } else t = e.title;
     var time = first && !compact && e.start_time ? e.start_time + (e.end_time ? '-' + e.end_time : '') + ' ' : '';
-    var who = e.kind === 'work' && allView() && e.owner_name ? ownerShort(e) + '｜' : (!privOff && !full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? famWho(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
+    var who = e.kind === 'work' && allView() && e.owner_name ? evPeople(e) + '｜' : e.kind === 'work' && !FAMILY && !SHARE && S.view === 'team' && whoId() && e.owner_id !== whoId() && e.owner_name ? evPeople(e) + '｜' : (!privOff && !full && !SHARE && S.view === 'me' && e.owner_id !== S.me.user.id && e.owner_name ? famWho(e) + '｜' : ''); // 全社の表示: 業務の予定の先頭に、誰の予定か。プライベート版: 家族の予定（自分以外）の先頭に、だれが入れたか // 全社の表示: 業務の予定の先頭に、誰の予定か
     return who + (FAMILY && S.updIds && S.updIds[e.id] ? '● ' : '') + (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + (e.kind === 'private' && e.family_shared === false && !SHARE ? '非共有｜' : '') + time + t;
   }
 
@@ -1650,6 +1652,13 @@
     var note = el('textarea', { name: 'note', maxlength: '500', rows: '2' });
     note.value = ev ? ev.note : '';
     var impCb = el('input', { type: 'checkbox', name: 'important', checked: !!(ev && ev.important), style: 'width:auto' });
+    // 一緒にやる人（業務の予定を、社員どうしで共有する。例: 棚卸し）。選んだ人の「自分」の表示・日報にも出る
+    var evOwner = ev ? ev.owner_id : S.me.user.id, partOn = {};
+    (ev && ev.participants || []).forEach(function (u) { partOn[u.id] = true; });
+    var partLabel = el('div', { class: 'ev-parts' }, el('span', { class: 'ev-parts-h', text: '一緒にやる人' }),
+      S.me.users.filter(function (u) { return u.id !== evOwner; }).map(function (u) {
+        return el('label', { class: 'check' }, el('input', { type: 'checkbox', name: 'participant', value: String(u.id), checked: !!partOn[u.id], style: 'width:auto', onchange: function () { partOn[u.id] = this.checked; } }), ' ' + u.name);
+      }));
     // ToDoリストにも入れる（進捗を選ぶ）。ToDoから置いた予定は、下の「ToDoの状態」で変えるので、ここには出さない
     var todoSel = el('select', { name: 'todo_status', 'aria-label': 'ToDoリストの進捗' },
       [['', '入れない'], ['todo', '未着手'], ['doing', '進行中'], ['hold', '保留'], ['done', '完了']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
@@ -1706,6 +1715,7 @@
       syncFam();
       syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
+      partLabel.hidden = k !== 'work' || FA || S.me.users.length < 2;
       todoLabel.hidden = k === 'off' || !!(ev && (ev.todo_id || ev.owner_id !== S.me.user.id)); // 休み・ToDoと結びついた予定・他の人の予定には出さない
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示されます。' : '業務の予定は全員に表示されます。';
@@ -1738,6 +1748,7 @@
         id: ev ? ev.id : null, kind: FA ? 'private' : curKind(), title: title.value, tag: tag.value, start: start.value, end: end.value || start.value,
         start_time: timeVal(st), end_time: timeVal(et), note: note.value, important: impCb.checked
       };
+      if (!partLabel.hidden) body.participants = Object.keys(partOn).filter(function (id) { return partOn[id]; }).map(Number);
       // 「まとめて共有」の範囲に入っている予定は、予定ごとの指定を変えない（範囲を外したときに、勝手に共有が残らないように）
       if (!famOwnerOnly && !FA) body.family_shared = famCb.disabled ? (ev ? ev.family_shared !== false : false) : famCb.checked;
       if (!ownerLabel.hidden) body.owner_id = owner.value;
@@ -1777,6 +1788,7 @@
       tagRow,
       el('div', { class: 'row ev-when' }, el('label', null, '開始日', start), el('label', null, '終了日', end), el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
       el('div', { class: 'ev-opts' }, el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする'), todoLabel),
+      partLabel,
       el('label', null, 'メモ（任意）', note),
       famLabel,
       famNote,
@@ -2795,7 +2807,8 @@
     var seq = ++memoCalSeq;
     api('events', { params: { from: info.cur, to: info.next, view: 'team', who: String(S.me.user.id) }, quiet: true }).then(function (j) {
       if (seq !== memoCalSeq) return; // 古い答え
-      memoCal = { cur: info.cur, next: info.next, events: (j.events || []).filter(function (e) { return e.kind === 'work' && e.owner_id === S.me.user.id && !e.deleted; }) };
+      var me = S.me.user.id;
+      memoCal = { cur: info.cur, next: info.next, events: (j.events || []).filter(function (e) { return e.kind === 'work' && !e.deleted && (e.owner_id === me || (e.participants || []).some(function (u) { return u.id === me; })); }) }; // 一緒にやる人に入っている予定も、自分の日報に入る
       if (memoCalSync()) memoChanged();
     }).catch(function () { /* 読めなかったときは、次の機会に */ });
   }
@@ -3074,7 +3087,7 @@
           el('span', { class: 'di-title', text: e.rb.title }), el('span', { class: 'di-sub', text: subr.join('　') }));
       }
       var sub = [];
-      if (e.kind === 'work' && !FAMILY && e.owner_name) sub.push(e.owner_name);
+      if (e.kind === 'work' && !FAMILY && e.owner_name) sub.push([e.owner_name].concat((e.participants || []).map(function (u) { return u.name; })).join('・'));
       if (e.tag && e.kind !== 'off') sub.push(e.tag); // 休みは、見出しに分類が入っている
       if (e.start !== e.end) sub.push(mdw(e.start) + ' 〜 ' + mdw(e.end));
       return el('button', { type: 'button', class: 'day-item ' + e.kind + pcClass(e) + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : ''), style: eventColorStyle(e) || null, onclick: function () { ov.close(); openEventDialog(e); } },
@@ -3135,6 +3148,7 @@
     if (ev.start_time) rows.push(['時刻', ev.start_time + (ev.end_time ? ' 〜 ' + ev.end_time : '')]);
     if (ev.tag) rows.push(['分類', ev.tag]);
     rows.push(['持ち主', ev.owner_name]);
+    if (ev.participants && ev.participants.length) rows.push(['一緒にやる人', ev.participants.map(function (u) { return u.name; }).join('・')]);
     if (ev.important) rows.push(['重要', '★ 重要な予定']);
     if (ev.todo_id && ev.todo_status) rows.push(['ToDoの状態', TD_STATE_NAME[ev.todo_status]]);
     if (ev.note) rows.push(['メモ', ev.note]);

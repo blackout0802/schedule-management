@@ -335,6 +335,19 @@ check('ToDo→予定: ToDoは残り、自動で進行中になる', todo_status_
 check('ToDo→予定: 予定はToDoと結びつく', (int)row('SELECT todo_id FROM events WHERE id = ?', [$ev['id']])['todo_id'], (int)$todoA['id']);
 check('ToDo→予定: リストのToDoに、置いた日が付く', array_column(array_filter($todosAll($a), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched'), [$dd]);
 check('ToDo→予定: リストのToDoに、置いた予定の最終日も付く（日報の自動反映用）', array_column(array_filter($todosAll($a), function ($t) use ($todoA) { return $t['id'] === (int)$todoA['id']; }), 'sched_end'), [$dd]);
+// 一緒にやる人（業務の予定を、社員どうしで共有する）
+$pe = $mk($a, ['kind' => 'work', 'title' => '棚卸し（共有）', 'tag' => '個人作業', 'start' => '2031-06-10', 'end' => '2031-06-10', 'participants' => [(int)$b['id'], (int)$a['id']]]);
+$whoT = function (array $u, int $who) { return array_column(list_events($u, '2031-06-10', '2031-06-10', 'team', ['who' => $who]), 'title'); };
+check('一緒にやる人: 保存される（持ち主は入れない）', [event_participant_ids($pe), array_column(event_for_client($pe, $a)['participants'], 'id')], [[(int)$b['id']], [(int)$b['id']]]);
+check('一緒にやる人: 選んだ人の「自分」の表示に出る。選ばれていない人には出ない', [in_array('棚卸し（共有）', $whoT($b, (int)$b['id']), true), in_array('棚卸し（共有）', $whoT($admin, (int)$admin['id']), true)], [true, false]);
+check('一緒にやる人: 選んだ人は、編集できない（持ち主と管理者だけ）', [can_edit_event($pe, $b), can_edit_event($pe, $a)], [false, true]);
+[$bad, $berr] = validate_event_input(['kind' => 'work', 'title' => 'x', 'start' => '2031-06-10', 'participants' => [999999]], $a);
+check('一緒にやる人: いない人は選べない', $bad === null && $berr !== null, true);
+[$offd] = validate_event_input(['kind' => 'off', 'title' => '', 'start' => '2031-06-10', 'participants' => [(int)$b['id']]], $a);
+check('一緒にやる人: 休みには付かない', $offd['participants'], '');
+[$keep] = validate_event_input(['kind' => 'work', 'title' => '棚卸し（共有）', 'start' => '2031-06-10'], $a);
+check('一緒にやる人: 送られてこなければ、編集しても、いまのまま', event_participant_ids(save_event($keep, $a, $pe)), [(int)$b['id']]);
+q('DELETE FROM events WHERE id = ?', [$pe['id']]);
 check('ToDo→予定: 全社員に見える', in_array('見積書を作る', $titles(list_events($b, $dd, $dd, 'team')), true), true);
 check('ToDo→予定: 予定は、完了していないので取り消し線なし', array_column(array_filter(list_events($a, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [false]);
 set_todo_status(find_todo((int)$todoA['id'], $a), 'done');

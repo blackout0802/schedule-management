@@ -311,6 +311,11 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE events ADD COLUMN important INTEGER NOT NULL DEFAULT 0');
     }
+    try { // 一緒にやる社員（業務の予定を、社員どうしで共有する。番号をカンマでつなぐ。会議室の予約の参加者と同じ形）
+        db()->query('SELECT participants FROM events LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec("ALTER TABLE events ADD COLUMN participants VARCHAR(500) NOT NULL DEFAULT ''");
+    }
     try {
         db()->query('SELECT doing FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {
