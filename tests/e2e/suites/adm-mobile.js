@@ -4,9 +4,9 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
 p.on('pageerror', e => console.log('PAGEERR', e.message));
 await p.goto('http://127.0.0.1:8099/login.php'); await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1');
 await Promise.all([p.waitForURL('**/index.php'), p.tap('button[type=submit]')]); await p.waitForSelector('.cal');
-await p.goto('http://127.0.0.1:8099/index.php#settings'); await p.waitForSelector('.settings-page'); await p.waitForTimeout(600);
+await p.goto('http://127.0.0.1:8099/index.php#admin'); // 管理者の項目は「会社の管理」（v1.105.0） await p.waitForSelector('.settings-page'); await p.waitForTimeout(600);
 for (const id of ['users', 'holidays', 'slack', 'slackcfg', 'audit', 'backup']) {
-  ok('スマホ幅の設定: 管理者の項目「' + id + '」がある', await p.locator('#set-' + id).count() === 1);
+  ok('スマホ幅の会社の管理: 管理者の項目「' + id + '」がある', await p.locator('#set-' + id).count() === 1);
 }
 const w = await p.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
 ok('スマホ幅の設定ページは、横にはみ出さない', w[0] <= w[1], w);

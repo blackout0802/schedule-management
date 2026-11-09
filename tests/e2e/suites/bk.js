@@ -11,7 +11,7 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   const r403 = await y.goto(BASE + 'backup.php'); ok('一般の社員は、バックアップの画面を開けない（403）', r403.status() === 403);
   const a = await login(b, 'admin@example.com', 'adminpass1');
   await a.click('.menu >> text=管理者'); 
-  await a.goto(BASE + 'index.php#settings'); await a.waitForSelector('#set-backup'); ok('設定に「バックアップ」の項目がある（管理者）', true);
+  await a.goto(BASE + 'index.php#admin'); await a.waitForSelector('#set-backup'); ok('会社の管理に「バックアップ」のタイルがある（管理者）', (await a.getAttribute('#set-backup', 'href')) === 'backup.php');
   const sy = await y.evaluate(async () => (await fetch('index.php#settings')).status); 
   await a.goto(BASE + 'backup.php'); await a.waitForSelector('h1:has-text("バックアップ")');
   // パスワード不一致

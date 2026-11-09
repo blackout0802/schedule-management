@@ -18,28 +18,28 @@ const login = async (b, em, pw, w = 1100) => { const p = await b.newPage({ viewp
 
   // 管理者
   const a = await login(b, 'admin@example.com', 'adminpass1');
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-usage');
-  ok('管理者の設定に、利用状況と運用の手引きがある', (await a.locator('#set-usage').count()) === 1 && (await a.locator('#set-guide').count()) === 1);
-  await a.waitForSelector('#set-usage .usage-sec');
-  const txt = await a.locator('#set-usage').innerText();
+  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-usage'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
+  ok('管理者の「会社の管理」に、利用状況と運用の手引きがある', (await a.locator('#set-usage').count()) === 1 && (await a.locator('#set-guide').count()) === 1);
+  await a.click('#set-usage'); await a.waitForSelector('.modal .usage-sec'); // 利用状況は、タイルを押すとポップアップで開く
+  const txt = await a.locator('.modal').innerText();
   ok('社員ごとの、最後にログインした日時が出る', txt.includes('山田 花子') && txt.includes('鈴木 一郎') && /山田 花子[\s\S]*?\d+\/\d+ \d+:\d+（今日）/.test(txt), txt.slice(0, 500));
   ok('まだログインしていない人は「記録なし」', txt.includes('鈴木 一郎') && /鈴木 一郎[\s\S]{0,40}記録なし/.test(txt), txt.slice(0, 700));
   ok('容量・バックアップ・cron・システムの項目が出る', ['容量', 'データベース', 'ToDoの画像', 'サーバーの空き', '自動バックアップ', '自動処理（cron）', 'アプリの版'].every(w => txt.includes(w)), txt);
   ok('気をつけること: 自動バックアップが未設定だと出る', txt.includes('自動バックアップが設定されていません'));
   ok('気をつけること: 管理者が1人だけだと出る', txt.includes('管理者が1人だけ'));
   ok('他の人の私用ToDoの件名は、出ない', !txt.includes('利用状況に出ない私用') && secret === 200);
-  await a.locator('#set-usage').screenshot({ path: 'usage.png' });
+  await a.locator('.modal').screenshot({ path: 'usage.png' });
   // 自動バックアップを設定し、cron が動いた記録を入れると、注意が消える
   sql("INSERT INTO app_meta (meta_key, meta_value) VALUES ('backup_auto_pass', 'usage-pass-1')");
   sql(`INSERT INTO app_meta (meta_key, meta_value) VALUES ('cron_notify_at', '${require('../lib/env').ago(0)}')`);
-  await a.reload(); await a.waitForSelector('#set-usage .usage-sec');
-  const txt2 = await a.locator('#set-usage').innerText();
+  await a.reload(); await a.waitForSelector('#set-usage'); await a.click('#set-usage'); await a.waitForSelector('.modal .usage-sec');
+  const txt2 = await a.locator('.modal').innerText();
   ok('自動バックアップを設定すると、「設定されていません」は消える', !txt2.includes('自動バックアップが設定されていません') && txt2.includes('設定済み'), txt2.slice(0, 600));
   ok('cron の記録があると、通知の cron の項目に日時が出る', /notify（10分おき）[\s\S]{0,30}\d+\/\d+ \d+:\d+/.test(txt2), txt2);
   // cron が止まっていると警告
   sql(`UPDATE app_meta SET meta_value='${require('../lib/env').ago(1)}' WHERE meta_key='cron_notify_at'`);
-  await a.reload(); await a.waitForSelector('#set-usage .usage-sec');
-  ok('通知の cron が1時間以上止まると、警告が出る', (await a.locator('#set-usage .usage-warn li.warn').allInnerTexts()).some(t => t.includes('notify') && t.includes('1時間以上')));
+  await a.reload(); await a.waitForSelector('#set-usage'); await a.click('#set-usage'); await a.waitForSelector('.modal .usage-sec');
+  ok('通知の cron が1時間以上止まると、警告が出る', (await a.locator('.modal .usage-warn li.warn').allInnerTexts()).some(t => t.includes('notify') && t.includes('1時間以上')));
   // 運用の手引き
   const g = await a.goto(BASE + 'guide.php');
   ok('管理者は、運用の手引きを開ける', g.status() === 200 && (await a.locator('h1').innerText()).includes('運用の手引き'));
@@ -52,7 +52,7 @@ const login = async (b, em, pw, w = 1100) => { const p = await b.newPage({ viewp
   // スマホ幅でも、横にはみ出さない
   const m = await login(b, 'admin@example.com', 'adminpass1', 390); await m.goto(BASE + 'guide.php');
   ok('スマホ幅でも、手引きが横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
-  await m.goto(BASE + 'index.php#settings'); await m.waitForSelector('#set-usage'); if (await m.locator('#set-usage.collapsible:not(.open)').count()) await m.click('#set-usage > h3'); await m.waitForSelector('#set-usage .usage-sec');
+  await m.goto(BASE + 'index.php#admin'); await m.waitForSelector('#set-usage'); await m.click('#set-usage'); await m.waitForSelector('.modal .usage-sec');
   ok('スマホ幅でも、利用状況が横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
   await b.close();
   console.log(fails ? '失敗あり' : 'すべて成功'); process.exit(fails ? 1 : 0);

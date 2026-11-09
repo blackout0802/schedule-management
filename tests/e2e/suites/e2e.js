@@ -141,14 +141,14 @@ async function login(browser, email, pw) {
   ok('管理者は他人の休みを編集できる(フォーム表示)', await a.page.locator('.modal input[name=title]').count() === 1);
   await a.page.click('.modal >> text=キャンセル');
   // 社員管理
-  await a.page.click('header button:has-text("設定")');
+  await a.page.click('header button:has-text("会社の管理")'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   await a.page.waitForSelector('#set-users tbody tr');
   ok('社員一覧に3名', await a.page.locator('#set-users tbody tr').count() === 3);
   await a.page.screenshot({ path: 'admin-users.png' });
   await a.page.click('button:has-text("カレンダーに戻る")'); await a.page.waitForSelector('.cal');
 
   // --- 管理者が新しい社員を登録 → 初回ログインでパスワード変更を求める ---
-  await a.page.click('header button:has-text("設定")'); await a.page.waitForSelector('#set-users tbody tr');
+  await a.page.click('header button:has-text("会社の管理")'); await a.page.waitForSelector('#set-users tbody tr');
   await a.page.click('#set-users >> text=＋ 社員を追加');
   await a.page.fill('.modal input[name=name]', '新人 次郎');
   await a.page.fill('.modal input[name=email]', 'newbie@example.com');

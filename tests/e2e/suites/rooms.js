@@ -149,8 +149,8 @@ const get = (p, qs) => p.evaluate(async qs => (await fetch('api.php?action=' + q
   await bar(y, '過去の予約（本人用）').click(); await y.waitForSelector('.modal .rm-view');
   ok('本人（一般の社員）が、終わった予約を開いても、取り消しのボタンは出ない', (await y.locator('.modal button:has-text("予約を取り消す")').count()) === 0 && (await y.locator('.modal').innerText()).includes('変更も取り消しもできません'));
   await y.keyboard.press('Escape'); await y.waitForFunction(() => !document.querySelector('.modal'));
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-rooms .rm-adm-row');
-  ok('設定のページに、「会議室の設定」（管理者のみ）が出る。部屋が2つ並ぶ', (await a.locator('#set-rooms .rm-adm-row').count()) >= 3 && (await a.locator('#set-rooms').innerText()).includes('予約の決まり'));
+  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-rooms .rm-adm-row'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
+  ok('会社の管理のページに、「会議室の設定」（管理者のみ）が出る。部屋が2つ並ぶ', (await a.locator('#set-rooms .rm-adm-row').count()) >= 3 && (await a.locator('#set-rooms').innerText()).includes('予約の決まり'));
   ok('管理者でない人には、会議室の設定が出ない', await (async () => { await y.goto(BASE + 'index.php#settings'); await y.waitForSelector('.settings-page'); return (await y.locator('#set-rooms').count()) === 0; })());
   const row2 = a.locator('#set-rooms .rm-adm-row').nth(1); await row2.locator('input[type=number]').fill('5'); await row2.locator('button[type=submit]').click(); await a.waitForSelector('.toast');
   const r2 = await get(a, 'rooms_list&from=' + open[0] + '&to=' + open[0]);

@@ -8,7 +8,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
   const outside = async () => { await p.mouse.move(5, 500); await p.mouse.down(); await p.mouse.up(); };
   const open = () => p.locator('.modal').count();
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-users table');
+  await p.click('header button:has-text("会社の管理")'); await p.waitForSelector('#set-users table'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   await p.click('#set-users >> text=＋ 社員を追加'); await p.waitForFunction(() => document.querySelectorAll('.modal').length === 1);
   await p.fill('.modal:last-of-type input[name=name]', '入力途中');
   await outside(); await p.waitForTimeout(300);

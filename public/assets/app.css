@@ -963,3 +963,38 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 /* 6件目からを畳んだ列の「ほか N件を表示」 */
 .kb-more { width: 100%; border: 1px dashed var(--line); background: transparent; border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; }
 .kb-more:hover { background: var(--surface-2); color: var(--ink); }
+/* 設定・会社の管理のページ: まとまりの見出し、見出しの右の要約、Slack のタブ、管理の道具（タイル）、ページの切り替え、「?」ボタン */
+.set-group { font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--muted); margin: 22px 4px 8px; }
+.set-content > .set-group:first-child { margin-top: 0; }
+.set-nav-g { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; color: var(--muted); padding: 12px 12px 2px; }
+.set-nav-g:first-child { padding-top: 0; }
+.set-sec.collapsible > h3 .set-title { min-width: 0; }
+.set-sum { margin-left: auto; min-width: 0; font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0; }
+.set-sec.collapsible > h3::after { margin-left: 4px; }
+.set-sum-t.warn { color: var(--rec); }
+.sum-chips { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.sum-chip { display: inline-block; width: 16px; height: 11px; border-radius: 3px; border: 1px solid var(--line); }
+.set-tabs { display: flex; gap: 2px; max-width: 420px; padding: 3px; margin-bottom: 14px; border-radius: 10px; background: var(--surface-2); }
+.set-tab { flex: 1; border: 0; background: transparent; padding: 6px 10px; border-radius: 8px; font: inherit; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+.set-tab[aria-selected="true"] { background: var(--surface); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.set-tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; scroll-margin-top: 70px; }
+.set-tile { display: grid; gap: 2px; align-content: start; text-align: left; padding: 12px 16px; border: .5px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); font: inherit; text-decoration: none; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 24px rgba(0,0,0,.05); }
+.set-tile:hover { border-color: var(--work); }
+.set-tile:focus-visible { outline: 2px solid var(--work); outline-offset: 2px; }
+.set-tile .tile-t { font-size: 15px; font-weight: 600; color: var(--ink); }
+.set-tile .tile-sub { min-height: 1.5em; font-size: 12.5px; color: var(--muted); }
+.set-switch { display: inline-flex; gap: 4px; }
+.set-switch .btn[aria-pressed="true"] { background: var(--work-soft); color: var(--work); border-color: var(--work); font-weight: 600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .set-tile { box-shadow: none; } }
+:root[data-theme="dark"] .set-tile { box-shadow: none; }
+@media (max-width: 900px) { .set-nav-g { display: none; } }
+@media (max-width: 640px) {
+  .kbd-help, .topbar-in .admin-btn { display: none; }
+  .settings-page > .set-switch { margin-top: 8px; }
+  .set-sec.collapsible > h3 { flex-wrap: wrap; row-gap: 2px; }
+  .set-sec.collapsible > h3::after { order: 2; margin-left: auto; }
+  .set-sum { order: 3; flex-basis: 100%; margin-left: 0; font-size: 12px; }
+  .set-tools { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .set-tile { padding: 10px 12px; }
+  .set-switch .btn { padding-left: 8px; padding-right: 8px; }
+}

@@ -5,7 +5,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
 const log = () => { try { return fs.readFileSync(LOG, 'utf8').replace(/\\\//g, '/'); } catch (e) { return ''; } };
 async function login(b, email, pw) { const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage(); p.on('pageerror', e => console.log('PAGEERR', e.message)); p.on('dialog', d => d.accept());
   await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', email); await p.fill('input[name=password]', pw); await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); return p; }
-const open = async a => { if (!(await a.locator('.settings-page').count())) await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-slackcfg .slack-preview'); await a.waitForTimeout(300); };
+const open = async a => { if (!(await a.locator('.admin-page').count())) await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-slack .set-tab'); if (await a.locator('#set-slackcfg[hidden]').count()) await a.click('#set-slack .set-tab:has-text("時刻と文面")'); await a.waitForSelector('#set-slackcfg .slack-preview'); await a.waitForTimeout(300); }; // Slack は「会社の管理」の項目の中のタブ（v1.105.0）
 const save = async a => { await a.locator('#set-slackcfg .actions button.btn.primary:has-text("保存")').click(); await a.waitForSelector('.toast:has-text("保存しました")'); await a.waitForTimeout(1200); };
 (async () => {
   fs.writeFileSync(LOG, '');
