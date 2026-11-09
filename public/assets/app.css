@@ -998,3 +998,34 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
   .set-tile { padding: 10px 12px; }
   .set-switch .btn { padding-left: 8px; padding-right: 8px; }
 }
+/* 共有リンク・会社用の共有（v1.106.0）: 注意は1行（？で開く）、相手 × 見るリンク／カレンダー購読 の表、家族に見せる範囲は1行の要約 */
+.form.share { gap: 10px; }
+.share-notice { background: var(--work-soft); border-radius: 8px; padding: 7px 12px; font-size: 13.5px; }
+.share-notice > summary { cursor: pointer; list-style: none; display: block; }
+.share-notice > summary::-webkit-details-marker { display: none; }
+.share-notice .share-q { margin-left: 6px; color: var(--work); font-weight: 600; }
+.share-notice > p { margin: 6px 0 0; font-size: 13px; color: var(--ink); }
+.share-tbl { width: 100%; max-width: 760px; }
+.share-tbl th[scope="row"] { width: 4.5em; white-space: nowrap; vertical-align: middle; }
+.share-tbl thead th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.share-cell { vertical-align: middle; }
+.share-cell.none { color: var(--muted); }
+.share-cell-in { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.share-st { background: var(--off-soft); color: var(--off); }
+.share-tail { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; color: var(--muted); }
+.share-more { position: relative; display: inline-flex; }
+.share-more-btn { min-width: 30px; }
+.share-menu { right: 0; left: auto; top: calc(100% + 4px); min-width: 12em; z-index: 30; }
+.share-menu a, .share-menu button { display: block; width: 100%; text-align: left; text-decoration: none; color: var(--ink); }
+.share-menu .danger { color: var(--danger); }
+.share-scope { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: 14px; }
+.share-scope-v { font-weight: 500; }
+.share-foot { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 640px) {
+  .share-tbl th[scope="row"] { width: 3em; }
+  .share-tbl td, .share-tbl th { padding-left: 6px; padding-right: 6px; }
+  .share-tail, .share-st { display: none; }
+  .share-cell-in { flex-wrap: nowrap; gap: 4px; }
+}
+.share-menu a { padding: 8px 10px; border-radius: 6px; font-size: 14px; }
+.share-menu a:hover { background: var(--surface-2); }

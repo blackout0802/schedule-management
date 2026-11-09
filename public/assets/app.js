@@ -674,10 +674,10 @@
         var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'bar' }, lb = function (v) { return v === 'icon' ? 'アイコン' : '帯'; };
         set(sumText('業務: ' + lb(m.team) + ' ／ プライベート: ' + lb(m.me)));
       } },
-      { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog, sum: function (set) {
+      { id: 'share', title: '共有リンク（家族へ）', build: function () { openShareDialog('family'); }, sum: function (set) {
         return api('share_list').then(function (j) {
-          var has = function (k) { var l = j.links.filter(function (x) { return x.kind === k; })[0]; return l ? (l.path ? 'あり' : 'なし') : null; };
-          set(sumText('家族用: ' + has('family') + (has('company') ? ' ／ 会社用: ' + has('company') : '')));
+          var l = j.links.filter(function (x) { return x.kind === 'family'; })[0], n = (j.ical || []).filter(function (x) { return x.kind !== 'company' && x.path; }).length;
+          set(sumText('家族用リンク: ' + (l && l.path ? 'あり' : 'なし') + ' ／ 購読: ' + n + '件'));
         });
       } },
       { id: 'family', title: '家族の招待', build: openFamilyDialog, sum: function (set) {
@@ -700,10 +700,16 @@
         var t = ymd(new Date());
         return api('rooms_list', { params: { from: t, to: t } }).then(function (j) { set(sumText(j.rooms.filter(function (r) { return r.active; }).length + '部屋')); });
       } },
-      { group: '通知', id: 'slack', title: 'Slack通知', build: buildSlackSection, sum: function (set) {
+      { group: '通知と共有', id: 'slack', title: 'Slack通知', build: buildSlackSection, sum: function (set) {
         return Promise.all([api('slack_status'), api('slack_cfg')]).then(function (r) {
           var st = r[0].slack, c = r[1].cfg, tm = function (x, nm) { return nm + ' ' + (x.on ? x.time : 'なし'); };
           set(st.configured ? sumText(tm(c.morning, '朝') + '・' + tm(c.evening, '夕方') + ' ／ ' + st.active_name) : sumText('送り先が未設定', true));
+        });
+      } },
+      { group: '通知と共有', id: 'company-share', title: '会社用の共有', build: openCompanyShareDialog, sum: function (set) {
+        return api('share_list').then(function (j) {
+          var l = j.links.filter(function (x) { return x.kind === 'company'; })[0], c = (j.ical || []).filter(function (x) { return x.kind === 'company'; })[0];
+          set(sumText('リンク: ' + (l && l.path ? 'あり' : 'なし') + ' ／ 購読: ' + (c && c.path ? 'あり' : 'なし')));
         });
       } }
     ];
@@ -3340,119 +3346,143 @@
   }
 
   /* ---------- 共有リンク ---------- */
-  function openShareDialog() {
-    var body = el('div', { class: 'form' });
-    var ov = openModal('共有リンク（閲覧専用）', body, true);
+  /* 共有リンク（閲覧専用のURL）とカレンダー購読（ICS）を、小さな表で出す（v1.106.0）。
+     mode 'family'（設定の「共有リンク（家族へ）」）: 家族（見るリンク・購読）と、自分（購読）。
+     mode 'company'（会社の管理の「会社用の共有」）: 会社（見るリンク・購読）。管理者だけ。
+     マスは「状態・コピー・⋯（開く／作り直す／止める）」。作っていないマスは「作る」だけ。長いURLは出さない（末尾の5文字だけ） */
+  function openShareDialog(mode) {
+    mode = mode === 'company' ? 'company' : 'family';
+    var body = el('div', { class: 'form share' });
+    var ov = openModal(mode === 'company' ? '会社用の共有' : '共有リンク（家族へ）', body, true);
     var absUrl = function (path) { return new URL(path, location.href).href; };
     var scope = { off: false, tags: [] };
-    function scopeBox() {
+    var copyUrl = function (url, what) {
+      var done = function () { toast(what + 'をコピーしました'); };
+      var manual = function () { window.prompt ? window.prompt('コピーしてください', url) : toast(url); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, manual); else manual();
+    };
+    /* 「⋯」のメニュー（開く・作り直す・止める）。外を押すと閉じる */
+    function moreMenu(items) {
+      var wrap = el('span', { class: 'share-more' });
+      var list = null;
+      var close = function () { if (list) { list.remove(); list = null; btn.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', close); } };
+      var btn = el('button', { class: 'btn small ghost share-more-btn', type: 'button', text: '⋯', 'aria-label': 'ほかの操作', 'aria-haspopup': 'true', 'aria-expanded': 'false', onclick: function (e) {
+        e.stopPropagation();
+        if (list) return close();
+        list = el('div', { class: 'menu-list share-menu', role: 'menu' }, items.map(function (it) {
+          return it.href ? el('a', { role: 'menuitem', href: it.href, target: it.blank ? '_blank' : null, rel: it.blank ? 'noopener noreferrer' : null, text: it.text, title: it.title || null, onclick: close })
+            : el('button', { type: 'button', role: 'menuitem', class: it.danger ? 'danger' : null, text: it.text, title: it.title || null, onclick: function () { close(); it.fn(); } });
+        }));
+        wrap.appendChild(list); btn.setAttribute('aria-expanded', 'true');
+        setTimeout(function () { document.addEventListener('click', close); }, 0);
+      } });
+      wrap.appendChild(btn);
+      return wrap;
+    }
+    /* 表の1マス。l: { kind, path } / ical: カレンダー購読か */
+    function cell(l, ical) {
+      var td = el('td', { class: 'share-cell', 'data-kind': (ical ? 'ical-' : 'link-') + l.kind });
+      var who = { family: '家族用', company: '会社用', me: '自分用' }[l.kind];
+      if (!l.path) {
+        td.appendChild(el('button', { class: 'btn small', type: 'button', text: ical ? '購読URLを作る' : 'リンクを作る', title: who + (ical ? 'の購読URL' : 'のリンク') + 'を作る', onclick: function () {
+          api(ical ? 'ical_create' : 'share_create', { body: { kind: l.kind } }).then(function () { toast(ical ? '購読URLを作りました' : 'リンクを作りました'); refresh(); }).catch(fail);
+        } }));
+        return td;
+      }
+      var url = absUrl(l.path);
+      td.setAttribute('data-url', url);
+      var items = ical
+        ? [{ text: 'iPhoneで登録', href: url.replace(/^https?:/, 'webcal:'), title: 'iPhone・Macで開くと、カレンダーに登録する画面が出ます' },
+          { text: 'URLを作り直す', title: '古いURLは、すぐに使えなくなります', fn: function () {
+            if (!window.confirm('購読URLを作り直します。古いURLで取り込んだカレンダーは、次の更新から空になります（新しいURLで取り込み直してください）。よろしいですか？')) return;
+            api('ical_create', { body: { kind: l.kind } }).then(function () { toast('作り直しました'); refresh(); }).catch(fail);
+          } },
+          { text: '購読を止める', danger: true, fn: function () {
+            if (!window.confirm('購読を止めます。このURLでは、もう取り込めなくなります。よろしいですか？')) return;
+            api('ical_revoke', { body: { kind: l.kind } }).then(function () { toast('購読を止めました'); refresh(); }).catch(fail);
+          } }]
+        : [{ text: '開く', href: url, blank: true },
+          { text: 'リンクを作り直す', title: '古いURLは、すぐに見られなくなります', fn: function () {
+            if (!window.confirm('リンクを作り直します。古いURLは、すぐに見られなくなります（共有している人には新しいURLを伝え直してください）。よろしいですか？')) return;
+            api('share_create', { body: { kind: l.kind } }).then(function () { toast('作り直しました'); refresh(); }).catch(fail);
+          } },
+          { text: '共有を止める', danger: true, fn: function () {
+            if (!window.confirm('共有を止めます。このURLでは、もう見られなくなります。よろしいですか？')) return;
+            api('share_revoke', { body: { kind: l.kind } }).then(function () { toast('共有を止めました'); refresh(); }).catch(fail);
+          } }];
+      td.appendChild(el('div', { class: 'share-cell-in' },
+        el('span', { class: 'pill share-st', text: ical ? 'あり' : '共有中' }),
+        el('button', { class: 'btn small primary', type: 'button', text: 'コピー', title: who + (ical ? 'の購読URL' : 'のリンク') + 'をコピー', onclick: function () { copyUrl(url, ical ? '購読URL' : 'リンク'); } }),
+        moreMenu(items),
+        el('span', { class: 'share-tail', text: '…' + url.slice(-5), title: url })));
+      return td;
+    }
+    /* 家族に見せる範囲: ふだんは1行の要約。「変える」で選ぶ */
+    function scopeText() {
+      var parts = ['プライベート（予定ごと）'];
+      if (scope.off) parts.push('休み（すべて）');
+      return parts.concat(scope.tags || []).join('・');
+    }
+    var scopeOpen = false;
+    function scopeLine() {
+      var line = el('div', { class: 'share-scope' }, el('span', { class: 'hint', text: '家族に見せる範囲:' }), el('span', { class: 'share-scope-v', text: scopeText() }),
+        el('button', { class: 'btn small', type: 'button', text: scopeOpen ? '完了' : '変える', 'aria-expanded': scopeOpen ? 'true' : 'false', onclick: function () { scopeOpen = !scopeOpen; refresh(); } }));
+      if (!scopeOpen) return line;
       var save = function () {
         var tags = S.me.work_tags.filter(function (t, i) { return boxes[i].checked; });
-        api('share_options', { body: { off: offCb.checked, tags: tags } }).then(function (j) { S.me.family_share = j.family_share; scope = j.family_share; toast('家族に見せる範囲を保存しました'); }).catch(fail);
+        api('share_options', { body: { off: offCb.checked, tags: tags } }).then(function (j) { S.me.family_share = j.family_share; scope = j.family_share; line.querySelector('.share-scope-v').textContent = scopeText(); toast('家族に見せる範囲を保存しました'); }).catch(fail);
       };
       var offCb = el('input', { type: 'checkbox', checked: scope.off, onchange: save });
       var boxes = S.me.work_tags.map(function (t) { return el('input', { type: 'checkbox', checked: scope.tags.indexOf(t) >= 0, onchange: save }); });
-      return el('div', { class: 'scope' },
-        el('b', { text: '家族に見せる範囲（まとめて指定）' }),
-        el('p', { class: 'hint', style: 'margin:2px 0 6px', text: '予定ごとの「家族に共有」のチェックとは別に、すでに登録してある予定も含めて、まとめて見せられます。チェックを外すと、すぐ見えなくなります。共有した業務・休みは、あなたのプライベート版にも表示されます。' }),
+      return el('div', null, line, el('div', { class: 'scope' },
         el('label', { class: 'check' }, offCb, '自分の休みを、すべて見せる'),
         el('div', { class: 'scope-tags' }, el('span', { class: 'hint', text: '見せる業務の分類:' }),
           S.me.work_tags.map(function (t, i) { return el('label', { class: 'fchip' }, boxes[i], t); })),
-        el('p', { class: 'hint', style: 'margin:6px 0 0', text: 'プライベートの予定は、予定ごとの「家族に共有」で決まります（初期値は共有）。業務の予定は会社の情報を含むことがあるので、見せてよい分類だけにチェックしてください。' }));
+        el('p', { class: 'hint', style: 'margin:4px 0 0', text: '予定ごとの「家族に共有」のチェックとは別に、すでに登録してある予定も含めて、まとめて見せられます（外すと、すぐ見えなくなります）。プライベートの予定は、予定ごとの「家族に共有」で決まります（初期値は共有）。業務は会社の情報を含むことがあるので、見せてよい分類だけにしてください。' })));
     }
-    function card(l) {
-      var family = l.kind === 'family';
-      var box = el('div', { class: 'card' },
-        el('div', { class: 'name', text: family ? '家族用リンク' : '会社用リンク（管理者のみ）' }),
-        el('p', { class: 'hint', style: 'margin:0', text: family
-          ? 'あなたの予定のうち、家族に共有すると決めたものだけが、カレンダーで見られます。プライベートは初期状態で共有（外した予定だけ隠れます）、業務・休みは、選んだものだけが共有されます。ログイン不要で、見るだけです。'
-          : '会社の業務の予定と休みが見られます。プライベートの予定は含まれません。ログイン不要で、見るだけです。' }));
-      if (family) box.appendChild(scopeBox());
-      if (family) box.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
-        el('button', { class: 'btn small', type: 'button', text: '家族に見える更新履歴を管理（削除）', title: '家族用ページの「更新履歴を見る」に出る記録を、確認・削除します', onclick: openFamilyLogDialog })));
-      if (l.path) {
-        var url = absUrl(l.path);
-        var input = el('input', { type: 'text', readonly: true, value: url, 'aria-label': 'リンクのURL', onclick: function (e) { e.target.select(); } });
-        box.appendChild(el('div', { class: 'share-row' }, input,
-          el('button', { class: 'btn small primary', type: 'button', text: 'コピー', onclick: function () {
-            var done = function () { toast('リンクをコピーしました'); };
-            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { input.select(); toast('選択しました。Ctrl + C でコピーしてください'); });
-            else { input.select(); try { document.execCommand('copy'); done(); } catch (e) { toast('Ctrl + C でコピーしてください'); } }
-          } }),
-          el('a', { class: 'btn small', href: url, target: '_blank', rel: 'noopener noreferrer', text: '開く' })));
-        box.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
-          el('button', { class: 'btn small', type: 'button', text: 'リンクを作り直す', title: '古いURLは、すぐに見られなくなります', onclick: function () {
-            if (!window.confirm('リンクを作り直します。古いURLは、すぐに見られなくなります（共有している人には新しいURLを伝え直してください）。よろしいですか？')) return;
-            api('share_create', { body: { kind: l.kind } }).then(function () { toast('作り直しました'); refresh(); }).catch(fail);
-          } }),
-          el('button', { class: 'btn small danger', type: 'button', text: '共有を止める', onclick: function () {
-            if (!window.confirm('共有を止めます。このURLでは、もう見られなくなります。よろしいですか？')) return;
-            api('share_revoke', { body: { kind: l.kind } }).then(function () { toast('共有を止めました'); refresh(); }).catch(fail);
-          } })));
-      } else {
-        box.appendChild(el('div', null, el('button', { class: 'btn primary small', type: 'button', text: 'リンクを作る', onclick: function () {
-          api('share_create', { body: { kind: l.kind } }).then(function () { toast('リンクを作りました'); refresh(); }).catch(fail);
-        } })));
-      }
-      return box;
+    /* 取り込み方（カレンダー購読）: 押したときだけ、ポップアップで出す */
+    function openIcalHelp() {
+      var b2 = el('div', { class: 'form' },
+        el('p', { class: 'hint', text: 'iPhone の標準カレンダーや Google カレンダーに、このアプリの予定を、読み取り専用で取り込めます。向こうの通知・ウィジェット・Apple Watch でも見られます。こちらで変えると、しばらくあとに（Apple は数分〜、Google は半日〜1日）向こうにも反映されます。時刻のある予定には、15分前の通知が付きます（Apple のカレンダーなど）。' }),
+        el('div', { class: 'inst-box' }, el('h4', { text: 'iPhone' }), el('ol', null, ['「⋯」の「iPhoneで登録」を押す（または、設定 → カレンダー → アカウント → アカウントを追加 → その他 → 照会するカレンダーを追加 に、コピーしたURLを貼る）', '「購読」を押して、完了']),
+          el('h4', { text: 'Google カレンダー（パソコン）' }), el('ol', null, ['左の「他のカレンダー」の「＋」→「URLで追加」', 'コピーした購読URLを貼って、「カレンダーを追加」（https のURLです）'])),
+        el('p', { class: 'hint', text: '自分用の購読URLは、あなたの全予定（プライベートも）です。あなただけの秘密にしてください。' }));
+      var o2 = openModal('カレンダーへの取り込み方', b2);
+      b2.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { o2.close(); } })));
+      o2.outsideClose = true;
     }
-    /* カレンダー購読（ICS）: スマホ標準のカレンダー・Googleカレンダーに、URLで取り込む */
-    var ICAL_TEXT = {
-      me: ['自分用（プライベートも含む全予定）', 'あなたの全予定（業務・休み・プライベート）です。URLは、あなただけの秘密にしてください。時刻のある予定には、15分前の通知が付きます（Appleのカレンダーなど）。'],
-      family: ['家族用（共有した予定だけ）', '家族用リンクと同じ範囲（「家族に共有」にした予定だけ）です。家族のスマホに取り込んでもらえます。'],
-      company: ['会社用（管理者のみ・業務と休み）', '会社用リンクと同じ範囲（業務と休み。プライベートは含みません）です。社員のスマホに取り込んでもらえます。']
-    };
-    function icalCard(l) {
-      var t = ICAL_TEXT[l.kind];
-      var box = el('div', { class: 'card' }, el('div', { class: 'name', text: t[0] }), el('p', { class: 'hint', style: 'margin:0', text: t[1] }));
-      if (l.path) {
-        var url = absUrl(l.path);
-        var input = el('input', { type: 'text', readonly: true, value: url, 'aria-label': '購読URL', onclick: function (e) { e.target.select(); } });
-        box.appendChild(el('div', { class: 'share-row' }, input,
-          el('button', { class: 'btn small primary', type: 'button', text: 'コピー', onclick: function () {
-            var done = function () { toast('購読URLをコピーしました'); };
-            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { input.select(); toast('選択しました。コピーしてください'); });
-            else { input.select(); try { document.execCommand('copy'); done(); } catch (e) { toast('コピーしてください'); } }
-          } }),
-          el('a', { class: 'btn small', href: url.replace(/^https?:/, 'webcal:'), text: 'iPhoneで登録', title: 'iPhone・Macで開くと、カレンダーに登録する画面が出ます' })));
-        box.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
-          el('button', { class: 'btn small', type: 'button', text: 'URLを作り直す', title: '古いURLは、すぐに使えなくなります', onclick: function () {
-            if (!window.confirm('購読URLを作り直します。古いURLで取り込んだカレンダーは、次の更新から空になります（新しいURLで取り込み直してください）。よろしいですか？')) return;
-            api('ical_create', { body: { kind: l.kind } }).then(function () { toast('作り直しました'); refresh(); }).catch(fail);
-          } }),
-          el('button', { class: 'btn small danger', type: 'button', text: '購読を止める', onclick: function () {
-            if (!window.confirm('購読を止めます。このURLでは、もう取り込めなくなります。よろしいですか？')) return;
-            api('ical_revoke', { body: { kind: l.kind } }).then(function () { toast('購読を止めました'); refresh(); }).catch(fail);
-          } })));
-      } else {
-        box.appendChild(el('div', null, el('button', { class: 'btn primary small', type: 'button', text: '購読URLを作る', onclick: function () {
-          api('ical_create', { body: { kind: l.kind } }).then(function () { toast('購読URLを作りました'); refresh(); }).catch(fail);
-        } })));
-      }
-      return box;
-    }
-    function icalSection(list) {
-      var wrap = el('div', { class: 'ical-sec' }, el('h4', { style: 'margin:14px 0 4px', text: 'カレンダー購読（スマホのカレンダーに取り込む）' }),
-        el('p', { class: 'hint', style: 'margin:0 0 6px', text: 'iPhone の標準カレンダーや Google カレンダーに、このアプリの予定を、読み取り専用で取り込めます。向こうの通知・ウィジェット・Apple Watch でも見られます。取り込んだ予定は、こちらで変えると、しばらくあとに（Apple は数分〜、Google は半日〜1日）向こうにも反映されます。' }));
-      list.forEach(function (l) { wrap.appendChild(icalCard(l)); });
-      wrap.appendChild(el('details', { class: 'help-sm', open: !isPhone() }, el('summary', { text: 'ⓘ 取り込み方' }),
-        el('div', { class: 'inst-box' }, el('h4', { text: 'iPhone' }), el('ol', null, ['上の「iPhoneで登録」を押す（または、設定 → カレンダー → アカウント → アカウントを追加 → その他 → 照会するカレンダーを追加 に、URLを貼る）', '「購読」を押して、完了']),
-          el('h4', { text: 'Google カレンダー（パソコン）' }), el('ol', null, ['左の「他のカレンダー」の「＋」→「URLで追加」', '上の購読URLを貼って、「カレンダーを追加」（https のURLです）']))));
-      return wrap;
+    function notice() {
+      return el('details', { class: 'share-notice' },
+        el('summary', null, el('span', { 'aria-hidden': 'true', text: '⚠ ' }), el('b', { text: 'URLを知っている人は、ログインなしで見られます' }), el('span', { class: 'share-q', text: '？' })),
+        el('p', { text: mode === 'company'
+          ? '会社用は、会社の業務の予定と休みが見られます（プライベートは含みません）。社員にだけ伝えてください。URLが社外に伝わったときは「⋯」の「作り直す」か「止める」で、すぐに見られなくなります。'
+          : '見せたい人にだけ伝えてください。会社の人が見られる場所に、家族用のURLを載せないでください。家族用は、あなたの予定のうち、家族に共有すると決めたものだけが見られます。URLが他の人に伝わったときは「⋯」の「作り直す」か「止める」で、すぐに見られなくなります。' }));
     }
     function refresh() {
       api('share_list').then(function (j) {
         scope = j.family_share || scope; S.me.family_share = scope;
+        var link = function (k) { return j.links.filter(function (x) { return x.kind === k; })[0] || { kind: k, path: null }; };
+        var ical = function (k) { return (j.ical || []).filter(function (x) { return x.kind === k; })[0] || null; };
+        var rows = mode === 'company' ? [['会社', link('company'), ical('company')]] : [['家族', link('family'), ical('family')], ['自分', null, ical('me')]];
         body.textContent = '';
-        body.appendChild(el('div', { class: 'notice' }, el('b', { text: 'このURLを知っている人は、ログインなしで見られます' }),
-          el('p', { text: '見せたい人にだけ伝えてください。会社の人が見られる場所に、家族用のURLを載せないでください。URLが他の人に伝わったときは「リンクを作り直す」か「共有を止める」で、すぐに見られなくなります。' })));
-        j.links.forEach(function (l) { body.appendChild(card(l)); });
-        if (j.ical) body.appendChild(icalSection(j.ical));
+        body.appendChild(notice());
+        body.appendChild(el('div', { class: 'share-tbl-wrap' }, el('table', { class: 't share-tbl' }, // 「⋯」のメニューが切れないよう、横スクロールの枠には入れない
+          el('thead', null, el('tr', null, el('th', { text: '相手' }), el('th', { text: '見るためのリンク' }), el('th', { text: 'カレンダーに取り込む' }))),
+          el('tbody', null, rows.map(function (r) {
+            return el('tr', { 'data-who': r[0] }, el('th', { scope: 'row', text: r[0] }),
+              r[1] ? cell(r[1], false) : el('td', { class: 'share-cell none', text: '—', title: '自分だけが見るリンクは、ありません（ログインして見てください）' }),
+              r[2] ? cell(r[2], true) : el('td', { class: 'share-cell none', text: '—' }));
+          })))));
+        if (mode === 'family') body.appendChild(scopeLine());
+        body.appendChild(el('div', { class: 'share-foot' },
+          el('button', { class: 'btn small ghost', type: 'button', text: '取り込み方 ？', title: 'スマホのカレンダーに取り込む手順', onclick: openIcalHelp }),
+          mode === 'family' ? el('button', { class: 'btn small ghost', type: 'button', text: '家族に見える更新履歴を管理（削除）', title: '家族用ページの「更新履歴を見る」に出る記録を、確認・削除します', onclick: openFamilyLogDialog }) : null));
         body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
       }).catch(fail);
     }
     refresh();
   }
+  function openCompanyShareDialog() { openShareDialog('company'); }
 
   /* ---------- 繰り返し業務 ---------- */
   function openSeriesDialog() {
@@ -3637,7 +3667,7 @@
       body.appendChild(slackSchedBox(st, draw));
       if (!st.configured) body.appendChild(el('p', { class: 'hint', text: '送り先がまだ無いので、テストはできません。「送り先を追加」に、チャンネル名と Webhook URL を入れて保存してください。' }));
       body.appendChild(el('p', { class: st.link === 'company' ? 'hint' : 'hint warn', text: st.link === 'company' ? '通知の「スケジュールを開く」は、会社用の共有リンクに飛びます（ログイン不要で、業務版のカレンダーを閲覧専用で見られます）。共有リンクを作り直すと、過去の通知のリンクは開けなくなります。'
-        : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、「設定」→「共有リンク」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
+        : st.link === 'login' ? '※ 通知の「スケジュールを開く」は、ログイン後に業務版が開くリンクです。ログインなしですぐ見られるようにするには、このページの「会社用の共有」で、会社用リンクを作ってください（作ると、自動でそちらに切り替わります）。'
         : '※ config.php の base_url が空なので、通知に「スケジュールを開く」のリンクは付きません。' }));
       if (!ov.embedded) body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('button', { class: 'btn', type: 'button', text: '通知の時間・文面を変える', onclick: function () { ov.close(); openSlackCfgDialog(); } })));
       body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } })));
