@@ -54,6 +54,7 @@ const openAdd = async (pg, sel) => { if (!(await pg.locator(sel + ' .todo-add in
   await p.screenshot({ path: 'kanban.png', fullPage: true });
   // 他の人には見えない
   const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await s.click('.toolbar .seg label:has-text("リスト")'); await s.waitForSelector('.kanban'); await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.waitForTimeout(300);
+  await s.click('.kanban .kb-col:not(.done) .kb-who-h >> nth=0'); await s.waitForSelector('.kanban .kb-card.other'); // 他の人は、見出しで畳まれている（v1.103.0）
   ok('他の社員のカンバンには、業務のToDoが「見るだけ」で出る（自分のカードとしては出ない）', await s.locator('.kanban .kb-card:not(.other)').count() === 0 && await s.locator('.kanban .kb-card.other').count() > 0);
   // 業務版
   await p.click('.toolbar .seg label:has-text("リスト")'); await p.waitForSelector('.kanban');

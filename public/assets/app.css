@@ -954,8 +954,9 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 @media (max-width: 640px) { .ev-form .row.ev-when { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .ev-form .ev-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 13px; }
 .ev-form .ev-parts-h { color: var(--muted); }
-/* 完了の列: 全員の ToDo のとき、人ごとに畳む */
+/* 全員の ToDo のとき、各列を人ごとの見出しに分ける（完了は全員畳む。ほかの列は、自分は開いて、他の人は畳む） */
 .kb-who { display: grid; gap: 6px; }
 .kb-who-h { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 700; color: var(--ink); cursor: pointer; }
 .kb-who-h:hover { background: var(--surface-2); }
 .kb-who-h .cnt { font-weight: 400; color: var(--muted); }
+.kb-who-h .kb-who-r { display: inline-flex; align-items: center; gap: 6px; }

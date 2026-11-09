@@ -2228,18 +2228,22 @@
         ? el('h3', null, el('button', { type: 'button', class: 'kb-fold', 'aria-expanded': collapsed ? 'false' : 'true', title: collapsed ? '完了したToDoを開く' : '完了したToDoを畳む', onclick: function () { store('sched.doneOpen', collapsed); renderTodo(); } }, (collapsed ? '▸ ' : '▾ ') + c[1]), cnt)
         : el('h3', null, c[1], cnt);
       var col = el('div', { class: 'kb-col ' + status + (collapsed ? ' collapsed' : ''), 'data-status': status }, head);
-      // 完了: 全員の ToDo を出していて、他の人の完了もあるときは、人ごとに分けて、畳んで出す（見出しを押すと開く。開いた人は、開き直すまで覚える）
-      var byWho = status === 'done' && !collapsed && todoWho() === 'all' && oth.length > 0;
+      // 全員の ToDo を出していて、この列に他の人の ToDo もあるときは、人ごとの見出し（件数つき）に分けて出す（その人の ToDo がない列には、見出しを出さない）。
+      // 初めの開き方: 完了は全員畳む。未着手・進行中・保留は、自分は開いて、他の人は畳む。見出しを押すと開閉し、列ごとに、ページを開き直すまで覚える
+      var byWho = !collapsed && todoWho() === 'all' && oth.length > 0;
       if (byWho) {
         var groups = [{ id: S.me.user.id, name: '自分', items: items, mine: true }], gi = {};
         oth.forEach(function (t) { if (gi[t.owner_id] === undefined) { gi[t.owner_id] = groups.length; groups.push({ id: t.owner_id, name: t.owner_name + 'さん', items: [] }); } groups[gi[t.owner_id]].items.push(t); });
-        var openWho = S.doneWhoOpen || (S.doneWhoOpen = {});
+        var whoOpen = S.whoOpen || (S.whoOpen = {}), openWho = whoOpen[status] || (whoOpen[status] = {});
         groups.forEach(function (g) {
           if (!g.items.length) return;
-          var open = !!openWho[g.id];
+          var open = openWho[g.id] === undefined ? (status !== 'done' && !!g.mine) : !!openWho[g.id];
           var box = el('div', { class: 'kb-who' + (open ? ' open' : ''), 'data-who': String(g.id) },
             el('button', { type: 'button', class: 'kb-who-h', 'aria-expanded': open ? 'true' : 'false', title: open ? '畳む' : '開く', onclick: function () { openWho[g.id] = !open; renderTodo(); } },
-              (open ? '▾ ' : '▸ ') + g.name, el('span', { class: 'cnt', text: String(g.items.length) })));
+              (open ? '▾ ' : '▸ ') + g.name,
+              el('span', { class: 'kb-who-r' }, // 畳んでいて、新しいコメントのある ToDo があれば、見出しにも目印を出す（カードの目印が見えないため）
+                !open && g.items.some(function (t) { return t.kind !== 'private' && t.comments && tcNew(t); }) ? el('span', { class: 'pill tc new', text: '💬 新着', title: '新しいコメントのある ToDo があります' }) : null,
+                el('span', { class: 'cnt', text: String(g.items.length) }))));
           if (open) g.items.forEach(function (t) { box.appendChild(g.mine ? kanbanCard(t, status) : othersCard(t)); });
           col.appendChild(box);
         });
