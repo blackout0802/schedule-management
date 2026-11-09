@@ -241,9 +241,11 @@ function save_event(array $data, array $user, ?array $existing): array
             $data['family_shared'] = (int)$existing['family_shared']; // 家族への共有は持ち主だけが決める（管理者の編集では変えない）
         }
         $parts = event_parts_clean($data['participants'] ?? null, $existing, (int)$existing['owner_id']);
-        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, participants=?, detached=?, updated_at=? WHERE id=?', [
+        // 日付を変えたら、完了で縮める前の終了日（end_before_done）は忘れる（取り消しで、手で決めた日付を上書きしないように）
+        $ebd = $data['start'] === $existing['start_date'] && $data['end'] === $existing['end_date'] ? ($existing['end_before_done'] ?? null) : null;
+        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, participants=?, detached=?, end_before_done=?, updated_at=? WHERE id=?', [
             $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'], $data['note'],
-            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $parts, $existing['series_id'] !== null ? 1 : 0, now_str(), $existing['id'],
+            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $parts, $existing['series_id'] !== null ? 1 : 0, $ebd, now_str(), $existing['id'],
         ]);
         $id = (int)$existing['id'];
         $after = row('SELECT * FROM events WHERE id = ?', [$id]);
@@ -339,7 +341,7 @@ function move_event(array $e, string $newStart): array
     if ($e['kind'] === 'work' && $span > 0) {
         [$newStart, $newEnd] = trim_off_days((int)$e['owner_id'], $newStart, $newEnd);
     }
-    q('UPDATE events SET start_date = ?, end_date = ?, detached = ?, updated_at = ? WHERE id = ?', [
+    q('UPDATE events SET start_date = ?, end_date = ?, detached = ?, end_before_done = NULL, updated_at = ? WHERE id = ?', [
         $newStart, $newEnd, $e['series_id'] !== null ? 1 : 0, now_str(), $e['id'],
     ]);
     $after = row('SELECT * FROM events WHERE id = ?', [$e['id']]);
@@ -565,6 +567,41 @@ function set_todo_status(array $todo, string $status): array
     }
     q('UPDATE todos SET doing = ? WHERE id = ?', [$status === 'doing' ? 1 : ($status === 'hold' ? 2 : 0), $todo['id']]);
     return row('SELECT * FROM todos WHERE id = ?', [$todo['id']]);
+}
+
+/**
+ * ToDo を完了にした／完了を取り消したときに、結びついた予定の終了日を合わせる（v1.107.0）。
+ * 完了: 期間の途中（開始日 ≦ 完了した日 ＜ 終了日）なら、終了日を完了した日に縮め、元の終了日を end_before_done に覚える。
+ *       開始日より前に完了したときは、何もしない（ユーザーが決めた仕様）。
+ * 取り消し: 縮めた予定だけ、元の終了日に戻す。縮めたあとに日付を手で変えた予定は、覚えた終了日が消えているので、そのまま。
+ * @return array 変えた予定 [['id'=>, 'title'=>, 'end'=>新しい終了日, 'restored'=>bool], ...]
+ */
+function todo_done_sync_events(array $before, array $after): array
+{
+    $wasDone = ($before['done_at'] ?? null) !== null;
+    $isDone = ($after['done_at'] ?? null) !== null;
+    $out = [];
+    if (!$wasDone && $isDone) {
+        $day = substr((string)$after['done_at'], 0, 10);
+        foreach (rows('SELECT * FROM events WHERE todo_id = ? AND start_date <= ? AND end_date > ?', [$after['id'], $day, $day]) as $e) {
+            q('UPDATE events SET end_date = ?, end_before_done = ?, detached = ?, updated_at = ? WHERE id = ?', [
+                $day, $e['end_before_done'] ?? $e['end_date'], $e['series_id'] !== null ? 1 : (int)$e['detached'], now_str(), $e['id'],
+            ]);
+            event_changed($e, row('SELECT * FROM events WHERE id = ?', [$e['id']]));
+            $out[] = ['id' => (int)$e['id'], 'title' => $e['title'], 'end' => $day, 'restored' => false];
+        }
+    } elseif ($wasDone && !$isDone) {
+        foreach (rows('SELECT * FROM events WHERE todo_id = ? AND end_before_done IS NOT NULL', [$after['id']]) as $e) {
+            $end = (string)$e['end_before_done'];
+            if ($end < $e['start_date']) { // 念のため（開始日より前には戻さない）
+                $end = $e['end_date'];
+            }
+            q('UPDATE events SET end_date = ?, end_before_done = NULL, updated_at = ? WHERE id = ?', [$end, now_str(), $e['id']]);
+            event_changed($e, row('SELECT * FROM events WHERE id = ?', [$e['id']]));
+            $out[] = ['id' => (int)$e['id'], 'title' => $e['title'], 'end' => $end, 'restored' => true];
+        }
+    }
+    return $out;
 }
 
 /** 完了したToDoをまとめて消す。業務版は業務のものだけ、プライベート版はプライベートのものだけ */

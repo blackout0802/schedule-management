@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS events (
   family_shared TINYINT NOT NULL DEFAULT 1,
   important TINYINT NOT NULL DEFAULT 0,
   participants VARCHAR(500) NOT NULL DEFAULT '',
+  end_before_done DATE NULL,
   todo_id INT UNSIGNED NULL,
   todo_made TINYINT NOT NULL DEFAULT 0,
   created_by INT UNSIGNED NOT NULL,
