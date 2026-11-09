@@ -1,6 +1,6 @@
 # 引き継ぎメモ（スケジュール管理アプリ）
 
-新しいセッションの最初に、これを読んでください。最終更新: 2026-11-09 / 現在の版: **v1.102.0**（v1.101.0 まで本番に反映済み・ユーザー確認ずみ。v1.102.0（完了の列を人ごとに畳む）は PR #27 で取り込みずみだが、取り込んだあとの CI の画面テストの準備（Playwright の入れ込み）が GitHub 側の都合で失敗し、本番にはまだ出ていない可能性がある。下の「6. 今の状態」の **次のセッションでやること** を見る）
+新しいセッションの最初に、これを読んでください。最終更新: 2026-11-09 / 現在の版: **v1.102.0**（**v1.102.0 まで本番に反映済み**。v1.101.0 まではユーザー確認ずみ。v1.102.0（完了の列を人ごとに畳む）の本番での見え方は、ユーザーの確認待ち。下の「6. 今の状態」の **次のセッションでやること** を見る）
 
 ## 1. アプリと作業場所
 
@@ -178,11 +178,11 @@
 
 ## 5. テスト
 
-- PHP 単体: `php tests/run.php`（SQLite）。約705件。
-- MariaDB: 手元では `mariadbd --datadir=/tmp/mdb/data --socket=/tmp/mdb/s.sock --port=3399` を起動して、DB `sched_t` を **毎回 DROP/CREATE してから** 実行する。
+- PHP 単体: `php tests/run.php`（SQLite）。約760件（2026-11-09 は 758件）。
+- MariaDB: 手元に入っていなければ `apt-get install -y mariadb-server` と `mariadb-install-db --user=root --datadir=/tmp/mdb/data`。手元では `mariadbd --user=root --datadir=/tmp/mdb/data --socket=/tmp/mdb/s.sock --pid-file=/tmp/mdb/m.pid --port=3399` を起動して、DB `sched_t` を **毎回 DROP/CREATE してから** 実行する（`--pid-file` がないと、/run/mysqld が無くて起動しない）。
   `SCHEDULE_TEST_DSN='mysql:host=127.0.0.1;port=3399;dbname=sched_t;charset=utf8mb4' SCHEDULE_TEST_USER=t SCHEDULE_TEST_PASS=tp php tests/run.php`
 - 画面テスト: `bash tests/e2e/run.sh`（全部）／`bash tests/e2e/run.sh tm flog`（指定）。ポート 8099/8098、`TZ=Asia/Tokyo`。全部で約11分。
-  - テストは `tests/e2e/suites/*.js`（74本）。失敗したスイートの `console.log` は出ない。デバッグはファイルに書き出す。
+  - テストは `tests/e2e/suites/*.js`（76本。`sl` を外すと 75本）。失敗したスイートの `console.log` は出ない。デバッグはファイルに書き出す。
   - 設定のテストは、`tests/e2e/lib/preload.js` が全項目を開いた状態にする。
 - 気をつけること:
   - 日付・時刻に依存するテスト（UTC と JST の日の境目、月末の月曜、マウスが残ってホバーの色になる、段の上限で予定が隠れる）は、CI でたまに落ちる。
@@ -196,9 +196,13 @@
 ## 6. 今の状態（2026-11-09）
 
 **次のセッションでやること**
-1. 取り込んだあとの CI が通って、本番が v1.102.0 になったかを確かめる。2026-11-09、PR #27 のあとの CI は、e2e の「Playwright と Chromium」で2回とも失敗した（GitHub の `ubuntu-latest` が Ubuntu 26.04 になり、Playwright 1.56.1 が「does not support chromium on ubuntu26.04」で入らない。テストの中身は動いていない）。e2e のジョブだけ `runs-on: ubuntu-24.04` に固定して直した（PR #29）。いずれ Playwright を 26.04 に対応した版へ上げるときは、手元の版（`npm i -g playwright`）とそろえて、全部の画面テストで確かめる。
-2. **全部の画面テストを手元で流す**（ユーザーの希望。v1.102.0 は、関係するテストだけで反映した。全部の画面テストを手元で流していない更新が、v1.101.0 以降で1件たまっている）。`bash tests/e2e/run.sh` は約12分かかるので、`E2E_SHOW=1 bash tests/e2e/run.sh > ログ 2>&1` をバックグラウンドで（タイムアウトを長く: 30分）流し、終わってから `grep -E "^NG|^結果|^       NG" ログ` と `grep -c PAGEERR ログ` を見る（10分の上限で止められたことがある）。`php tests/run.php`（約760件）も流す。
-3. 本番の v1.102.0 の見え方をユーザーに確かめてもらう（リスト →「表示: 全員のToDo」→ 完了の列が人ごとの見出しで畳まれている）。
+1. 本番の v1.102.0 の見え方を、ユーザーに確かめてもらう（リスト →「表示: 全員のToDo」→ 完了の列が人ごとの見出しで畳まれている）。結果を待つ。気になる点が出たら直す。
+2. ほかに頼まれたことがあれば、それを進める（全部の画面テストを手元で流していない更新は、いま 0件）。
+3. いずれ Playwright を Ubuntu 26.04 に対応した版へ上げるときは、手元の版（`npm i -g playwright`）とそろえ、CI の e2e の `runs-on: ubuntu-24.04` を見直して、全部の画面テストで確かめる。
+
+**2026-11-09（v1.102.0 の反映の確認）**
+- PR #29（e2e のジョブを `ubuntu-24.04` に固定）を取り込んだあとの CI（run 177、`536f62c`）は、unit（7.4/8.1/8.3）・mariadb・compat・e2e がすべて成功し、`deploy`（FTPS の反映と、反映のあとの確認）も成功（02:44 UTC）。**本番は v1.102.0**。「Playwright と Chromium」は 24.04 で入った。
+- 手元で、全部の画面テスト（`sl` を外した 75本）: 成功 75 / 失敗 0、PAGEERR 0（約12分）。PHP 単体: SQLite 758件・MariaDB 10.11 758件、どちらも失敗 0。
 
 **ここ数日の流れ（2026-11-04〜11-09）**: v1.97.0 Slack を時刻ちょうどに送る → v1.98.0 日報の重複の直し（別のセッション）→ v1.99.0 日報はカレンダーが基準 → v1.100.0 日報の「カレンダーに入れる」・予定の入力から業務の分類をなくして詰める → v1.101.0 一緒にやる人 → v1.102.0 完了の列を人ごとに畳む。v1.101.0 まではユーザーが本番で確認ずみ。
 
