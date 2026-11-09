@@ -2228,9 +2228,25 @@
         ? el('h3', null, el('button', { type: 'button', class: 'kb-fold', 'aria-expanded': collapsed ? 'false' : 'true', title: collapsed ? '完了したToDoを開く' : '完了したToDoを畳む', onclick: function () { store('sched.doneOpen', collapsed); renderTodo(); } }, (collapsed ? '▸ ' : '▾ ') + c[1]), cnt)
         : el('h3', null, c[1], cnt);
       var col = el('div', { class: 'kb-col ' + status + (collapsed ? ' collapsed' : ''), 'data-status': status }, head);
-      if (!collapsed) items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
+      // 完了: 全員の ToDo を出していて、他の人の完了もあるときは、人ごとに分けて、畳んで出す（見出しを押すと開く。開いた人は、開き直すまで覚える）
+      var byWho = status === 'done' && !collapsed && todoWho() === 'all' && oth.length > 0;
+      if (byWho) {
+        var groups = [{ id: S.me.user.id, name: '自分', items: items, mine: true }], gi = {};
+        oth.forEach(function (t) { if (gi[t.owner_id] === undefined) { gi[t.owner_id] = groups.length; groups.push({ id: t.owner_id, name: t.owner_name + 'さん', items: [] }); } groups[gi[t.owner_id]].items.push(t); });
+        var openWho = S.doneWhoOpen || (S.doneWhoOpen = {});
+        groups.forEach(function (g) {
+          if (!g.items.length) return;
+          var open = !!openWho[g.id];
+          var box = el('div', { class: 'kb-who' + (open ? ' open' : ''), 'data-who': String(g.id) },
+            el('button', { type: 'button', class: 'kb-who-h', 'aria-expanded': open ? 'true' : 'false', title: open ? '畳む' : '開く', onclick: function () { openWho[g.id] = !open; renderTodo(); } },
+              (open ? '▾ ' : '▸ ') + g.name, el('span', { class: 'cnt', text: String(g.items.length) })));
+          if (open) g.items.forEach(function (t) { box.appendChild(g.mine ? kanbanCard(t, status) : othersCard(t)); });
+          col.appendChild(box);
+        });
+      }
+      if (!collapsed && !byWho) items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
       if (!collapsed && !items.length && !oth.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : status === 'hold' ? 'ここへドラッグすると保留になります。' : 'ToDoはありません。' }));
-      if (!collapsed && oth.length) { // 業務版: 他の人の業務のToDo（見るだけ）
+      if (!collapsed && oth.length && !byWho) { // 業務版: 他の人の業務のToDo（見るだけ）
         col.appendChild(el('div', { class: 'kb-others-h', text: '他の人のToDo' }));
         oth.forEach(function (t) { col.appendChild(othersCard(t)); });
       }
