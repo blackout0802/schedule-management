@@ -75,7 +75,8 @@ jobs:
             src public bin tests/run.php tests/e2e/lib tests/e2e/mock config.sample.php
 
   e2e:
-    runs-on: ubuntu-latest
+    # ubuntu-latest が Ubuntu 26.04 になり、Playwright 1.56.1 がブラウザを入れられなくなった（2026-11-09）。対応している 24.04 に固定する
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
