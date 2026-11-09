@@ -1998,9 +1998,10 @@
       if (!input.value.trim()) return;
       api('todo_save', { body: { title: input.value, kind: S.view === 'me' ? 'private' : 'work', due: dueIn.value } }).then(function (j) { if (j && j.todo) S.kbMoved = j.todo.id; /* 列の6件目からが畳まれていても、足したカードは出す */ d.v = ''; d.due = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
     } }, input,
-      el('div', { class: 'todo-add-row' }, dueIn, el('span', { class: 'spacer' }),
-        el('button', { class: 'btn small ghost', type: 'button', text: 'キャンセル', onclick: closeTodoAdd }),
-        el('button', { class: 'btn primary small', type: 'submit', text: '追加' })));
+      el('div', { class: 'todo-add-row' }, dueIn,
+        el('span', { class: 'todo-add-btns' }, // キャンセル・追加は、ひとまとまり（列が狭いときは、2ついっしょに次の行の右へ折り返す）
+          el('button', { class: 'btn small ghost', type: 'button', text: 'キャンセル', onclick: closeTodoAdd }),
+          el('button', { class: 'btn primary small', type: 'submit', text: '追加' }))));
     if (refocus || S.addFocus === owner) { S.addFocus = null; setTimeout(function () { input.focus(); }, 0); }
     return form;
   }
