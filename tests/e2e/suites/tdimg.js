@@ -13,7 +13,7 @@ const openList = async p => { await p.click('.toolbar .seg label:has-text("リ�
   ok('更新後の初回表示で、画像用の表が自動で作られる', require('../lib/env').tableExists('todo_comment_files'));
   await openList(y); await y.click('#todo-mgr .todo-add-btn'); await y.fill('#todo-mgr .todo-add input[type=text]', '画面の不具合'); await y.click('#todo-mgr .todo-add button[type=submit]'); await y.waitForSelector('#todo-mgr .kb-card:has-text("画面の不具合")');
   const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await openList(s);
-  await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.click('#todo-mgr .kb-card.other:has-text("画面の不具合")'); await s.waitForSelector('.modal .tc-dialog');
+  await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.click('#todo-mgr .kb-col.todo .kb-who-h:has-text("山田")'); /* 他の人は、見出しで畳まれている（v1.103.0） */ await s.click('#todo-mgr .kb-card.other:has-text("画面の不具合")'); await s.waitForSelector('.modal .tc-dialog');
   ok('コメント欄に「画像を添付」ボタンがある', await s.locator('.modal button:has-text("画像を添付")').count() === 1);
   // 1. ファイル選択（3000x1800の大きな画像→ブラウザ側で縮む）
   await s.setInputFiles('.modal input[type=file]', IMG + '/shot-big.png'); await s.waitForSelector('.modal .tc-pend img');

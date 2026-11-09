@@ -15,7 +15,7 @@ const openList = async p => { await p.click('.toolbar .seg label:has-text("リ�
   await y.click('#todo-mgr .todo-add-btn'); await y.fill('#todo-mgr .todo-add input[type=text]', 'コメントを付けるToDo'); await y.click('#todo-mgr .todo-add button[type=submit]'); await y.waitForSelector('#todo-mgr .kb-card:has-text("コメントを付けるToDo")');
   ok('自分のカードに「コメント」ボタンがある（業務）', await y.locator('#todo-mgr .kb-card:has-text("コメントを付けるToDo") button:has-text("コメント")').count() === 1);
   const s = await login(b, 'suzuki@example.com', 'suzukipass1'); await openList(s);
-  await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.click('#todo-mgr .kb-card.other:has-text("コメントを付けるToDo")'); await s.waitForSelector('.modal .tc-dialog');
+  await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.click('#todo-mgr .kb-col.todo .kb-who-h:has-text("山田")'); /* 他の人は、見出しで畳まれている（v1.103.0） */ await s.click('#todo-mgr .kb-card.other:has-text("コメントを付けるToDo")'); await s.waitForSelector('.modal .tc-dialog');
   ok('他の社員が開くと、内容・コメント欄が出る（まだコメントなし）', (await s.locator('.modal').innerText()).includes('まだコメントはありません') && await s.locator('.modal textarea').count() === 1);
   ok('編集・完了・削除のボタンは出ない', await s.locator('.modal button:has-text("編集"), .modal button:has-text("完了"), .modal button:has-text("ToDoを削除")').count() === 0);
   await s.screenshot({ path: 'tdc-dialog-empty.png' });

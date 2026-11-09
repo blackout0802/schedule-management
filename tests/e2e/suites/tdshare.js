@@ -17,6 +17,7 @@ const addTodo = async (p, text) => { if (!(await p.locator('#todo-mgr .todo-add 
   const txt = () => s.locator('#todo-mgr').innerText();
   ok('ログインして開くと、まず自分のToDo（他の人のToDoは出ない）', !(await txt()).includes('山田の共有ToDo') && (await s.inputValue('#todo-mgr .todo-who select')) === 'me');
   await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.waitForTimeout(300);
+  await s.click('#todo-mgr .kb-col.todo .kb-who-h:has-text("山田")'); await s.waitForSelector('#todo-mgr .kb-card.other'); // 他の人は、見出しで畳まれている（v1.103.0）
   let t = await txt(); ok('他の社員（鈴木）の業務版リストに、山田の業務のToDoが見える', t.includes('山田の共有ToDo'), t);
   ok('持ち主の名前（山田 花子）が付く', await s.locator('#todo-mgr .kb-card.other:has-text("山田 花子")').count() === 1);
   ok('山田のプライベートのToDoは、見えない', !t.includes('山田のひみつToDo'));
@@ -28,12 +29,16 @@ const addTodo = async (p, text) => { if (!(await p.locator('#todo-mgr .todo-add 
   // 絞り込み
   await s.selectOption('#todo-mgr .todo-who select', 'me'); await s.waitForTimeout(300); ok('「自分のToDo」にすると、他の人のToDoは出ない', !(await txt()).includes('山田の共有ToDo'));
   await s.reload(); await s.waitForSelector('#todo-mgr'); await s.waitForTimeout(500); ok('開き直すと、また自分のToDoに戻る（選んだ表示は覚えない）', !(await txt()).includes('山田の共有ToDo') && await s.inputValue('#todo-mgr .todo-who select') === 'me');
-  await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.waitForTimeout(300); ok('「全員のToDo」に戻せる', (await txt()).includes('山田の共有ToDo'));
+  await s.selectOption('#todo-mgr .todo-who select', 'all'); await s.waitForTimeout(300);
+  await s.click('#todo-mgr .kb-col.todo .kb-who-h:has-text("山田")'); await s.waitForSelector('#todo-mgr .kb-card.other'); // 開き直すと、他の人はまた畳まれる（v1.103.0）
+  ok('「全員のToDo」に戻せる', (await txt()).includes('山田の共有ToDo'));
   // 自分のToDoと混ざらない（自分のものは操作できる）
   await addTodo(s, '鈴木のToDo'); ok('自分のToDoは、これまで通り操作できる（ドラッグ可）', await s.locator('#todo-mgr .kb-card:not(.other)[draggable=true]:has-text("鈴木のToDo")').count() === 1);
   // 山田の画面にも、鈴木のToDoが（自動更新で）出る
   await y.click('.tab[data-view=team]'); await y.waitForTimeout(500); await y.click('.toolbar .seg label:has-text("リスト")').catch(() => {}); await y.waitForSelector('#todo-mgr');
   await y.selectOption('#todo-mgr .todo-who select', 'all');
+  await y.waitForFunction(() => [...document.querySelectorAll('#todo-mgr .kb-col.todo .kb-who-h')].some(h => h.innerText.includes('鈴木')), null, { timeout: 15000 }); // 他の人は、見出しで畳まれて出る（v1.103.0）
+  await y.click('#todo-mgr .kb-col.todo .kb-who-h:has-text("鈴木")');
   await y.waitForFunction(() => document.querySelector('#todo-mgr').innerText.includes('鈴木のToDo'), null, { timeout: 15000 }); ok('他の人が追加したToDoも、自動で反映される', true);
   // 他の人の更新が、リアルタイムに
   await addTodo(y, '山田の追加分');
@@ -46,6 +51,8 @@ const addTodo = async (p, text) => { if (!(await p.locator('#todo-mgr .todo-add 
   ok('プライベート版のリストには、他の人のToDoは出ない', !(await txt()).includes('山田の共有ToDo') && await s.locator('#todo-mgr .todo-who').count() === 0);
   // 管理者
   const a = await login(b, 'admin@example.com', 'adminpass1'); await openList(a); await a.selectOption('#todo-mgr .todo-who select', 'all'); await a.waitForTimeout(300);
+  for (const who of ['山田', '鈴木']) await a.click('#todo-mgr .kb-col.todo .kb-who-h:has-text("' + who + '")'); // 他の人は、見出しで畳まれている（v1.103.0）
+  await a.waitForFunction(() => document.querySelectorAll('#todo-mgr .kb-col.todo .kb-card.other').length >= 2);
   const at = await a.locator('#todo-mgr').innerText(); ok('管理者にも、業務のToDoは見える（プライベートは見えない）', at.includes('山田の共有ToDo') && at.includes('鈴木のToDo') && !at.includes('山田のひみつToDo'), at);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();
