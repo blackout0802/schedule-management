@@ -180,7 +180,7 @@ function usage_warnings(array $u, int $now): array
     }
     $b = $u['backup'];
     if (!$b['auto_enabled']) {
-        $add('warn', '自動バックアップが設定されていません。設定「バックアップ」でパスワードを決めると、毎日自動で保存されます。');
+        $add('warn', '自動バックアップが設定されていません。会社の管理の「バックアップ」でパスワードを決めると、毎日自動で保存されます。');
     } else {
         if ($b['auto_error']) {
             $add('warn', '自動バックアップが失敗しています（' . $b['auto_error'] . '）。');
@@ -237,7 +237,7 @@ function usage_warnings(array $u, int $now): array
         $add('info', '初回のパスワードをまだ変更していない人がいます: ' . implode('、', $mustChange));
     }
     if ($idle) {
-        $add('info', USAGE_IDLE_DAYS . '日以上、使っていない人がいます: ' . implode('、', $idle) . '（退職などで不要なら、「社員の管理」で停止にできます）');
+        $add('info', USAGE_IDLE_DAYS . '日以上、使っていない人がいます: ' . implode('、', $idle) . '（退職などで不要なら、会社の管理の「社員の管理」で停止にできます）');
     }
     return $w;
 }

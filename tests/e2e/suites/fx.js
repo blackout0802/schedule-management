@@ -32,7 +32,7 @@ const BASE = 'http://127.0.0.1:8099/';
   // 他の人の画面は、その人の設定（標準）
   const y = await mk(); await login(y, 'yamada@example.com', 'yamadapass1'); await y.selectOption('#who-sel', 'all'); await y.waitForSelector('.cal .bar'); const yc = await y.locator(`.cell[data-date="${M}-14"]`).evaluate(e => getComputedStyle(e).backgroundColor); ok('他の人の画面は、その人の設定（標準の色）のまま', yc !== red && yc !== await y.locator(`.cell[data-date="${M}-16"]`).evaluate(e => getComputedStyle(e).backgroundColor), yc);
   // パスワードのリセット
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-users tbody tr');
+  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-users tbody tr'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   ok('自分の行には、リセットのボタンが無い', (await a.locator('#set-users tr:has-text("管理者 太郎") button:has-text("リセット")').count()) === 0);
   await a.locator('#set-users tr:has-text("山田 花子") button:has-text("パスワードをリセット")').click(); await a.waitForSelector('.modal .temp-pw');
   const tmp = await a.inputValue('.modal .temp-pw'); ok('一時パスワードが、1度だけ表示される（12文字）', /^[A-Za-z0-9]{12}$/.test(tmp), tmp);

@@ -20,7 +20,7 @@
   var S = {
     me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], others: { todos: [], done: [] }, drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memo: null,
     events: [], holidays: {}, cache: {}, tdCache: {}, loading: false,
-    page: SHARE ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#rooms' ? 'rooms' : 'main' // 'settings' = 設定のページ（URL の #settings）、'rooms' = 会議室のページ（#rooms）
+    page: SHARE ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#admin' ? 'admin' : location.hash === '#rooms' ? 'rooms' : 'main' // 'settings' = 設定のページ（URL の #settings）、'admin' = 会社の管理（#admin。管理者だけ）、'rooms' = 会議室のページ（#rooms）
   };
 
   /* ---------- 小さな道具 ---------- */
@@ -50,7 +50,8 @@
     gear: '<path d="M19.43 10.40L21.93 10.82L21.93 13.18L19.43 13.60L18.38 16.12L19.85 18.19L18.19 19.85L16.12 18.38L13.60 19.43L13.18 21.93L10.82 21.93L10.40 19.43L7.88 18.38L5.81 19.85L4.15 18.19L5.62 16.12L4.57 13.60L2.07 13.18L2.07 10.82L4.57 10.40L5.62 7.88L4.15 5.81L5.81 4.15L7.88 5.62L10.40 4.57L10.82 2.07L13.18 2.07L13.60 4.57L16.12 5.62L18.19 4.15L19.85 5.81L18.38 7.88Z"/><circle cx="12" cy="12" r="3.2"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
     monitor: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>',
-    moon: '<path d="M20 14.2A8 8 0 0 1 9.8 4 8 8 0 1 0 20 14.2z"/>'
+    moon: '<path d="M20 14.2A8 8 0 0 1 9.8 4 8 8 0 1 0 20 14.2z"/>',
+    building: '<path d="M4 21V4.5h10V21M14 9h6v12M2.5 21h19"/><path d="M7.5 8h3M7.5 11.5h3M7.5 15h3M17 12.5h0.01M17 16h0.01"/>'
   };
   function svgIcon(name) { var s = el('span', { class: 'ic-wrap', 'aria-hidden': 'true' }); s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" focusable="false">' + ICON_PATHS[name] + '</svg>'; return s; }
 
@@ -137,9 +138,16 @@
     var url = SHARE ? 'share_api.php?t=' + encodeURIComponent(SHARE.token) + '&action=' + action + qs : 'api.php?action=' + action + qs;
     return fetch(url, init).then(function (r) {
       if (r.status === 401) { if (!opts.quiet) location.href = 'login.php'; throw new Error('login'); }
-      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'エラーが発生しました'); return j; });
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error(j.error || 'エラーが発生しました');
+        if ((opts.body || opts.form) && sumRefreshers.length) refreshSumsSoon(); // 設定・会社の管理: 保存などのあとは、見出しの右の要約も取り直す
+        return j;
+      });
     });
   }
+  /* 設定・会社の管理のページの、見出しの右の要約（とタイルの状態）を取り直す関数。ページを描くたびに入れ替える */
+  var sumRefreshers = [], sumTimer = null;
+  function refreshSumsSoon() { clearTimeout(sumTimer); sumTimer = setTimeout(function () { sumRefreshers.forEach(function (f) { f(); }); }, 300); }
   function toast(msg) {
     var t = el('div', { class: 'toast', role: 'status', text: msg });
     var n = document.querySelectorAll('.toast').length;
@@ -591,9 +599,10 @@
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
+    var adminBtn = !FAMACCT && S.me.user.role === 'admin' ? el('div', { class: 'menu admin-btn' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '会社の管理', title: '会社の管理のページを開く（社員・休業日・会議室・Slack・バックアップなど）', onclick: function (e) { e.stopPropagation(); openAdminPage(); } }, svgIcon('building'), el('span', { class: 'lbl', text: ' 会社の管理' }))) : null;
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      return [S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -607,13 +616,14 @@
     return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })),
       FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : tabs,
-      el('span', { class: 'spacer' }), themeSwitch(), FAMACCT ? null : settingsMenu, userMenu)));
+      el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
   }
 
   function renderShell() {
     if (SHARE) return renderShareShell();
     flushMemo();
-    if (S.page === 'settings') return renderSettingsPage();
+    if (S.page === 'admin' && S.me.user.role !== 'admin') { S.page = 'settings'; history.replaceState(null, '', location.pathname + location.search + '#settings'); } // 会社の管理は、管理者だけ
+    if (S.page === 'settings' || S.page === 'admin') return renderSettingsPage();
     if (S.page === 'rooms') return renderRoomsPage();
     root.textContent = '';
     root.appendChild(buildTopbar(true));
@@ -634,47 +644,100 @@
      「設定」を押すと、ポップアップではなく、1つの大きなページに、すべての設定が項目ごとに並ぶ（URL は #settings。戻るボタンで、カレンダーに戻れる）。
      各項目は、これまでのポップアップの画面を、そのままページの中に埋め込んでいる（embedHost）。 */
   function openSettingsPage() { location.hash = 'settings'; }
+  function openAdminPage() { location.hash = 'admin'; }
+  /* ショートカットキーの一覧を開くボタン（「?」キーと同じ）。スマホでは出さない */
+  function kbdHelpButton() { return el('button', { class: 'btn small kbd-help', type: 'button', text: '?', title: 'ショートカットキー（?）', 'aria-label': 'ショートカットキー', onclick: function (e) { e.stopPropagation(); openShortcuts(); } }); }
   function leaveSettings() { // カレンダーに戻る（ショートカットキーからも使う。設定のページ・会議室のページの、どちらからでも）
     if (S.page === 'main') return;
     S.page = 'main';
-    if (location.hash === '#settings' || location.hash === '#rooms') history.pushState(null, '', location.pathname + location.search);
+    if (location.hash === '#settings' || location.hash === '#admin' || location.hash === '#rooms') history.pushState(null, '', location.pathname + location.search);
     renderShell(); load();
   }
   window.addEventListener('hashchange', function () {
     if (SHARE || !S.me) return;
-    var want = FAMACCT ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#rooms' ? 'rooms' : 'main';
+    var want = FAMACCT ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#admin' ? 'admin' : location.hash === '#rooms' ? 'rooms' : 'main';
     if (want === S.page) return;
     S.page = want; renderShell(); if (want === 'main') load();
   });
+  /* 設定のページは2つ。「設定」（#settings）は、自分のこと（全員）。「会社の管理」（#admin）は、管理者だけ。
+     会社の管理は、まとまり（人と日付・通知）ごとに項目を並べ、見るだけ・開くだけの4つ（利用状況・変更履歴・バックアップ・運用の手引き）は「管理の道具」のタイルにする。
+     各項目の見出しの右に、いまの設定を1行で出す（sum。開かなくても分かるように） */
+  function sumText(t, warn) { return el('span', { class: 'set-sum-t' + (warn ? ' warn' : ''), text: t }); }
+  var SUM_BG = { work: 'var(--work-soft)', rec: 'var(--work-soft)', off: 'var(--off-soft)', private: 'var(--private-soft)' };
   function settingsSections() {
-    var admin = S.me.user.role === 'admin';
-    var list = [
-      { id: 'colors', title: '予定の色', build: openColorDialog },
-      { id: 'offmark', title: '休みの出し方', build: openOffmarkDialog },
-      { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog },
-      { id: 'family', title: '家族の招待', build: openFamilyDialog },
-      { id: 'shortcuts', title: 'ショートカットキー', build: openShortcuts }
+    return [
+      { id: 'colors', title: '予定の色', build: openColorDialog, sum: function (set) {
+        var c = (S.me.prefs && S.me.prefs.colors) || {}, any = COLOR_DEFS.some(function (d) { return c[d[0]]; });
+        set(el('span', { class: 'sum-chips' }, COLOR_DEFS.map(function (d) { return el('i', { class: 'sum-chip', title: d[1], style: 'background:' + (c[d[0]] || SUM_BG[d[0]]) }); }), any ? null : sumText('標準')));
+      } },
+      { id: 'offmark', title: '休みの出し方', build: openOffmarkDialog, sum: function (set) {
+        var m = (S.me.prefs && S.me.prefs.offmark) || { team: 'bar', me: 'bar' }, lb = function (v) { return v === 'icon' ? 'アイコン' : '帯'; };
+        set(sumText('業務: ' + lb(m.team) + ' ／ プライベート: ' + lb(m.me)));
+      } },
+      { id: 'share', title: '共有リンク（家族・会社へ）', build: openShareDialog, sum: function (set) {
+        return api('share_list').then(function (j) {
+          var has = function (k) { var l = j.links.filter(function (x) { return x.kind === k; })[0]; return l ? (l.path ? 'あり' : 'なし') : null; };
+          set(sumText('家族用: ' + has('family') + (has('company') ? ' ／ 会社用: ' + has('company') : '')));
+        });
+      } },
+      { id: 'family', title: '家族の招待', build: openFamilyDialog, sum: function (set) {
+        return api('family_list').then(function (j) { set(sumText(j.members.length ? j.members.length + '人（' + j.max + '人まで）' : 'まだ招待していません')); });
+      } }
     ];
-    if (admin) {
-      list.push({ id: 'users', title: '社員の管理', admin: true, build: openUsersDialog },
-        { id: 'holidays', title: '会社の休業日', admin: true, build: openHolidaysDialog },
-        { id: 'rooms', title: '会議室の設定', admin: true, build: openRoomsAdmin },
-        { id: 'slack', title: 'Slack通知の送り先・テスト', admin: true, build: openSlackDialog },
-        { id: 'slackcfg', title: 'Slack通知の時間・文面', admin: true, build: openSlackCfgDialog },
-        { id: 'audit', title: '変更履歴', admin: true, build: openAuditPanel },
-        { id: 'usage', title: '利用状況', admin: true, build: openUsageDialog },
-        { id: 'guide', title: '運用の手引き', admin: true, build: function () {
-          openModal('運用の手引き', el('div', { class: 'form' },
-            el('p', { class: 'hint', text: '社員の追加と停止、パスワードを忘れたとき、バックアップと復元、cron、困ったときの対処を、1ページにまとめました。担当者が代わるときにも、そのまま印刷して渡せます。' }),
-            el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'guide.php', target: '_blank', rel: 'noopener', text: '運用の手引きを開く' }))));
-        } },
-        { id: 'backup', title: 'バックアップ', admin: true, build: function () {
-          openModal('バックアップ', el('div', { class: 'form' },
-            el('p', { class: 'hint', text: 'データ（プライベートの予定も含む）を、パスワードで暗号化した1つのファイルに保存します。パスワードを知らない人は、管理者でも中身を見られません。パスワードを忘れると復元できないので、ご注意ください。' }),
-            el('div', { class: 'actions', style: 'justify-content:flex-start' }, el('a', { class: 'btn primary', href: 'backup.php', text: 'バックアップの画面を開く' }))));
-        } });
-    }
-    return list;
+  }
+  function adminSections() {
+    return [
+      { group: '人と日付', id: 'users', title: '社員の管理', build: openUsersDialog, sum: function (set) {
+        return api('users_list').then(function (j) { var off = j.users.filter(function (u) { return !u.active; }).length; set(sumText(j.users.length - off + '人' + (off ? '（停止 ' + off + '人）' : ''))); });
+      } },
+      { group: '人と日付', id: 'holidays', title: '会社の休業日', build: openHolidaysDialog, sum: function (set) {
+        return api('holidays_list').then(function (j) {
+          var t = ymd(new Date()), n = j.holidays.filter(function (h) { return h.hdate >= t; })[0];
+          set(sumText(n ? '次: ' + (+n.hdate.slice(5, 7)) + '/' + (+n.hdate.slice(8, 10)) + ' ' + n.name : 'これからの休業日は、登録なし'));
+        });
+      } },
+      { group: '人と日付', id: 'rooms', title: '会議室の設定', build: openRoomsAdmin, sum: function (set) {
+        var t = ymd(new Date());
+        return api('rooms_list', { params: { from: t, to: t } }).then(function (j) { set(sumText(j.rooms.filter(function (r) { return r.active; }).length + '部屋')); });
+      } },
+      { group: '通知', id: 'slack', title: 'Slack通知', build: buildSlackSection, sum: function (set) {
+        return Promise.all([api('slack_status'), api('slack_cfg')]).then(function (r) {
+          var st = r[0].slack, c = r[1].cfg, tm = function (x, nm) { return nm + ' ' + (x.on ? x.time : 'なし'); };
+          set(st.configured ? sumText(tm(c.morning, '朝') + '・' + tm(c.evening, '夕方') + ' ／ ' + st.active_name) : sumText('送り先が未設定', true));
+        });
+      } }
+    ];
+  }
+  /* Slack通知: 「送り先・テスト」と「時刻と文面」を、1つの項目の中のタブにする（選んだタブは、この端末が覚える） */
+  function buildSlackSection() {
+    var eh = embedHost; embedHost = null;
+    var tab = store('sched.slackTab') === 'cfg' ? 'cfg' : 'dest';
+    var dest = el('div', { class: 'set-panel', id: 'set-slack-dest', role: 'tabpanel', hidden: tab !== 'dest' });
+    var cfg = el('div', { class: 'set-panel', id: 'set-slackcfg', role: 'tabpanel', hidden: tab !== 'cfg' });
+    var btns = [['dest', '送り先・テスト送信'], ['cfg', '時刻と文面']].map(function (t) {
+      return el('button', { type: 'button', role: 'tab', class: 'set-tab', 'data-tab': t[0], 'aria-selected': t[0] === tab ? 'true' : 'false', text: t[1], onclick: function () {
+        store('sched.slackTab', t[0]); dest.hidden = t[0] !== 'dest'; cfg.hidden = t[0] !== 'cfg';
+        btns.forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-tab') === t[0] ? 'true' : 'false'); });
+      } });
+    });
+    eh.host.appendChild(el('div', { class: 'set-tabs', role: 'tablist', 'aria-label': 'Slack通知' }, btns));
+    eh.host.appendChild(dest); eh.host.appendChild(cfg);
+    try { embedHost = { host: dest, rerender: eh.rerender }; openSlackDialog(); embedHost = { host: cfg, rerender: eh.rerender }; openSlackCfgDialog(); } finally { embedHost = null; }
+  }
+  /* 管理の道具: 押すと、その画面が開く（利用状況・変更履歴は、大きなポップアップ。バックアップ・運用の手引きは、別のページ） */
+  function adminTools() {
+    return [
+      { id: 'usage', title: '利用状況', open: openUsageDialog, sub: function (set) {
+        return api('usage_get').then(function (j) { set(j.warnings.length ? sumText('⚠ 気をつけること ' + j.warnings.length + '件', true) : sumText('✓ 気をつけることはありません')); return j; });
+      } },
+      { id: 'audit', title: '変更履歴', open: openAuditPanel, sub: function (set) {
+        return api('audit_list', { params: { limit: '1' } }).then(function (j) { var e = j.entries[0]; set(sumText(e ? '最後: ' + usageAt(e.at) : 'まだ記録がありません')); });
+      } },
+      { id: 'backup', title: 'バックアップ', href: 'backup.php', sub: function (set, usage) {
+        return usage.then(function (j) { var b = j.backup; set(b.auto_enabled ? sumText('✓ 自動・' + (b.auto_last ? usageAt(b.auto_last) : 'まだありません')) : sumText('自動バックアップが未設定', true)); });
+      } },
+      { id: 'guide', title: '運用の手引き', href: 'guide.php', blank: true, sub: function (set) { set(sumText('印刷できる1ページ')); } }
+    ];
   }
   /* ---------- ホーム画面に追加（スマホにアプリのアイコンを置く） ---------- */
   function isStandalone() { return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone); }
@@ -803,18 +866,27 @@
     return ov;
   }
 
-  function openIds() { var v = store('sched.setOpen'); return v === 'all' ? ['*'].concat(settingsSections().map(function (x) { return x.id; })) : Array.isArray(v) ? v : []; } // 'all' は、画面テスト用（すべて開いた状態）
+  function openIds() { var v = store('sched.setOpen'); return v === 'all' ? ['*'].concat(settingsSections().concat(adminSections()).map(function (x) { return x.id; })) : Array.isArray(v) ? v : []; } // 'all' は、画面テスト用（すべて開いた状態）
   function renderSettingsPage() {
     root.textContent = '';
     syncTodoHover(); // 右端のToDoの取っ手は、カレンダーのときだけ
-    var secs = settingsSections();
+    var isAdminPage = S.page === 'admin';
+    var secs = isAdminPage ? adminSections() : settingsSections();
+    sumRefreshers = [];
     var phone = isPhone();
-    var nav = el('nav', { class: 'set-nav', 'aria-label': '設定の項目' });
+    var nav = el('nav', { class: 'set-nav', 'aria-label': (isAdminPage ? '会社の管理' : '設定') + 'の項目' });
     var content = el('div', { class: 'set-content' });
+    var group = null;
     secs.forEach(function (sec) {
+      if (sec.group && sec.group !== group) { // まとまりの見出し
+        group = sec.group;
+        content.appendChild(el('h3', { class: 'set-group', text: group }));
+        nav.appendChild(el('span', { class: 'set-nav-g', text: group }));
+      }
       var host = el('div', { class: 'set-body' });
-      var head = el('h3', null, sec.title, sec.admin ? el('span', { class: 'pill admin', text: '管理者' }) : null);
-      var card = el('section', { class: 'set-sec collapsible' + (sec.admin ? ' admin' : ''), id: 'set-' + sec.id, 'aria-label': sec.title }, head, host);
+      var sum = el('span', { class: 'set-sum' });
+      var head = el('h3', null, el('span', { class: 'set-title', text: sec.title }), sum);
+      var card = el('section', { class: 'set-sec collapsible', id: 'set-' + sec.id, 'aria-label': sec.title }, head, host);
       /* 各項目は、見出しを押すと開く（初めは畳んでおく）。開いた項目は、この端末が覚える */
       var setOpen = function (open) {
         card.classList.toggle('open', open); head.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -825,22 +897,62 @@
       head.addEventListener('click', toggle);
       head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
       if (openIds().indexOf(sec.id) >= 0) { card.classList.add('open'); head.setAttribute('aria-expanded', 'true'); }
+      var sumSeq = 0;
       var render = function () {
         host.textContent = '';
         sec.t = Date.now();
         embedHost = { host: host, rerender: function () { if (Date.now() - sec.t < 800) return; render(); } }; // 保存・キャンセルのあとは、最新の内容で描き直す
         try { sec.build(); } finally { embedHost = null; }
+        refreshSum();
       };
+      // 見出しの右の要約。描き直したときと、保存などのあとに、最新にする（古い答えが、あとから届いて上書きしないように）
+      var refreshSum = function () {
+        var my = ++sumSeq, put = function (node) { if (my !== sumSeq) return; sum.textContent = ''; sum.appendChild(node); };
+        try { var r = sec.sum && sec.sum(put); if (r && r.catch) r.catch(function () {}); } catch (e) {}
+      };
+      sumRefreshers.push(refreshSum);
       content.appendChild(card);
       nav.appendChild(el('a', { href: '#set-' + sec.id, text: sec.title, onclick: function (e) { e.preventDefault(); if (!card.classList.contains('open')) setOpen(true); card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
       render();
     });
+    if (isAdminPage) { // 管理の道具（タイル）
+      var usage = null, tools = adminTools();
+      var tiles = tools.map(function (t) {
+        var sub = el('span', { class: 'tile-sub' });
+        var kids = [el('span', { class: 'tile-t', text: t.title }), sub];
+        var tile = t.href
+          ? el('a', { class: 'set-tile', id: 'set-' + t.id, href: t.href, target: t.blank ? '_blank' : null, rel: t.blank ? 'noopener' : null }, kids)
+          : el('button', { type: 'button', class: 'set-tile', id: 'set-' + t.id, onclick: function () { t.open(); } }, kids);
+        t.put = function (node) { sub.textContent = ''; sub.appendChild(node); };
+        return tile;
+      });
+      var refreshTiles = function () { // タイルの状態（バックアップは、利用状況の答えを使う）
+        usage = null;
+        tools.forEach(function (t) {
+          try {
+            var r = t.id === 'backup' ? t.sub(t.put, usage || Promise.reject(new Error('no usage'))) : t.sub(t.put);
+            if (t.id === 'usage') usage = r;
+            if (r && r.catch) r.catch(function () {});
+          } catch (e) {}
+        });
+      };
+      refreshTiles(); sumRefreshers.push(refreshTiles);
+      content.appendChild(el('h3', { class: 'set-group', text: '管理の道具' }));
+      content.appendChild(el('section', { class: 'set-tools', id: 'set-tools', 'aria-label': '管理の道具' }, tiles));
+      nav.appendChild(el('a', { href: '#set-tools', text: '管理の道具', onclick: function (e) { e.preventDefault(); document.getElementById('set-tools').scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
+    }
+    var admin = S.me.user.role === 'admin';
+    /* 管理者: 「設定」と「会社の管理」の切り替え。パソコンでは上の帯、スマホでは（帯に収まらないので）ページの見出しの上 */
+    var sw = admin ? el('div', { class: 'set-switch', role: 'group', 'aria-label': 'ページ' },
+      el('button', { type: 'button', class: 'btn small', 'aria-pressed': isAdminPage ? 'false' : 'true', text: '設定', onclick: openSettingsPage }),
+      el('button', { type: 'button', class: 'btn small', 'aria-pressed': isAdminPage ? 'true' : 'false', text: '会社の管理', onclick: openAdminPage })) : null;
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in settings-bar' },
       el('span', { class: 'brand', text: S.me.app_name }),
       el('button', { class: 'btn small', type: 'button', title: 'カレンダー（c）', 'aria-label': 'カレンダーに戻る', onclick: leaveSettings }, '← ', el('span', { class: 'lbl', text: 'カレンダーに' }), '戻る'),
-      el('span', { class: 'spacer' }), themeSwitch(), el('span', { class: 'muted', text: S.me.user.name }),
+      phone ? null : sw,
+      el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), el('span', { class: 'muted', text: S.me.user.name }),
       el('button', { class: 'btn small', type: 'button', text: 'ログアウト', onclick: doLogout }))));
-    root.appendChild(el('main', { class: 'settings-page' }, el('h2', { text: '設定' }), el('div', { class: 'set-layout' }, nav, content)));
+    root.appendChild(el('main', { class: 'settings-page' + (isAdminPage ? ' admin-page' : '') }, phone ? sw : null, el('h2', { text: isAdminPage ? '会社の管理' : '設定' }), el('div', { class: 'set-layout' }, nav, content)));
     window.scrollTo(0, 0);
   }
 

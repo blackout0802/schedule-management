@@ -10,18 +10,18 @@ const log = () => { try { return fs.readFileSync(LOG, 'utf8'); } catch (e) { ret
   await a.goto(BASE + 'login.php'); await a.fill('input[name=email]', 'admin@example.com'); await a.fill('input[name=password]', 'adminpass1');
   await Promise.all([a.waitForURL('**/index.php'), a.click('button[type=submit]')]); await a.waitForSelector('.cal');
   // 1) 会社用リンクが無い状態: 案内が出て、見本のリンクは入口(view=team)
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-slack .slack-status');
+  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-slack .slack-status'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   ok('会社用リンクが無いとき、作るよう案内が出る', (await a.locator('#set-slack').innerText()).includes('会社用リンクを作ってください'));
-  await a.waitForSelector('#set-slackcfg .slack-preview'); await a.locator('#set-slackcfg .slack-sec').nth(0).locator('button:has-text("見本を Slack に送る")').click(); await a.waitForSelector('.slack-result.ok'); await a.waitForTimeout(400);
+  await a.click('#set-slack .set-tab:has-text("時刻と文面")'); /* Slack は、項目の中のタブ */ await a.waitForSelector('#set-slackcfg .slack-preview'); await a.locator('#set-slackcfg .slack-sec').nth(0).locator('button:has-text("見本を Slack に送る")').click(); await a.waitForSelector('.slack-result.ok'); await a.waitForTimeout(400);
   ok('リンクは入口（index.php?view=team）', log().includes('index.php?view=team|スケジュールを開く'), log());
   await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal');
   // 2) 会社用リンクを作る
   const tok = await a.evaluate(async () => { const me = await (await fetch('api.php?action=me')).json(); const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': me.csrf }, body: JSON.stringify({ kind: 'company' }) }); return await r.json(); });
   const path = tok.path || (tok.link && tok.link.path); ok('会社用リンクが作れた', !!path, tok);
   fs.writeFileSync(LOG, '');
-  await a.reload(); await a.waitForSelector('.cal'); await a.click('header button:has-text("設定")'); await a.waitForSelector('#set-slack .slack-status');
+  await a.reload(); await a.waitForSelector('.cal'); await a.click('header button:has-text("会社の管理")'); await a.click('#set-slack .set-tab:has-text("送り先")'); await a.waitForSelector('#set-slack .slack-status');
   ok('状態の案内が、会社用リンクに切り替わる', (await a.locator('#set-slack').innerText()).includes('会社用の共有リンクに飛びます'));
-  await a.waitForSelector('#set-slackcfg .slack-preview'); await a.locator('#set-slackcfg .slack-sec').nth(0).locator('button:has-text("見本を Slack に送る")').click(); await a.waitForSelector('.slack-result.ok'); await a.waitForTimeout(400);
+  await a.click('#set-slack .set-tab:has-text("時刻と文面")'); /* Slack は、項目の中のタブ */ await a.waitForSelector('#set-slackcfg .slack-preview'); await a.locator('#set-slackcfg .slack-sec').nth(0).locator('button:has-text("見本を Slack に送る")').click(); await a.waitForSelector('.slack-result.ok'); await a.waitForTimeout(400);
   const m = log().replace(/\\\//g, "/").match(/<https:\/\/example\.com\/schedule\/(share\.php\?t=[a-f0-9]{48})\|スケジュールを開く>/); ok('通知のリンクが、会社用の共有リンク', !!m, log());
   // 3) ログインなしで開ける（業務版のカレンダー）
   const g = await (await b.newContext({ viewport: { width: 1280, height: 900 } })).newPage(); g.on('pageerror', e => console.log('PAGEERR', e.message));

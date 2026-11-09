@@ -52,7 +52,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   // 設定
   await p.goto(BASE + 'index.php#settings'); await p.waitForSelector('.settings-page'); await p.waitForTimeout(500);
   const secs = await p.evaluate(() => ({ n: document.querySelectorAll('.set-sec.collapsible').length, open: document.querySelectorAll('.set-sec.collapsible.open').length, nav: getComputedStyle(document.querySelector('.set-nav')).display, h: document.documentElement.scrollHeight }));
-  ok('設定の項目は、最初は全部畳まれている', secs.n >= 12 && secs.open === 0, secs);
+  ok('設定の項目は、最初は全部畳まれている（設定は4項目。管理者の項目は「会社の管理」へ: v1.105.0）', secs.n === 4 && secs.open === 0, secs);
   ok('設定のページは、畳んでいると短い（項目の一覧が、ほぼ2画面以内）', secs.h <= 844 * 1.45, secs);
   ok('設定の上の項目ナビ（横に長い一覧）は、スマホでは出さない', secs.nav === 'none');
   await p.tap('#set-colors > h3'); await p.waitForTimeout(300);
@@ -60,8 +60,14 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('開いた項目だけが開いている', await p.evaluate(() => document.querySelectorAll('.set-sec.collapsible.open').length) === 1);
   await p.tap('#set-colors > h3'); await p.waitForTimeout(200);
   ok('もう一度押すと、畳まれる', await p.evaluate(() => !document.querySelector('#set-colors').classList.contains('open')));
-  await p.tap('#set-usage > h3'); await p.waitForSelector('#set-usage .usage-sec', { state: 'visible' });
-  const s3 = await size(); ok('設定の「利用状況」を開いても、横にはみ出さない', s3.w <= s3.vw, s3);
+  // 会社の管理（管理者）: 切り替えは、ページの見出しの上（帯には収まらないため）
+  await p.tap('.settings-page > .set-switch button:has-text("会社の管理")'); await p.waitForSelector('.admin-page #set-usage');
+  ok('会社の管理の上の帯が1行（スマホ）', await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 60);
+  const sA = await size(); ok('会社の管理のページも、横にはみ出さない', sA.w <= sA.vw, sA);
+  await p.tap('#set-usage'); await p.waitForSelector('.modal .usage-sec', { state: 'visible' });
+  const s3 = await size(); ok('「利用状況」を開いても、横にはみ出さない', s3.w <= s3.vw, s3);
+  await p.tap('.modal button:has-text("閉じる")'); await p.waitForFunction(() => !document.querySelector('.overlay'));
+  await p.tap('.settings-page > .set-switch button:has-text("設定")'); await p.waitForSelector('.settings-page:not(.admin-page)');
   ok('設定の上の帯が1行（スマホ）', await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 60);
   // 横にずれない: 文字幅の広い端末（iPhone）を想定して文字間を広げても、画面より広がらない。スワイプ（横の移動）は元に戻る
   const css = await p.evaluate(() => ({ ox: getComputedStyle(document.documentElement).overflowX, ta: getComputedStyle(document.body).touchAction }));

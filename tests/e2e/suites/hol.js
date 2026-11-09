@@ -6,7 +6,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   p.on('pageerror', e => console.log('PAGEERR', e.message)); p.on('dialog', d => d.accept());
   await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1');
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-holidays form');
+  await p.click('header button:has-text("会社の管理")'); await p.waitForSelector('#set-holidays form'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   // 範囲で登録
   await p.fill('#set-holidays input[type=date] >> nth=0', '2026-12-29'); await p.fill('#set-holidays input[type=date] >> nth=1', '2027-01-03'); await p.fill('#set-holidays input:not([type=date])', '年末年始休業'); await p.click('#set-holidays button[type=submit]');
   await p.waitForSelector('#set-holidays table.t'); const t = await p.locator('#set-holidays table.t').innerText();
@@ -30,7 +30,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
   await p.click('button:has-text("カレンダーに戻る")'); await p.waitForSelector('.cal'); for (let i = 0; i < 2; i++) await p.click('.toolbar button:has-text("›")'); await p.waitForTimeout(500);
   await p.waitForSelector('.cal .hname:has-text("年末年始休業")'); ok('カレンダーの該当日に「年末年始休業」が出る', await p.locator('.cal .hname:has-text("年末年始休業")').count() >= 3);
   // まとめて削除
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-holidays table.t');
+  await p.click('header button:has-text("会社の管理")'); await p.waitForSelector('#set-holidays table.t');
   await p.locator('#set-holidays table.t tr:has-text("年末年始休業") button:has-text("削除")').click(); await p.waitForFunction(() => !/年末年始休業/.test(document.querySelector('#set-holidays').innerText));
   ok('範囲をまとめて削除できる（創立記念日は残る）', (await p.locator('#set-holidays table.t').innerText()).includes('創立記念日'));
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
