@@ -1884,7 +1884,7 @@
     var form = el('form', { class: 'todo-add', 'data-add-owner': owner, onsubmit: function (e) {
       e.preventDefault();
       if (!input.value.trim()) return;
-      api('todo_save', { body: { title: input.value, kind: S.view === 'me' ? 'private' : 'work', due: dueIn.value } }).then(function () { d.v = ''; d.due = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
+      api('todo_save', { body: { title: input.value, kind: S.view === 'me' ? 'private' : 'work', due: dueIn.value } }).then(function (j) { if (j && j.todo) S.kbMoved = j.todo.id; /* 列の6件目からが畳まれていても、足したカードは出す */ d.v = ''; d.due = ''; S.addFocus = owner; loadTodos(); }).catch(fail);
     } }, input,
       el('div', { class: 'todo-add-row' }, dueIn, el('span', { class: 'spacer' }),
         el('button', { class: 'btn small ghost', type: 'button', text: 'キャンセル', onclick: closeTodoAdd }),
@@ -1944,6 +1944,7 @@
     if (!t) return;
     var before = t.status;
     if (targetId === id || (before === 'done' && status === 'done')) return;
+    S.kbMoved = id; // 移した先の列が畳まれていても、このカードは出す
     S.todos = S.todos.filter(function (x) { return x.id !== id; });
     S.done = S.done.filter(function (x) { return x.id !== id; });
     t.status = status;
@@ -2219,6 +2220,17 @@
     /* 完了は、ふだんは畳んでおく（見出しを押すと開く。開閉は覚える）。スマホは、タブで選んだときに開く */
     var doneOpen = store('sched.doneOpen') === true || isPhone();
     var stack = el('div', { class: 'kb-stack' }); // 右の列: 完了（畳める）の下に、保留
+    /* カードは、まとまり（列、または人ごとの見出しの中）ごとに 5件まで出し、6件目からは畳む（「ほか N件を表示」で開く。ページを開き直すまで覚える）。
+       畳んでいても、いま移したカード・足したカードは出す（見えなくならないように） */
+    var KB_LIMIT = 5, moreOpen = S.kbMoreOpen || (S.kbMoreOpen = {});
+    function addCards(box, list, mk, key) {
+      var open = !!moreOpen[key], show = list;
+      if (!open && list.length > KB_LIMIT) show = list.filter(function (t, i) { return i < KB_LIMIT || t.id === S.kbMoved; });
+      show.forEach(function (t) { box.appendChild(mk(t)); });
+      if (list.length <= KB_LIMIT) return;
+      box.appendChild(el('button', { type: 'button', class: 'kb-more', 'aria-expanded': open ? 'true' : 'false', onclick: function () { moreOpen[key] = !open; renderTodo(); } },
+        open ? '▴ ' + KB_LIMIT + '件だけにする' : '▾ ほか ' + (list.length - show.length) + '件を表示'));
+    }
     KANBAN.forEach(function (c) {
       var status = c[0], items = status === 'done' ? S.done : S.todos.filter(function (t) { return t.status === status; });
       var oth = othersIn(status);
@@ -2244,15 +2256,15 @@
               el('span', { class: 'kb-who-r' }, // 畳んでいて、新しいコメントのある ToDo があれば、見出しにも目印を出す（カードの目印が見えないため）
                 !open && g.items.some(function (t) { return t.kind !== 'private' && t.comments && tcNew(t); }) ? el('span', { class: 'pill tc new', text: '💬 新着', title: '新しいコメントのある ToDo があります' }) : null,
                 el('span', { class: 'cnt', text: String(g.items.length) }))));
-          if (open) g.items.forEach(function (t) { box.appendChild(g.mine ? kanbanCard(t, status) : othersCard(t)); });
+          if (open) addCards(box, g.items, function (t) { return g.mine ? kanbanCard(t, status) : othersCard(t); }, status + ':' + g.id);
           col.appendChild(box);
         });
       }
-      if (!collapsed && !byWho) items.forEach(function (t) { col.appendChild(kanbanCard(t, status)); });
+      if (!collapsed && !byWho) addCards(col, items, function (t) { return kanbanCard(t, status); }, status + ':' + S.me.user.id);
       if (!collapsed && !items.length && !oth.length) col.appendChild(el('p', { class: 'todo-empty', text: status === 'done' ? 'ここに移すと完了になります。' : status === 'doing' ? 'ここへドラッグすると進行中になります。' : status === 'hold' ? 'ここへドラッグすると保留になります。' : 'ToDoはありません。' }));
       if (!collapsed && oth.length && !byWho) { // 業務版: 他の人の業務のToDo（見るだけ）
         col.appendChild(el('div', { class: 'kb-others-h', text: '他の人のToDo' }));
-        oth.forEach(function (t) { col.appendChild(othersCard(t)); });
+        addCards(col, oth, othersCard, status + ':' + todoWho());
       }
       if (status === 'todo') col.appendChild(todoAddControl('mgr', refocus)); // 未着手の一番下に「＋ 追加」
       if (status === 'done' && items.length && !collapsed) {

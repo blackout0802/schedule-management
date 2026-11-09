@@ -960,3 +960,6 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .kb-who-h:hover { background: var(--surface-2); }
 .kb-who-h .cnt { font-weight: 400; color: var(--muted); }
 .kb-who-h .kb-who-r { display: inline-flex; align-items: center; gap: 6px; }
+/* 6件目からを畳んだ列の「ほか N件を表示」 */
+.kb-more { width: 100%; border: 1px dashed var(--line); background: transparent; border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.kb-more:hover { background: var(--surface-2); color: var(--ink); }
