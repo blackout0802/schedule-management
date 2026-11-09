@@ -230,7 +230,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 /* ToDoのカンバン（リストタブ） */
 .kanban { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
-.kb-col { background: var(--surface-2); border-radius: 10px; padding: 10px; display: grid; gap: 7px; align-content: start; min-height: 160px; }
+.kb-col { background: var(--surface-2); border-radius: 10px; padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; align-content: start; min-height: 160px; } /* 中身（カード・追加欄）が、列の幅を押し広げない */
 .kb-col h3 { margin: 0; font-size: 13px; display: flex; justify-content: space-between; }
 .kb-col.doing h3 { color: var(--work); } .kb-col.done h3 { color: var(--off); } .kb-col.hold h3 { color: var(--muted); }
 .kb-stack { display: grid; gap: 12px; align-content: start; min-width: 0; }
@@ -629,9 +629,9 @@ kbd { border-radius: 6px; }
 .todo-add-btn:hover { background: color-mix(in srgb, var(--work) 9%, transparent); }
 .todo-add { display: grid; gap: 8px; margin-top: 2px; padding: 8px; border: .5px solid var(--line); border-radius: 12px; background: var(--surface); }
 .todo-add input[type=text] { flex: none; width: 100%; padding: 8px 10px; font-size: 14px; }
-.todo-add-row { display: flex; align-items: center; gap: 6px; }
+.todo-add-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } /* 列が狭いときは、日付の下にキャンセル・追加を折り返す（列からはみ出さない） */
 .todo-add-row select { width: auto; padding: 5px 6px; font-size: 13px; }
-.todo-add-row .spacer { flex: 1; }
+.todo-add-btns { display: flex; gap: 6px; margin-left: auto; }
 
 /* 月1回の手動バックアップのお知らせ（管理者） */
 .backup-alert { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 4px; }
