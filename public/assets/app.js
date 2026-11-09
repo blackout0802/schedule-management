@@ -2087,7 +2087,8 @@
     renderTodo(); // 先に見た目を更新し、保存は裏で行う
     var body = { id: id, status: status };
     if (ids) body.ids = ids;
-    api('todo_status', { body: body }).then(function () {
+    api('todo_status', { body: body }).then(function (j) {
+      syncedEventsToast(j);
       if (status === 'done' && before !== 'done') toast('完了にしました: ' + t.title);
       else if (status !== before) toast((status === 'doing' ? '進行中にしました: ' : status === 'hold' ? '保留にしました: ' : '未着手に戻しました: ') + t.title);
       if (t.sched && (status === 'done' || before === 'done')) load(); // カレンダーに置いたToDoは、完了で取り消し線、戻すと線が消える
@@ -2410,8 +2411,16 @@
     return wrap;
   }
 
+  /* 早めに完了したときに、予定の終了日を完了した日に縮めた（取り消して、元に戻した）ことを知らせる（v1.107.0） */
+  function syncedEventsToast(j) {
+    ((j && j.events) || []).forEach(function (e) {
+      var md = (+e.end.slice(5, 7)) + '/' + (+e.end.slice(8, 10));
+      toast(e.restored ? '予定「' + e.title + '」の終了日を、元の ' + md + ' に戻しました' : '早めに完了したので、予定「' + e.title + '」の終了日を ' + md + '（今日）にしました');
+    });
+  }
   function setDone(t, done) {
-    api('todo_done', { body: { id: t.id, done: done } }).then(function () {
+    api('todo_done', { body: { id: t.id, done: done } }).then(function (j) {
+      syncedEventsToast(j);
       toast(done ? '完了にしました: ' + t.title : '未完了に戻しました: ' + t.title);
       if (t.sched) load();
       loadTodos();
@@ -3279,7 +3288,8 @@
         box.appendChild(el('button', { class: 'btn small st-' + s + (cur === s ? ' on' : ''), type: 'button', 'aria-pressed': cur === s ? 'true' : 'false', disabled: canChange ? null : 'disabled', text: TD_STATE_NAME[s],
           onclick: function () {
             if (cur === s) return;
-            api('todo_status', { body: { id: ev.todo_id, status: s } }).then(function () {
+            api('todo_status', { body: { id: ev.todo_id, status: s } }).then(function (j) {
+              syncedEventsToast(j);
               cur = s; ev.todo_status = s; ev.done = s === 'done'; draw();
               toast(s === 'done' ? '完了にしました（カレンダーでは取り消し線になります）' : s === 'doing' ? '進行中にしました' : s === 'hold' ? '保留にしました' : '未着手に戻しました');
               load(); loadTodos(); syncMemoTodos();

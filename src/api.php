@@ -395,8 +395,8 @@ function handle_api(): void
             if (!$t) {
                 api_fail('ToDoが見つかりません。', 404);
             }
-            set_todo_done($t, !empty($in['done']));
-            api_out(['ok' => true]);
+            $after = set_todo_done($t, !empty($in['done']));
+            api_out(['ok' => true, 'events' => todo_done_sync_events($t, $after)]); // 早めに完了したら、予定の終了日を完了した日に（取り消したら戻す）
 
         case 'todo_status':
             $t = find_todo((int)($in['id'] ?? 0), $user);
@@ -407,11 +407,12 @@ function handle_api(): void
             if (!in_array($st, ['todo', 'doing', 'hold', 'done'], true)) {
                 api_fail('状態は「未着手・進行中・保留・完了」のどれかです。');
             }
-            set_todo_status($t, $st);
+            $after = set_todo_status($t, $st);
+            $synced = todo_done_sync_events($t, $after); // 早めに完了したら、予定の終了日を完了した日に（取り消したら戻す）
             if ($st !== 'done' && is_array($in['ids'] ?? null)) {
                 reorder_todos($in['ids'], $user); // 移した先の列での並び
             }
-            api_out(['ok' => true]);
+            api_out(['ok' => true, 'events' => $synced]);
 
         case 'todo_clear_done':
             api_out(['deleted' => clear_done_todos($user, ($in['view'] ?? 'me') === 'team' ? 'team' : 'me')]);

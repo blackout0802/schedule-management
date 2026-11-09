@@ -316,6 +316,11 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec("ALTER TABLE events ADD COLUMN participants VARCHAR(500) NOT NULL DEFAULT ''");
     }
+    try { // ToDo を早めに完了して、終了日を完了日に縮めたときの、元の終了日（完了を取り消したら戻す）。SCHEMA_VERSION 31
+        db()->query('SELECT end_before_done FROM events LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE events ADD COLUMN end_before_done ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'DATE NULL' : 'TEXT NULL'));
+    }
     try {
         db()->query('SELECT doing FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {

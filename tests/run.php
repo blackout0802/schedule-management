@@ -355,6 +355,59 @@ check('ToDo完了: カレンダーの予定が「完了」（取り消し線）�
 check('ToDo完了: 家族用・会社用リンクにも「完了」が出る', [array_column(share_events(['kind' => 'company', 'owner_id' => 0], $dd, $dd), 'done')], [[true]]);
 set_todo_status(find_todo((int)$todoA['id'], $a), 'doing');
 check('ToDo完了を戻すと、取り消し線も外れる', array_column(array_filter(list_events($a, $dd, $dd, 'team'), function ($e) { return $e['title'] === '見積書を作る'; }), 'done'), [false]);
+// ---- 早めに完了したら、予定の終了日を完了した日に（v1.107.0）。日付は「今日」から数えるので、どの日に流しても同じ結果
+$today = date('Y-m-d'); $dOff = function (int $n) use ($today) { return date('Y-m-d', strtotime($today . " $n day")); };
+$mkEv = function (string $title, string $st, string $en) use ($a) { return save_event(['kind' => 'work', 'title' => $title, 'tag' => '個人作業', 'start' => $st, 'end' => $en, 'start_time' => '', 'end_time' => '', 'note' => '', 'owner_id' => (int)$a['id'], 'family_shared' => 0], $a, null); };
+$mkTd = function (string $title) use ($a) { return save_todo(['kind' => 'work', 'title' => $title, 'tag' => '個人作業', 'note' => '', 'family_shared' => 0], $a, null); };
+$link = function ($td, $ev) { q('UPDATE events SET todo_id = ? WHERE id = ?', [$td['id'], $ev['id']]); };
+$evRow = function ($ev) { return row('SELECT start_date, end_date, end_before_done FROM events WHERE id = ?', [$ev['id']]); };
+$doneTd = function ($td, string $st) use ($a) { $t = find_todo((int)$td['id'], $a); return todo_done_sync_events($t, set_todo_status($t, $st)); };
+$tdE = $mkTd('早めに終わる作業'); $evE = $mkEv('早めに終わる作業', $dOff(-2), $dOff(3)); $link($tdE, $evE);
+$r = $doneTd($tdE, 'done');
+check('早めに完了: 期間の途中で完了すると、終了日が今日になり、元の終了日を覚える', [$evRow($evE)['start_date'], $evRow($evE)['end_date'], $evRow($evE)['end_before_done']], [$dOff(-2), $today, $dOff(3)]);
+check('早めに完了: 変えた予定が返る（知らせるため）', [count($r), $r[0]['end'], $r[0]['restored']], [1, $today, false]);
+check('早めに完了: もう一度「完了」にしても、変わらない', [$doneTd($tdE, 'done'), $evRow($evE)['end_before_done']], [[], $dOff(3)]);
+$r = $doneTd($tdE, 'doing');
+check('早めに完了: 完了を取り消すと、元の終了日に戻る', [$evRow($evE)['end_date'], $evRow($evE)['end_before_done'], $r[0]['restored'] ?? null], [$dOff(3), null, true]);
+$doneTd($tdE, 'done'); $r = $doneTd($tdE, 'hold');
+check('早めに完了: 保留に戻しても、元の終了日に戻る', $evRow($evE)['end_date'], $dOff(3));
+// todo_done（チェック）でも同じ
+$t = find_todo((int)$tdE['id'], $a); todo_done_sync_events($t, set_todo_done($t, true));
+check('早めに完了: チェックで完了にしても、終了日が今日になる', $evRow($evE)['end_date'], $today);
+$t = find_todo((int)$tdE['id'], $a); todo_done_sync_events($t, set_todo_done($t, false));
+check('早めに完了: チェックを外すと、元に戻る', $evRow($evE)['end_date'], $dOff(3));
+// 縮めたあとに日付を手で変えたら、取り消しで上書きしない
+$doneTd($tdE, 'done');
+[$ed] = validate_event_input(['kind' => 'work', 'title' => '早めに終わる作業', 'tag' => '個人作業', 'start' => $dOff(-2), 'end' => $dOff(1)], $a);
+save_event($ed, $a, row('SELECT * FROM events WHERE id = ?', [$evE['id']]));
+check('早めに完了: 縮めたあと、日付を手で変えると、覚えた終了日は消える', [$evRow($evE)['end_date'], $evRow($evE)['end_before_done']], [$dOff(1), null]);
+$doneTd($tdE, 'todo');
+check('早めに完了: そのあと完了を取り消しても、手で決めた日付のまま', $evRow($evE)['end_date'], $dOff(1));
+// 日付以外（メモ）だけを変えたときは、覚えたまま
+$doneTd($tdE, 'done'); $ex = row('SELECT * FROM events WHERE id = ?', [$evE['id']]);
+[$en] = validate_event_input(['kind' => 'work', 'title' => '早めに終わる作業', 'tag' => '個人作業', 'start' => $ex['start_date'], 'end' => $ex['end_date'], 'note' => 'メモだけ変えた'], $a);
+save_event($en, $a, $ex);
+check('早めに完了: 日付を変えずにメモだけ直したときは、覚えた終了日が残る', $evRow($evE)['end_before_done'], $dOff(1));
+$doneTd($tdE, 'doing'); check('早めに完了: そのあと取り消すと、元に戻る', $evRow($evE)['end_date'], $dOff(1));
+// 対象にならないもの
+$tdF = $mkTd('まだ始まっていない作業'); $evF = $mkEv('まだ始まっていない作業', $dOff(2), $dOff(5)); $link($tdF, $evF);
+check('早めに完了: 開始日より前に完了したときは、何もしない', [$doneTd($tdF, 'done'), $evRow($evF)['start_date'], $evRow($evF)['end_date'], $evRow($evF)['end_before_done']], [[], $dOff(2), $dOff(5), null]);
+$tdL = $mkTd('最終日に終わる作業'); $evL = $mkEv('最終日に終わる作業', $dOff(-3), $today); $link($tdL, $evL);
+check('早めに完了: 最終日（終了日が今日）に完了しても、変わらない', [$doneTd($tdL, 'done'), $evRow($evL)['end_date']], [[], $today]);
+$tdP = $mkTd('遅れて終わる作業'); $evP = $mkEv('遅れて終わる作業', $dOff(-5), $dOff(-1)); $link($tdP, $evP);
+check('早めに完了: 終了日を過ぎてから完了しても、変わらない（延ばさない）', [$doneTd($tdP, 'done'), $evRow($evP)['end_date']], [[], $dOff(-1)]);
+$evN = $mkEv('ToDoと結びついていない作業', $dOff(-1), $dOff(2));
+check('早めに完了: ToDo と結びついていない予定は、変わらない', $evRow($evN)['end_date'], $dOff(2));
+// 変更履歴に残る（新しい予定で確かめる）
+$tdA = $mkTd('履歴を見る作業'); $evA = $mkEv('履歴を見る作業', $dOff(-1), $dOff(2)); $link($tdA, $evA);
+$auN = function () { return (int)row('SELECT COUNT(*) AS c FROM audit_log WHERE label LIKE ?', ['%履歴を見る作業%'])['c']; };
+$au0 = $auN(); $doneTd($tdA, 'done');
+check('早めに完了: 終了日を変えたことが、変更履歴に残る', [$auN() > $au0, $evRow($evA)['end_date']], [true, $today]);
+// 移動（ドラッグ）で日付を変えたときも、覚えた終了日は消える（動かした先の日付は、週末を削ることがあるので見ない）
+move_event(row('SELECT * FROM events WHERE id = ?', [$evA['id']]), $dOff(7));
+check('早めに完了: ドラッグで動かすと、覚えた終了日は消える', $evRow($evA)['end_before_done'], null);
+q('DELETE FROM events WHERE id IN (?, ?, ?, ?, ?, ?)', [$evE['id'], $evF['id'], $evL['id'], $evP['id'], $evN['id'], $evA['id']]);
+q('DELETE FROM todos WHERE id IN (?, ?, ?, ?, ?)', [$tdE['id'], $tdF['id'], $tdL['id'], $tdP['id'], $tdA['id']]);
 $dd2 = date('Y-m-d', strtotime('+91 day'));
 $ev2 = schedule_todo(find_todo((int)$todoA['id'], $a), $dd2, $a);
 check('ToDo→予定: もう一度置くと、予定は増えず、新しい日へ動く', [(int)$ev2['id'] === (int)$ev['id'], $ev2['start_date'], (int)row('SELECT COUNT(*) AS c FROM events WHERE todo_id = ?', [$todoA['id']])['c']], [true, $dd2, 1]);
@@ -1929,6 +1982,13 @@ q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version'
 ensure_schema();
 check('更新: 古いデータベースに family_of の列が足される', (function () { try { db()->query('SELECT family_of FROM users LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
 check('更新: 更新したあとに、家族を招待できる', (function () use ($a) { [$id] = family_add($a, '更新後の家族', 'after-upgrade@example.com'); return family_delete($a, $id); })(), true);
+
+// 古い版（end_before_done の列が無い。SCHEMA_VERSION 30）のデータベースからの更新: 列が足され、早めの完了で終了日を縮められる
+db()->exec('ALTER TABLE events DROP COLUMN end_before_done');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '30']);
+ensure_schema();
+check('更新: 古いデータベースに end_before_done の列が足される（入っている予定は空のまま）', (function () { try { return [true, (int)row('SELECT COUNT(*) AS c FROM events WHERE end_before_done IS NOT NULL')['c']]; } catch (PDOException $e) { return [false, -1]; } })(), [true, 0]);
 
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
