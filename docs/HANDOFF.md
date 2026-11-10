@@ -276,6 +276,7 @@
 - 自動 PR のため、リポジトリの Actions の「GitHub Actions に pull request の作成・承認を許可する」を有効にした（`can_approve_pull_request_reviews: true`）。ブランチ保護はしていない。
 - `auto-pr` が作った PR は、PR 側のテスト実行が「承認待ち（`action_required`）」になり、ジョブが動かないことがある（2026-11-10 に確認）。そのため `auto-merge` は、同じコミットの **push 側**の `tests` が成功したときだけ動く。下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない。
 - `GITHUB_TOKEN` でのマージでは、本番ブランチへの push でワークフローが動かない（2026-11-10 に確認。PR #43 のマージ後、`deploy` が走らなかった）。そのため、マージ後に `gh workflow run tests --ref <本番ブランチ>` で、本番ブランチのテストと反映を明示的に始めるようにした。
+- 手動の `gh workflow run tests --ref <本番ブランチ>` は run 42736828788 で成功（unit・mariadb・compat・e2e・deploy）。自動マージのあとに自動で始まることは、この記録を取り込む PR で確認する。
 
 **2026-11-09（v1.102.0 の反映の確認）**
 - PR #29（e2e のジョブを `ubuntu-24.04` に固定）を取り込んだあとの CI（run 177、`536f62c`）は、unit（7.4/8.1/8.3）・mariadb・compat・e2e がすべて成功し、`deploy`（FTPS の反映と、反映のあとの確認）も成功（02:44 UTC）。**本番は v1.102.0**。「Playwright と Chromium」は 24.04 で入った。
