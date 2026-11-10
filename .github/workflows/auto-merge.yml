@@ -1,4 +1,6 @@
-# PR のテスト（tests）がすべて成功したら、その PR を本番ブランチへ自動でマージする。
+# 作業ブランチのテスト（tests）がすべて成功したら、そのブランチの PR を本番ブランチへ自動でマージする。
+# auto-pr が GITHUB_TOKEN で作った PR は、PR 側のテスト実行が「承認待ち（action_required）」に
+# なることがあるため、同じコミットの push 側の成功で判断する。
 # マージで本番ブランチに push され、test.yml の deploy ジョブがサーバーへ反映する。
 name: auto-merge
 
@@ -18,7 +20,6 @@ concurrency:
 jobs:
   merge:
     if: >
-      github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch != 'claude/intelligent-brahmagupta-qhk963'
@@ -34,9 +35,15 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          json="$(gh api -X GET "repos/$GH_REPO/pulls" \
-            -f state=open -f "head=$OWNER:$HEAD" -f "base=$BASE")"
-          number="$(printf '%s' "$json" | jq -r '.[0].number // empty')"
+          # auto-pr がまだ PR を作っていないことがあるので、少し待つ
+          for i in $(seq 1 12); do
+            json="$(gh api -X GET "repos/$GH_REPO/pulls" \
+              -f state=open -f "head=$OWNER:$HEAD" -f "base=$BASE")"
+            number="$(printf '%s' "$json" | jq -r '.[0].number // empty')"
+            if [ -n "$number" ]; then break; fi
+            echo "PR がまだありません。待ちます（$i/12）。"
+            sleep 10
+          done
           if [ -z "$number" ]; then
             echo "マージする PR がありません（$HEAD → $BASE）。"
             exit 0
