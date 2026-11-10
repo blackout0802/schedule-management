@@ -316,3 +316,4 @@
 
 - `README.md`（機能一覧）／`docs/DEPLOY.md`（11・11-2 に自動デプロイ）／`tests/e2e/README.md`（画面テスト一覧）
 - `public/guide.php`（アプリ内の手引き）／`src/version.php`（版）
+- `CLAUDE.md`（2026-11-10〜）: このメモを `@docs/HANDOFF.md` で取り込む入口。新しいセッションは、始めからこのメモを読んだ状態になる。メモが長くなるほど毎回読む量が増えるので、古い経緯は短くまとめていく。
