@@ -1,4 +1,6 @@
 # push と pull request のたびに、自動テストを流す。
+# auto-merge が本番ブランチへマージしたあとは、workflow_dispatch で本番ブランチのテストと反映を始める
+# （GITHUB_TOKEN でマージすると、その push ではワークフローが動かないため）。
 #   unit    … 部品ごとのテスト（tests/run.php）。PHP 7.4 / 8.1 / 8.3 × SQLite
 #   mariadb … 同じテストを MariaDB で（PHP 8.3）
 #   compat  … PHP 7.4 で使えない書き方がないかの、静的な検査
@@ -10,6 +12,7 @@ on:
   push:
     branches: ['**']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -101,13 +104,16 @@ jobs:
           path: tests/e2e/.work/out
           if-no-files-found: ignore
 
-  # サーバーへの反映。テストがすべて成功した、作業ブランチへの push のときだけ。
+  # サーバーへの反映。テストがすべて成功した、本番ブランチへの push か、
+  # auto-merge からの workflow_dispatch（本番ブランチを指定）のときだけ。
   # 反映するのは、一番上の .htaccess と public / src / sql / bin（config.php・data は含まない）。
   # 次の3つを、リポジトリの Settings → Secrets and variables → Actions に登録するまでは、何もしない（失敗にもならない）:
   #   FTP_USERNAME / FTP_PASSWORD / FTP_SERVER_DIR（アプリのフォルダ。config.php と同じ場所）
   deploy:
     needs: [unit, mariadb, compat, e2e]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/intelligent-brahmagupta-qhk963'
+    if: >
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/claude/intelligent-brahmagupta-qhk963'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-server
