@@ -46,6 +46,9 @@
 ## 3. 自動デプロイ（GitHub Actions）
 
 - `.github/workflows/test.yml`。ブランチに push すると、unit（PHP 7.4/8.1/8.3）・mariadb・compat・e2e が走り、**すべて通ったときだけ** `deploy` ジョブが FTPS でサーバーに反映する。
+- `.github/workflows/auto-pr.yml`。作業ブランチ（`claude/**`）へ push すると、本番ブランチ向けの PR を自動で作る（同じ組み合わせの PR があれば作らない）。
+- `.github/workflows/auto-merge.yml`。`tests` の **PR 側**の実行がすべて成功したら、その PR を本番ブランチへ自動でマージする（下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない）。マージで本番ブランチに push され、上の `deploy` が走る。
+- 自動 PR には、リポジトリの Settings → Actions → General → Workflow permissions の「Allow GitHub Actions to create and approve pull requests」が必要（2026-11-10 に有効化ずみ。`can_approve_pull_request_reviews: true`）。ブランチ保護はしていない。
 - 使うのは SamKirkland/FTP-Deploy-Action（v4.3.5 のコミットで固定）。接続先はワークフローの `sv10007.star.ne.jp` で、`security: strict`（証明書を確かめる。`ss912764.stars.ne.jp` は証明書が一致しない）。Secrets は `FTP_USERNAME` `FTP_PASSWORD` `FTP_SERVER_DIR`（ユーザーが登録済み。`FTP_SERVER` は使わなくなった）。
 - `FTP_SERVER_DIR` は **public の親フォルダ**: `/skym.ink/public_html/schedule-management.skym.ink/`。末尾の `/` はワークフローが補う。`/public/` で終わる指定は、ガードが止める。
 - 反映するのは一番上の `.htaccess` と `public/ src/ sql/ bin/`（`tools/stage_deploy.py stage`）。除外: `install.php` `app_path.php` そのほかのドットファイル `config.php`。一番上の `.htaccess` は v1.96.1 から反映する（SSL 証明書の更新の経路 `/.well-known/acme-challenge/` を通すため。**反映から外すとサーバーからも消えて `config.php` が見えるので、外さない**）。`deploy` ジョブが、反映のあとに中のファイルが見えないことを確かめる。

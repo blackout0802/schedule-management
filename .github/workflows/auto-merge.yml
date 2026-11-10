@@ -1,0 +1,54 @@
+# PR のテスト（tests）がすべて成功したら、その PR を本番ブランチへ自動でマージする。
+# マージで本番ブランチに push され、test.yml の deploy ジョブがサーバーへ反映する。
+name: auto-merge
+
+on:
+  workflow_run:
+    workflows: ['tests']
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch != 'claude/intelligent-brahmagupta-qhk963'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 成功した PR を本番ブランチへマージ
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BASE: claude/intelligent-brahmagupta-qhk963
+          HEAD: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          json="$(gh api -X GET "repos/$GH_REPO/pulls" \
+            -f state=open -f "head=$OWNER:$HEAD" -f "base=$BASE")"
+          number="$(printf '%s' "$json" | jq -r '.[0].number // empty')"
+          if [ -z "$number" ]; then
+            echo "マージする PR がありません（$HEAD → $BASE）。"
+            exit 0
+          fi
+          if [ "$(printf '%s' "$json" | jq -r '.[0].draft')" = "true" ]; then
+            echo "PR #$number は下書きです。マージしません。"
+            exit 0
+          fi
+          pr_sha="$(printf '%s' "$json" | jq -r '.[0].head.sha')"
+          if [ "$pr_sha" != "$SHA" ]; then
+            echo "PR の最新のコミット（$pr_sha）が、テストしたコミット（$SHA）と違います。次のテストの結果を待ちます。"
+            exit 0
+          fi
+          echo "PR #$number をマージします（$HEAD → $BASE）。"
+          gh pr merge "$number" --merge

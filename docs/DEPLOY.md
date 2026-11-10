@@ -203,6 +203,14 @@ zip を使わずに、GitHub にプッシュしたあと、テストがすべて
 - 反映するのは、作業ブランチ（`claude/intelligent-brahmagupta-qhk963`）へのプッシュのときだけです。テストが1つでも失敗すると、反映しません。
 - データベースの変更は、画面を開いたときに自動で行われます。
 
+### PR の作成とマージも自動（2026-11-10〜）
+
+作業ブランチ（`claude/…`）へ push すると、`auto-pr` が本番ブランチ向けの PR を自動で作り、`auto-merge` が **PR 側のテスト**（unit・mariadb・compat・e2e）の成功を待って、自動でマージします。マージされると本番ブランチに push され、上の `deploy` が走ります。
+
+- テストが1つでも失敗した PR はマージされません。直して push すると、もう一度テストされ、成功したときにマージされます。
+- 下書き（Draft）の PR と、テストしたコミットより新しい push がある PR は、その回にはマージしません（次のテストの結果を待ちます）。**まだ本番に出したくないときは、PR を下書き（Draft）にしてください。**
+- 自動 PR には、リポジトリの **Settings → Actions → General → Workflow permissions** の「Allow GitHub Actions to create and approve pull requests」が必要です（有効にしてあります）。
+
 ### 初めに1回だけ: Secrets の登録
 
 GitHub のリポジトリ → **Settings → Secrets and variables → Actions → New repository secret** で、次の4つを登録します。（登録するまでは、反映は行われませんが、テストは失敗にもなりません）
