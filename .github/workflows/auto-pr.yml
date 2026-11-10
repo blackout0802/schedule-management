@@ -1,0 +1,56 @@
+# 作業ブランチへ push したら、本番ブランチ向けの PR を自動で作る。
+# すでに同じ組み合わせの PR があれば、何もしない（PR は GitHub が自動で更新する）。
+# マージは auto-merge.yml が、テストの成功を待ってから行う。
+name: auto-pr
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-pr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  create:
+    # 本番ブランチへの push（マージ）では作らない
+    if: github.ref_name != 'claude/intelligent-brahmagupta-qhk963'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: PR がなければ作る
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BASE: claude/intelligent-brahmagupta-qhk963
+          HEAD: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          count="$(gh pr list --head "$HEAD" --base "$BASE" --state open --json number --jq 'length')"
+          if [ "$count" != "0" ]; then
+            echo "既に PR があります（$HEAD → $BASE）。作りません。"
+            exit 0
+          fi
+          title="$(git log -1 --pretty=%s)"
+          if [ -z "$title" ]; then title="$HEAD の変更"; fi
+          if ! out="$(gh pr create \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --title "$title" \
+            --body "自動で作りました。CI（unit・mariadb・compat・e2e）がすべて成功すると、自動で \`$BASE\` にマージされます。" 2>&1)"; then
+            # 差がない・同時に作られた、のときは失敗にしない
+            if printf '%s' "$out" | grep -qE 'No commits between|already exists'; then
+              echo "PR は作りませんでした: $out"
+              exit 0
+            fi
+            printf '%s\n' "$out" >&2
+            exit 1
+          fi
+          printf '%s\n' "$out"
