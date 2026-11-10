@@ -27,7 +27,7 @@
 3. `src/version.php` の `APP_VERSION` を上げる。
 4. コミット（メッセージの末尾に、指定のトレーラーを付ける）して、ブランチに push する。
 5. 返事は日本語で、「**変えたこと／確かめたこと／確かめていないこと**」の3つを書く。
-6. **push すると、PR の自動作成（`auto-pr`）→ CI（PR 側）成功後の自動マージ（`auto-merge`）が行われる。手でマージしない。** 取り込んだあとの `deploy` ジョブの成功まで確かめる（ユーザーの約束。どのアプリでも共通）。CI が落ちたら、直して push する（自動マージは、成功したときだけ行われる）。
+6. **push すると、PR の自動作成（`auto-pr`）→ CI 成功後の自動マージ（`auto-merge`）が行われる。手でマージしない。** 取り込んだあとの `deploy` ジョブの成功まで確かめる（ユーザーの約束。どのアプリでも共通）。CI が落ちたら、直して push する（自動マージは、成功したときだけ行われる）。
 7. 本番に反映できたら、ユーザーに実機確認を頼む。
 
 ### デプロイ前の確認（必須。2026-10-22 にユーザーが決めた約束）
@@ -48,7 +48,8 @@
 
 - `.github/workflows/test.yml`。ブランチに push すると、unit（PHP 7.4/8.1/8.3）・mariadb・compat・e2e が走り、**すべて通ったときだけ** `deploy` ジョブが FTPS でサーバーに反映する。
 - `.github/workflows/auto-pr.yml`。作業ブランチ（`claude/**`）へ push すると、本番ブランチ向けの PR を自動で作る（同じ組み合わせの PR があれば作らない）。
-- `.github/workflows/auto-merge.yml`。`tests` の **PR 側**の実行がすべて成功したら、その PR を本番ブランチへ自動でマージする（下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない）。マージで本番ブランチに push され、上の `deploy` が走る。
+- `.github/workflows/auto-merge.yml`。作業ブランチの `tests`（**push 側**）がすべて成功したら、そのブランチの PR を本番ブランチへ自動でマージする（下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない）。マージで本番ブランチに push され、上の `deploy` が走る。
+  - `auto-pr` が `GITHUB_TOKEN` で作った PR は、**PR 側**のテスト実行が「承認待ち（`action_required`）」になり、ジョブが動かないことがある。そのため、同じコミットの push 側の成功で判断している。PR の画面に承認待ちが残っても、マージは行われる。
 - 自動 PR には、リポジトリの Settings → Actions → General → Workflow permissions の「Allow GitHub Actions to create and approve pull requests」が必要（2026-11-10 に有効化ずみ。`can_approve_pull_request_reviews: true`）。ブランチ保護はしていない。
 - 使うのは SamKirkland/FTP-Deploy-Action（v4.3.5 のコミットで固定）。接続先はワークフローの `sv10007.star.ne.jp` で、`security: strict`（証明書を確かめる。`ss912764.stars.ne.jp` は証明書が一致しない）。Secrets は `FTP_USERNAME` `FTP_PASSWORD` `FTP_SERVER_DIR`（ユーザーが登録済み。`FTP_SERVER` は使わなくなった）。
 - `FTP_SERVER_DIR` は **public の親フォルダ**: `/skym.ink/public_html/schedule-management.skym.ink/`。末尾の `/` はワークフローが補う。`/public/` で終わる指定は、ガードが止める。
@@ -270,9 +271,9 @@
 4. いずれ Playwright を Ubuntu 26.04 に対応した版へ上げるときは、手元の版（`npm i -g playwright`）とそろえ、CI の e2e の `runs-on: ubuntu-24.04` を見直して、全部の画面テストで確かめる。
 
 **2026-11-10（自動 PR・自動マージ）**
-- 作業ブランチへ push すると PR を自動作成し（`auto-pr`）、PR 側のテストがすべて成功したら本番ブランチへ自動マージする（`auto-merge`）ようにした。`auto-pr` は PR #41 で動作を確認ずみ（PR は `github-actions[bot]` が作成）。`auto-merge` は、この記録を取り込む PR で確かめる。
+- 作業ブランチへ push すると PR を自動作成し（`auto-pr`）、push 側のテストがすべて成功したら本番ブランチへ自動マージする（`auto-merge`）ようにした。`auto-pr` は PR #41 で動作を確認ずみ（PR は `github-actions[bot]` が作成）。
 - 自動 PR のため、リポジトリの Actions の「GitHub Actions に pull request の作成・承認を許可する」を有効にした（`can_approve_pull_request_reviews: true`）。ブランチ保護はしていない。
-- `auto-merge` は、`tests` の **PR 側**の実行が成功したときだけ動く。下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない。
+- `auto-pr` が作った PR は、PR 側のテスト実行が「承認待ち（`action_required`）」になり、ジョブが動かないことがある（2026-11-10 に確認）。そのため `auto-merge` は、同じコミットの **push 側**の `tests` が成功したときだけ動く。下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない。
 
 **2026-11-09（v1.102.0 の反映の確認）**
 - PR #29（e2e のジョブを `ubuntu-24.04` に固定）を取り込んだあとの CI（run 177、`536f62c`）は、unit（7.4/8.1/8.3）・mariadb・compat・e2e がすべて成功し、`deploy`（FTPS の反映と、反映のあとの確認）も成功（02:44 UTC）。**本番は v1.102.0**。「Playwright と Chromium」は 24.04 で入った。
