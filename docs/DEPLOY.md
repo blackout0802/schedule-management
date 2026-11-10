@@ -211,6 +211,7 @@ zip を使わずに、GitHub にプッシュしたあと、テストがすべて
 - 下書き（Draft）の PR と、テストしたコミットより新しい push がある PR は、その回にはマージしません（次のテストの結果を待ちます）。**まだ本番に出したくないときは、PR を下書き（Draft）にしてください。**
 - 自動 PR には、リポジトリの **Settings → Actions → General → Workflow permissions** の「Allow GitHub Actions to create and approve pull requests」が必要です（有効にしてあります）。
 - 自動で作られた PR は、**PR 側**のテストが「承認待ち（`action_required`）」になって動かないことがあります（bot が作った PR のため）。マージの判断は、同じコミットの **push 側**のテストで行います。PR の画面に承認待ちが残っていても、テストが成功していればマージされます。
+- 自動マージは `GITHUB_TOKEN` で行うため、そのままでは本番ブランチへの push でテスト・反映が動きません（GitHub の仕様）。そこで、マージ後に `workflow_dispatch` で本番ブランチのテスト（`deploy` を含む）を明示的に始めます。`deploy` は、本番ブランチへの push か、本番ブランチを指定した `workflow_dispatch` のときだけ動きます。
 
 ### 初めに1回だけ: Secrets の登録
 
