@@ -1046,6 +1046,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .insp-band .btn { margin-left: auto; }
 .annual-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 4px 0 8px; }
 .annual-head h2 { margin: 0 8px 0 0; font-size: 20px; }
+.annual-tbl .nm .an-edit { margin-top: 2px; padding: 0 8px; font-size: 12px; color: var(--muted); }
 .annual-fy { display: inline-flex; align-items: center; gap: 6px; }
 .annual-fy-t { font-weight: 700; min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
 .annual-head select { width: auto; padding: 4px 10px; }

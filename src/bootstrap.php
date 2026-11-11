@@ -322,6 +322,11 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE events ADD COLUMN end_before_done ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'DATE NULL' : 'TEXT NULL'));
     }
+    try { // 点検項目を登録した人（一般の社員も、年間計画の画面から追加できる。変更・削除は、登録した人と管理者）。SCHEMA_VERSION 33
+        db()->query('SELECT created_by FROM inspection_items LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec('ALTER TABLE inspection_items ADD COLUMN created_by ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'INT UNSIGNED' : 'INTEGER') . ' NULL');
+    }
     try {
         db()->query('SELECT doing FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {

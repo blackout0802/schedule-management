@@ -2089,6 +2089,19 @@ check('年間点検: 添付があれば完了にできる。確認者がいな�
 q('DELETE FROM todo_comment_files WHERE todo_id = ?', [$insNt['id']]);
 check('年間点検: 点検の記録は、バックアップの対象', [in_array('inspection_items', BACKUP_TABLES, true), in_array('inspection_runs', BACKUP_TABLES, true)], [true, true]);
 
+// 一般の社員も追加できる（委任されて代わりに登録する）。変更・削除は、登録した人と管理者
+[$insDc] = inspect_validate_item(array_merge($insBase, ['title' => '山田が登録した項目', 'months' => [7]]));
+$insC1 = inspect_item_save($insDc, null, $insDay1, (int)$a['id']);
+$insC2 = row('SELECT * FROM inspection_items WHERE id = ?', [$insA['id']]); // 登録した人が分からない項目（created_by が空）
+check('年間点検: 項目を登録した人が記録される', [(int)$insC1['created_by'], $insC2['created_by']], [(int)$a['id'], null]);
+check('年間点検: 変更・削除できるのは、登録した人と管理者（ほかの社員・登録者不明の項目は管理者だけ）', [inspect_can_edit($insC1, $a), inspect_can_edit($insC1, $b), inspect_can_edit($insC1, $admin), inspect_can_edit($insC2, $a), inspect_can_edit($insC2, $admin)], [true, false, true, false, true]);
+$insOa = inspect_overview(2031, $a, $insNow); $insOb = inspect_overview(2031, $b, $insNow);
+$insRowA = array_values(array_filter($insOa['items'], function ($i) use ($insC1) { return $i['id'] === (int)$insC1['id']; }))[0];
+$insRowB = array_values(array_filter($insOb['items'], function ($i) use ($insC1) { return $i['id'] === (int)$insC1['id']; }))[0];
+check('年間点検: 年間計画の表に、変更できる項目かが付く（登録した人だけ true）。登録者の名前も付く', [$insRowA['can_edit'], $insRowB['can_edit'], $insRowA['created_by_name']], [true, false, '山田']);
+check('年間点検: 7月だけの項目を11月に登録しても、いまの年度の表に行が出る（マスは空）。過去の年度には出ない', [(object)(array)$insRowA['cells'] == (object)[], count(inspect_overview(2030, $a, $insNow)['items'])], [true, 0]);
+q('DELETE FROM inspection_items WHERE id = ?', [$insC1['id']]);
+
 // 後片付け
 q('DELETE FROM events WHERE todo_id IN (SELECT todo_id FROM inspection_runs)');
 q('DELETE FROM todos WHERE id IN (SELECT todo_id FROM inspection_runs)');
@@ -2100,6 +2113,12 @@ q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
 q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '31']);
 ensure_schema();
 check('更新: 古いデータベースに、点検の表が足される', (function () { try { db()->query('SELECT id FROM inspection_items LIMIT 1')->fetchAll(); db()->query('SELECT id FROM inspection_runs LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
+// 古い版（SCHEMA_VERSION 32。点検項目に created_by が無い）のデータベースからの更新: 列が足される
+db()->exec('ALTER TABLE inspection_items DROP COLUMN created_by');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '32']);
+ensure_schema();
+check('更新: 古いデータベースに、点検項目の created_by の列が足される', (function () { try { db()->query('SELECT created_by FROM inspection_items LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
 
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();

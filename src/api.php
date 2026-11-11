@@ -1065,13 +1065,15 @@ function handle_api(): void
             require_admin($user);
             api_out(['items' => inspect_items_all($user), 'fy_start' => INSPECT_FY_START]);
 
-        case 'inspect_item_save': // 点検項目の追加・変更（管理者）
-            require_admin($user);
+        case 'inspect_item_save': // 点検項目の追加（社員なら誰でも。委任されて代わりに登録することがある）・変更（登録した人と管理者）
             $existing = null;
             if (!empty($in['id'])) {
                 $existing = row('SELECT * FROM inspection_items WHERE id = ?', [(int)$in['id']]);
                 if (!$existing) {
                     api_fail('点検項目が見つかりません。', 404);
+                }
+                if (!inspect_can_edit($existing, $user)) {
+                    api_fail('点検項目を変更できるのは、登録した人と管理者だけです。', 403);
                 }
             } elseif ((int)row('SELECT COUNT(*) AS c FROM inspection_items')['c'] >= INSPECT_MAX_ITEMS) {
                 api_fail('点検項目は、' . INSPECT_MAX_ITEMS . '件までです。');
@@ -1080,15 +1082,17 @@ function handle_api(): void
             if ($err) {
                 api_fail($err);
             }
-            $saved = inspect_item_save($data, $existing);
+            $saved = inspect_item_save($data, $existing, null, (int)$user['id']);
             audit_log('inspect', $existing ? 'update' : 'add', '点検項目｜' . $saved['title'] . '　' . $saved['plan'], '', (int)$saved['active'] === 1 ? '' : 'やめた');
             api_out(['ok' => true, 'id' => (int)$saved['id']]);
 
-        case 'inspect_item_delete': // 点検項目の削除（管理者。記録がある項目は、消さずに「やめる」）
-            require_admin($user);
+        case 'inspect_item_delete': // 点検項目の削除（登録した人と管理者。記録がある項目は、消さずに「やめる」）
             $item = row('SELECT * FROM inspection_items WHERE id = ?', [(int)($in['id'] ?? 0)]);
             if (!$item) {
                 api_fail('点検項目が見つかりません。', 404);
+            }
+            if (!inspect_can_edit($item, $user)) {
+                api_fail('点検項目を削除できるのは、登録した人と管理者だけです。', 403);
             }
             if (row('SELECT id FROM inspection_runs WHERE item_id = ?', [$item['id']])) {
                 api_fail('記録のある点検項目は、削除できません。「やめる」にしてください（過去の記録は残ります）。');

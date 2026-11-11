@@ -143,8 +143,17 @@ function inspect_validate_item(array $in, ?array $existing = null): array
     ], null];
 }
 
-/** 項目を保存する。保存したあと、今月が実施月で、起票の日を過ぎていれば、すぐ起票する */
-function inspect_item_save(array $data, ?array $existing, ?int $now = null): array
+/**
+ * 項目を変更・削除できるか。管理者と、その項目を登録した人。
+ * 登録（追加）は、管理者でなくても、社員なら誰でもできる（マネージャーの代わりに、委任されて登録することがあるため）
+ */
+function inspect_can_edit(array $item, array $user): bool
+{
+    return is_admin($user) || ($item['created_by'] !== null && (int)$item['created_by'] === (int)$user['id']);
+}
+
+/** 項目を保存する（$by = 新しく登録した人の番号）。保存したあと、今月が実施月で、起票の日を過ぎていれば、すぐ起票する */
+function inspect_item_save(array $data, ?array $existing, ?int $now = null, ?int $by = null): array
 {
     if ($existing) {
         q('UPDATE inspection_items SET plan=?, title=?, months=?, due_rule=?, alert_days=?, alert_due=?, alert_late=?, alert_check=?, owner_id=?, checker_id=?, steps=?, need_attach=?, active=? WHERE id=?', [
@@ -160,9 +169,9 @@ function inspect_item_save(array $data, ?array $existing, ?int $now = null): arr
         }
     } else {
         $max = row('SELECT MAX(sort_order) AS m FROM inspection_items');
-        q('INSERT INTO inspection_items (plan, title, months, due_rule, alert_days, alert_due, alert_late, alert_check, owner_id, checker_id, steps, need_attach, active, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
+        q('INSERT INTO inspection_items (plan, title, months, due_rule, alert_days, alert_due, alert_late, alert_check, owner_id, checker_id, steps, need_attach, active, sort_order, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
             $data['plan'], $data['title'], $data['months'], $data['due_rule'], $data['alert_days'], $data['alert_due'], $data['alert_late'], $data['alert_check'],
-            $data['owner_id'], $data['checker_id'], $data['steps'], $data['need_attach'], $data['active'], (int)($max['m'] ?? 0) + 1, now_str(),
+            $data['owner_id'], $data['checker_id'], $data['steps'], $data['need_attach'], $data['active'], (int)($max['m'] ?? 0) + 1, $by, now_str(),
         ]);
         $id = (int)db()->lastInsertId();
     }
@@ -298,6 +307,7 @@ function inspect_item_for_client(array $item, array $user): array
         'checker_id' => $item['checker_id'] === null ? null : (int)$item['checker_id'], 'checker_name' => (string)($item['checker_name'] ?? ''),
         'steps' => (string)$item['steps'], 'need_attach' => (int)$item['need_attach'] === 1, 'active' => (int)$item['active'] === 1,
         'mine' => (int)$item['owner_id'] === (int)$user['id'] || ($item['checker_id'] !== null && (int)$item['checker_id'] === (int)$user['id']),
+        'can_edit' => inspect_can_edit($item, $user), 'created_by_name' => (string)($item['created_by_name'] ?? ''),
     ];
 }
 
@@ -305,8 +315,8 @@ function inspect_item_for_client(array $item, array $user): array
 function inspect_items_all(array $user): array
 {
     $out = [];
-    foreach (rows('SELECT i.*, o.name AS owner_name, c.name AS checker_name, (SELECT COUNT(*) FROM inspection_runs r WHERE r.item_id = i.id) AS runs FROM inspection_items i
-        LEFT JOIN users o ON o.id = i.owner_id LEFT JOIN users c ON c.id = i.checker_id ORDER BY i.sort_order, i.id') as $item) {
+    foreach (rows('SELECT i.*, o.name AS owner_name, c.name AS checker_name, b.name AS created_by_name, (SELECT COUNT(*) FROM inspection_runs r WHERE r.item_id = i.id) AS runs FROM inspection_items i
+        LEFT JOIN users o ON o.id = i.owner_id LEFT JOIN users c ON c.id = i.checker_id LEFT JOIN users b ON b.id = i.created_by ORDER BY i.sort_order, i.id') as $item) {
         $c = inspect_item_for_client($item, $user);
         $c['runs'] = (int)$item['runs'];
         $out[] = $c;
@@ -329,8 +339,8 @@ function inspect_overview(int $fy, array $user, ?int $now = null): array
         $runs[$r['item_id'] . '|' . $r['ym']] = $r;
     }
     $items = [];
-    foreach (rows('SELECT i.*, o.name AS owner_name, c.name AS checker_name FROM inspection_items i
-        LEFT JOIN users o ON o.id = i.owner_id LEFT JOIN users c ON c.id = i.checker_id ORDER BY i.sort_order, i.id') as $item) {
+    foreach (rows('SELECT i.*, o.name AS owner_name, c.name AS checker_name, b.name AS created_by_name FROM inspection_items i
+        LEFT JOIN users o ON o.id = i.owner_id LEFT JOIN users c ON c.id = i.checker_id LEFT JOIN users b ON b.id = i.created_by ORDER BY i.sort_order, i.id') as $item) {
         $cells = [];
         $itemMonths = inspect_item_months($item);
         foreach ($months as $ym) {
@@ -341,8 +351,8 @@ function inspect_overview(int $fy, array $user, ?int $now = null): array
                 $cells[$ym] = ['ym' => $ym, 'month' => (int)substr($ym, 5, 2), 'status' => 'plan', 'run_id' => null, 'due' => inspect_due_date($item, $ym, $cal)];
             }
         }
-        if (!$cells) {
-            continue; // この年度に、記録も予定もない項目（やめた項目・別の年度だけの項目）は出さない
+        if (!$cells && !((int)$item['active'] === 1 && $fy >= inspect_fy_of($curYm))) {
+            continue; // 記録も予定もない項目は、いまの年度と先の年度では出す（登録したのに見えない、を避ける）。過去の年度・やめた項目は、記録があるときだけ
         }
         $c = inspect_item_for_client($item, $user);
         $c['cells'] = (object)$cells;

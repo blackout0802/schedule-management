@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS inspection_items (
   need_attach TINYINT NOT NULL DEFAULT 0,
   active TINYINT NOT NULL DEFAULT 1,
   sort_order INT NOT NULL DEFAULT 0,
+  created_by INT UNSIGNED NULL,
   created_at DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
