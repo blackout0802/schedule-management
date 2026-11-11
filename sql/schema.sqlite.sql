@@ -214,3 +214,39 @@ CREATE TABLE IF NOT EXISTS room_bookings (
   notify_pre INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS ix_room_bookings_day ON room_bookings (bdate, room_id);
+
+CREATE TABLE IF NOT EXISTS inspection_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan TEXT NOT NULL DEFAULT 'Pマーク',
+  title TEXT NOT NULL,
+  months TEXT NOT NULL DEFAULT '',
+  due_rule TEXT NOT NULL DEFAULT 'last',
+  alert_days INTEGER NOT NULL DEFAULT 7,
+  alert_due INTEGER NOT NULL DEFAULT 1,
+  alert_late INTEGER NOT NULL DEFAULT 1,
+  alert_check INTEGER NOT NULL DEFAULT 1,
+  owner_id INTEGER NOT NULL,
+  checker_id INTEGER NULL,
+  steps TEXT NOT NULL DEFAULT '',
+  need_attach INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inspection_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  ym TEXT NOT NULL,
+  due_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  todo_id INTEGER NULL,
+  done_at TEXT NULL,
+  done_by INTEGER NULL,
+  checked_at TEXT NULL,
+  checked_by INTEGER NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_inspection_runs ON inspection_runs (item_id, ym);
+CREATE INDEX IF NOT EXISTS ix_inspection_runs_todo ON inspection_runs (todo_id);

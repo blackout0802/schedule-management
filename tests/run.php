@@ -1990,6 +1990,117 @@ q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version'
 ensure_schema();
 check('更新: 古いデータベースに end_before_done の列が足される（入っている予定は空のまま）', (function () { try { return [true, (int)row('SELECT COUNT(*) AS c FROM events WHERE end_before_done IS NOT NULL')['c']]; } catch (PDOException $e) { return [false, -1]; } })(), [true, 0]);
 
+// ---- 年間点検計画（v1.108.0。年度は7月はじまり）----
+// 日付は 2031年11月に固定。11/1 は土曜・11/3 は文化の日なので、月の最初の営業日は 11/4（火）。最終営業日は 11/28（金）
+check('年間点検: 年度は7月はじまり（6月は前の年度・7月から新しい年度）', [inspect_fy_of('2031-06'), inspect_fy_of('2031-07'), inspect_fy_of('2032-01')], [2030, 2031, 2031]);
+check('年間点検: 年度の12か月は、7月から翌年6月', [inspect_fy_months(2031)[0], inspect_fy_months(2031)[5], inspect_fy_months(2031)[6], inspect_fy_months(2031)[11], count(inspect_fy_months(2031))], ['2031-07', '2031-12', '2032-01', '2032-06', 12]);
+check('年間点検: 月は年度の順にそろい、重複・範囲外は除く', inspect_months_sorted([3, 7, 1, 7, 13, 0]), [7, 1, 3]);
+$insBase = ['plan' => 'Pマーク', 'title' => '内部監査', 'months' => [11], 'due_rule' => 'last', 'alert_days' => 7, 'owner_id' => (int)$a['id'], 'checker_id' => (int)$b['id'], 'steps' => "計画を作る\n実施する"];
+$insErr = function (array $o) use ($insBase) { return inspect_validate_item(array_merge($insBase, $o))[1] !== null; };
+check('年間点検: 名前が空・長すぎ／月がない／期限・アラート日数がおかしい／担当者がいない・確認者が存在しない、は保存できない',
+    [$insErr(['title' => '']), $insErr(['title' => str_repeat('あ', 61)]), $insErr(['months' => []]), $insErr(['due_rule' => '31']), $insErr(['due_rule' => 'abc']), $insErr(['alert_days' => 31]), $insErr(['owner_id' => 999999]), $insErr(['checker_id' => 999999])],
+    [true, true, true, true, true, true, true, true]);
+check('年間点検: 担当者と同じ人を確認者にすると、確認者なし（実施で確認済み）になる。月は年度の順に保存する', [inspect_validate_item(array_merge($insBase, ['checker_id' => (int)$a['id'], 'months' => [1, 11]]))[0]['checker_id'], inspect_validate_item(array_merge($insBase, ['months' => [1, 11]]))[0]['months']], [null, '11,1']);
+check('年間点検: 家族のアカウントは、担当者にできない', (function () use ($insErr, $a) { [$fidI] = family_add($a, '点検の家族', 'insp-fam@example.com'); $r = $insErr(['owner_id' => $fidI]); family_delete($a, $fidI); return $r; })(), true);
+
+$insDay0 = strtotime('2031-11-03 10:00:00'); // 文化の日（起票の日の前）
+$insDay1 = strtotime('2031-11-04 10:00:00'); // 月の最初の営業日
+[$insD1] = inspect_validate_item($insBase);
+$insA = inspect_item_save($insD1, null, $insDay0);
+check('年間点検: 起票の日（月の最初の営業日）より前は、保存しても起票しない', [(int)row('SELECT COUNT(*) AS c FROM inspection_runs')['c'], inspect_issue_due($insDay0)], [0, []]);
+check('年間点検: 月の最初の営業日に、cron が起票する（1日1回だけ調べる）', [inspect_issue_due($insDay1), inspect_issue_due($insDay1), (int)row('SELECT COUNT(*) AS c FROM inspection_runs')['c']], [['年間点検: 1 件を起票しました'], [], 1]);
+$insR = row('SELECT * FROM inspection_runs WHERE item_id = ?', [$insA['id']]);
+check('年間点検: 起票した記録は、期限が最終営業日・未実施', [$insR['ym'], $insR['due_date'], $insR['status']], ['2031-11', '2031-11-28', 'open']);
+$insT = row('SELECT * FROM todos WHERE id = ?', [$insR['todo_id']]);
+check('年間点検: 担当者の ToDo（【点検】名前（○月分）・期限・手順のメモ・未着手・業務）ができる', [$insT['title'], (int)$insT['owner_id'], $insT['due_date'], todo_status_of($insT), $insT['kind'], (int)$insT['family_shared'], strpos($insT['note'], '計画を作る') !== false], ['【点検】内部監査（11月分）', (int)$a['id'], '2031-11-28', 'todo', 'work', 0, true]);
+$insE = row('SELECT * FROM events WHERE todo_id = ?', [$insT['id']]);
+check('年間点検: 期限の日に、ToDo と結びついた業務の予定が置かれる（家族には共有しない）', [$insE['start_date'], $insE['end_date'], $insE['kind'], (int)$insE['owner_id'], (int)$insE['family_shared']], ['2031-11-28', '2031-11-28', 'work', (int)$a['id'], 0]);
+check('年間点検: 起票は、変更履歴を増やさない', (int)row("SELECT COUNT(*) AS c FROM audit_log WHERE type = 'event' AND label LIKE '%【点検】%'")['c'], 0);
+check('年間点検: 同じ月は、何度呼んでも起票しない', inspect_issue_current($insA, $insDay1), null);
+
+$insNow = strtotime('2031-11-10 09:00:00');
+$insS = inspect_summary($a, $insNow);
+check('年間点検: 集計（今月・遅れ・確認待ち）と、自分の要対応の件数', [$insS['now'], $insS['late'], $insS['wait'], $insS['mine'], inspect_summary($b, $insNow)['mine']], [1, 0, 0, 1, 0]);
+check('年間点検: 期限を過ぎると遅れになる', [inspect_summary($a, strtotime('2031-12-01 09:00:00'))['late'], inspect_summary($a, strtotime('2031-12-01 09:00:00'))['now']], [1, 0]);
+$insO = inspect_overview(2031, $a, $insNow);
+check('年間点検: 年間計画の表は、その年度の項目と月ごとのマス（11月は今月）', [count($insO['items']), $insO['items'][0]['cells']->{'2031-11'}['status'], isset($insO['items'][0]['cells']->{'2032-11'}), $insO['fy'], $insO['months'][0]['ym'], $insO['items'][0]['mine']], [1, 'now', false, 2031, '2031-07', true]);
+$insItemB = inspect_item_save(inspect_validate_item(array_merge($insBase, ['title' => '年2回の点検', 'months' => [1, 11]]))[0], null, $insDay1);
+$insO = inspect_overview(2031, $a, $insNow);
+$insBc = $insO['items'][1]['cells'];
+check('年間点検: これからの月は「予定」のマス（期限つき）。11月は起票ずみで「今月」', [$insBc->{'2031-11'}['status'], $insBc->{'2032-01'}['status'], $insBc->{'2032-01'}['due'], isset($insBc->{'2031-12'})], ['now', 'plan', '2032-01-30', false]);
+check('年間点検: 前の年度の表には、記録のない項目の「予定」は出ない', count(inspect_overview(2030, $a, $insNow)['items']), 0);
+q('DELETE FROM events WHERE todo_id IN (SELECT todo_id FROM inspection_runs WHERE item_id = ?)', [$insItemB['id']]);
+q('DELETE FROM todos WHERE id IN (SELECT todo_id FROM inspection_runs WHERE item_id = ?)', [$insItemB['id']]);
+q('DELETE FROM inspection_runs WHERE item_id = ?', [$insItemB['id']]);
+q('DELETE FROM inspection_items WHERE id = ?', [$insItemB['id']]);
+
+// Slack のアラート（朝の通知の時刻から3時間のあいだ。事前・当日・遅れ。1回ずつ）
+slack_cfg_save(slack_cfg_defaults());
+$insAt = function ($d) { return strtotime($d . ' ' . slack_cfg()['morning']['time'] . ':00'); };
+check('年間点検の通知: 朝の通知の時刻の前は送らず、過ぎたら、期限の7日前（11/21）に1回だけ送る', [inspect_notify_due($insAt('2031-11-21') - 60), inspect_notify_due($insAt('2031-11-21') + 60), inspect_notify_due($insAt('2031-11-21') + 120)], [[], ['年間点検（事前）: 内部監査 を通知しました'], []]);
+check('年間点検の通知: 期限の日の朝（11/28）に送る。土日（11/29）は送らない', [inspect_notify_due($insAt('2031-11-28') + 60), inspect_notify_due($insAt('2031-11-29') + 60)], [['年間点検（当日）: 内部監査 を通知しました'], []]);
+check('年間点検の通知: 期限を過ぎた最初の営業日（12/1）に、遅れを1回だけ送る', [inspect_notify_due($insAt('2031-12-01') + 60), inspect_notify_due($insAt('2031-12-02') + 60)], [['年間点検（遅れ）: 内部監査 を通知しました'], []]);
+$insTx = inspect_slack_text('【点検アラート】期限まで7日', $insR, ['title' => '内部監査', 'owner_id' => (int)$a['id'], 'checker_id' => (int)$b['id']]);
+check('年間点検の通知: 文面に、項目・月・期限・担当・確認者・リンクが入る', [strpos($insTx, "【点検アラート】期限まで7日\n内部監査（11月分）　期限 11/28") === 0, strpos($insTx, '担当: 山田　確認: 鈴木') !== false, strpos($insTx, slack_link_text()) !== false], [true, true, true]);
+q("DELETE FROM notification_log WHERE ref LIKE 'insp%'");
+q('UPDATE inspection_items SET alert_days = 0, alert_due = 0, alert_late = 0 WHERE id = ?', [$insA['id']]);
+check('年間点検の通知: 事前・当日・遅れは、項目ごとに止められる', [inspect_notify_due($insAt('2031-11-21') + 60), inspect_notify_due($insAt('2031-11-28') + 60), inspect_notify_due($insAt('2031-12-01') + 60)], [[], [], []]);
+q('UPDATE inspection_items SET alert_days = 7, alert_due = 1, alert_late = 1 WHERE id = ?', [$insA['id']]);
+q("UPDATE users SET slack_id = 'U0INSPECT1' WHERE id = ?", [$a['id']]);
+check('年間点検の通知: Slack の ID があれば、担当者をメンションする', strpos(inspect_slack_text('【x】', $insR, ['title' => '内部監査', 'owner_id' => (int)$a['id'], 'checker_id' => null]), '担当: <@U0INSPECT1>　確認: なし') !== false, true);
+q('UPDATE users SET slack_id = NULL WHERE id = ?', [$a['id']]);
+
+// 実施・確認
+$insMark = function ($run, $act, $user, $in = []) { try { return inspect_run_mark(row('SELECT * FROM inspection_runs WHERE id = ?', [$run['id']]), $act, $user, $in); } catch (RuntimeException $x) { return $x->getCode() ?: 400; } };
+check('年間点検: 担当者でも管理者でもない人は、実施済みにできない（403）', $insMark($insR, 'done', $b), 403);
+$insD = $insMark($insR, 'done', $a, ['date' => '2031-11-05', 'note' => '指摘なし']);
+$insTd = row('SELECT * FROM todos WHERE id = ?', [$insR['todo_id']]);
+check('年間点検: 実施済みにすると、確認者がいるので「確認待ち」。ToDo も完了になる。未来の日付は今日になる', [$insD['status'], $insD['done_at'] === date('Y-m-d'), (int)$insD['done_by'], $insD['note'], $insTd['done_at'] !== null, inspect_status_of($insD, '2031-11-10')], ['done', true, (int)$a['id'], '指摘なし', true, 'wait']);
+check('年間点検: 確認待ちは、確認者の要対応になる（担当者の要対応からは外れる）', [inspect_summary($b, $insNow)['wait'], inspect_summary($b, $insNow)['mine'], inspect_summary($a, $insNow)['mine']], [1, 1, 0]);
+check('年間点検の通知: 確認待ちになったら、時刻に関係なく、確認者へすぐ1回だけ知らせる', [inspect_notify_due(strtotime('2031-11-10 15:20:00')), inspect_notify_due(strtotime('2031-11-10 15:30:00'))], [['年間点検（確認依頼）: 内部監査 を通知しました'], []]);
+check('年間点検: 確認できるのは、確認者と管理者だけ（担当者は403）', $insMark($insR, 'check', $a), 403);
+$insC = $insMark($insR, 'check', $b);
+check('年間点検: 確認者が確認すると「確認済み」', [$insC['status'], (int)$insC['checked_by'], $insC['checked_at'] === date('Y-m-d'), inspect_status_of($insC, '2031-11-10'), inspect_summary($b, $insNow)['wait']], ['checked', (int)$b['id'], true, 'done', 0]);
+check('年間点検: 確認の取り消し（確認者・管理者だけ）で、確認待ちに戻る', [$insMark($insR, 'uncheck', $a), $insMark($insR, 'uncheck', $b)['status'], $insMark($insR, 'check', $admin)['status']], [403, 'done', 'checked']);
+check('年間点検: 確認済みのあとの「実施の取り消し」は、管理者だけ', [$insMark($insR, 'reopen', $a), $insMark($insR, 'reopen', $admin)['status'], row('SELECT done_at FROM todos WHERE id = ?', [$insR['todo_id']])['done_at']], [403, 'open', null]);
+check('年間点検: 実施の取り消しで、実施日・確認の記録は消える', (function () use ($insR) { $r = row('SELECT * FROM inspection_runs WHERE id = ?', [$insR['id']]); return [$r['done_at'], $r['done_by'], $r['checked_at'], $r['checked_by']]; })(), [null, null, null, null]);
+// ToDo の側から完了にしても、点検の記録がそろう
+$insBefore = row('SELECT * FROM todos WHERE id = ?', [$insR['todo_id']]);
+$insAfter = set_todo_done($insBefore, true); inspect_todo_changed($insBefore, $insAfter);
+check('年間点検: ToDo を完了にすると、点検は「確認待ち」になる（実施した人は ToDo の持ち主）', [row('SELECT status FROM inspection_runs WHERE id = ?', [$insR['id']])['status'], (int)row('SELECT done_by FROM inspection_runs WHERE id = ?', [$insR['id']])['done_by']], ['done', (int)$a['id']]);
+$insBefore = $insAfter; $insAfter = set_todo_done($insBefore, false); inspect_todo_changed($insBefore, $insAfter);
+check('年間点検: ToDo の完了を取り消すと、点検も未実施に戻る', row('SELECT status FROM inspection_runs WHERE id = ?', [$insR['id']])['status'], 'open');
+$insBefore = $insAfter; $insAfter = set_todo_done($insBefore, true); inspect_todo_changed($insBefore, $insAfter);
+$insBefore = $insAfter; $insAfter = set_todo_done($insBefore, false); inspect_todo_changed($insBefore, $insAfter);
+check('年間点検: 点検でない ToDo の完了・取り消しは、何も起こさない', (function () use ($a) { $t = save_todo(['kind' => 'work', 'title' => '普通のToDo', 'tag' => '個人作業', 'note' => '', 'family_shared' => 0], $a, null); $af = set_todo_done($t, true); inspect_todo_changed($t, $af); return (int)row('SELECT COUNT(*) AS c FROM inspection_runs WHERE todo_id = ?', [$t['id']])['c']; })(), 0);
+// 担当者を変えると、起票ずみ・未実施の ToDo と予定も移る
+[$insD2] = inspect_validate_item(array_merge($insBase, ['owner_id' => (int)$b['id'], 'checker_id' => (int)$a['id']]), $insA);
+inspect_item_save($insD2, $insA, $insDay1);
+check('年間点検: 担当者を変えると、未実施の月の ToDo と予定も新しい担当者になる', [(int)row('SELECT owner_id FROM todos WHERE id = ?', [$insR['todo_id']])['owner_id'], (int)row('SELECT owner_id FROM events WHERE todo_id = ?', [$insR['todo_id']])['owner_id']], [(int)$b['id'], (int)$b['id']]);
+
+// 確認者のいない項目 + 点検記録の添付が必要
+[$insDn] = inspect_validate_item(array_merge($insBase, ['title' => '添付が必要な点検', 'checker_id' => 0, 'need_attach' => true]));
+$insN = inspect_item_save($insDn, null, $insDay1);
+$insNr = row('SELECT * FROM inspection_runs WHERE item_id = ?', [$insN['id']]);
+$insNt = row('SELECT * FROM todos WHERE id = ?', [$insNr['todo_id']]);
+check('年間点検: 添付が必要な点検は、添付がないと ToDo を完了にできない・実施済みにもできない', [inspect_todo_block($insNt) !== null, $insMark($insNr, 'done', $a)], [true, 400]);
+q('INSERT INTO todo_comment_files (comment_id, todo_id, name, mime, size, width, height, stored, created_at) VALUES (0, ?, ?, ?, 1, 0, 0, ?, ?)', [$insNt['id'], 'record.pdf', 'application/pdf', 'x', now_str()]);
+check('年間点検: 添付があれば完了にできる。確認者がいない項目は、そのまま「確認済み」', [inspect_todo_block($insNt), ($insNd = $insMark($insNr, 'done', $a))['status'], (int)$insNd['checked_by'], $insNd['checked_at'] === $insNd['done_at']], [null, 'checked', 0, true]);
+q('DELETE FROM todo_comment_files WHERE todo_id = ?', [$insNt['id']]);
+check('年間点検: 点検の記録は、バックアップの対象', [in_array('inspection_items', BACKUP_TABLES, true), in_array('inspection_runs', BACKUP_TABLES, true)], [true, true]);
+
+// 後片付け
+q('DELETE FROM events WHERE todo_id IN (SELECT todo_id FROM inspection_runs)');
+q('DELETE FROM todos WHERE id IN (SELECT todo_id FROM inspection_runs)');
+q('DELETE FROM inspection_runs'); q('DELETE FROM inspection_items');
+q("DELETE FROM notification_log WHERE ref LIKE 'insp%'"); q("DELETE FROM app_meta WHERE meta_key = 'inspect_issued'");
+// 古い版（SCHEMA_VERSION 31。点検の表が無い）のデータベースからの更新: 表が足される
+db()->exec('DROP TABLE inspection_runs'); db()->exec('DROP TABLE inspection_items');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '31']);
+ensure_schema();
+check('更新: 古いデータベースに、点検の表が足される', (function () { try { db()->query('SELECT id FROM inspection_items LIMIT 1')->fetchAll(); db()->query('SELECT id FROM inspection_runs LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
+
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
 exec('python3 ' . escapeshellarg(__DIR__ . '/../tools/stage_deploy.py') . ' ' . escapeshellarg($stageDir) . ' 2>&1', $stageOut, $stageRc);

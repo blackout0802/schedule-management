@@ -224,3 +224,39 @@ CREATE TABLE IF NOT EXISTS room_bookings (
   notify_pre TINYINT NOT NULL DEFAULT 1,
   KEY ix_room_bookings_day (bdate, room_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS inspection_items (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  plan VARCHAR(30) NOT NULL DEFAULT 'Pマーク',
+  title VARCHAR(60) NOT NULL,
+  months VARCHAR(40) NOT NULL DEFAULT '',
+  due_rule VARCHAR(6) NOT NULL DEFAULT 'last',
+  alert_days INT NOT NULL DEFAULT 7,
+  alert_due TINYINT NOT NULL DEFAULT 1,
+  alert_late TINYINT NOT NULL DEFAULT 1,
+  alert_check TINYINT NOT NULL DEFAULT 1,
+  owner_id INT UNSIGNED NOT NULL,
+  checker_id INT UNSIGNED NULL,
+  steps VARCHAR(500) NOT NULL DEFAULT '',
+  need_attach TINYINT NOT NULL DEFAULT 0,
+  active TINYINT NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS inspection_runs (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  item_id INT UNSIGNED NOT NULL,
+  ym CHAR(7) NOT NULL,
+  due_date DATE NOT NULL,
+  status VARCHAR(10) NOT NULL DEFAULT 'open',
+  todo_id INT UNSIGNED NULL,
+  done_at DATE NULL,
+  done_by INT UNSIGNED NULL,
+  checked_at DATE NULL,
+  checked_by INT UNSIGNED NULL,
+  note VARCHAR(500) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY ux_inspection_runs (item_id, ym),
+  KEY ix_inspection_runs_todo (todo_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

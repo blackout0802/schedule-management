@@ -20,7 +20,7 @@
   var S = {
     me: null, view: 'team', year: 0, month: 0, mode: 'cal', todos: [], done: [], others: { todos: [], done: [] }, drag: null, revEv: null, revTd: null, pendEv: false, pendTd: false, memo: null,
     events: [], holidays: {}, cache: {}, tdCache: {}, loading: false,
-    page: SHARE ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#admin' ? 'admin' : location.hash === '#rooms' ? 'rooms' : 'main' // 'settings' = 設定のページ（URL の #settings）、'admin' = 会社の管理（#admin。管理者だけ）、'rooms' = 会議室のページ（#rooms）
+    page: SHARE ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#admin' ? 'admin' : location.hash === '#rooms' ? 'rooms' : location.hash === '#annual' ? 'annual' : 'main' // 'annual' = 年間計画（点検業務。#annual）、'settings' = 設定のページ（URL の #settings）、'admin' = 会社の管理（#admin。管理者だけ）、'rooms' = 会議室のページ（#rooms）
   };
 
   /* ---------- 小さな道具 ---------- */
@@ -51,6 +51,7 @@
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
     monitor: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>',
     moon: '<path d="M20 14.2A8 8 0 0 1 9.8 4 8 8 0 1 0 20 14.2z"/>',
+    checkcal: '<rect x="3.5" y="4.5" width="17" height="16" rx="2"/><path d="M8 2.5v4M16 2.5v4M3.5 10h17M9 15.2l2 2 4-4"/>',
     building: '<path d="M4 21V4.5h10V21M14 9h6v12M2.5 21h19"/><path d="M7.5 8h3M7.5 11.5h3M7.5 15h3M17 12.5h0.01M17 16h0.01"/>'
   };
   function svgIcon(name) { var s = el('span', { class: 'ic-wrap', 'aria-hidden': 'true' }); s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" focusable="false">' + ICON_PATHS[name] + '</svg>'; return s; }
@@ -600,9 +601,11 @@
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var adminBtn = !FAMACCT && S.me.user.role === 'admin' ? el('div', { class: 'menu admin-btn' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '会社の管理', title: '会社の管理のページを開く（社員・休業日・会議室・Slack・バックアップなど）', onclick: function (e) { e.stopPropagation(); openAdminPage(); } }, svgIcon('building'), el('span', { class: 'lbl', text: ' 会社の管理' }))) : null;
+    var annualBtn = FAMACCT ? null : el('div', { class: 'menu annual-btn' }, el('button', { class: 'btn small insp-btn' + (S.page === 'annual' ? ' on' : ''), id: 'insp-btn', type: 'button', 'aria-label': '年間計画', 'aria-current': S.page === 'annual' ? 'page' : null, title: '年間計画（Pマークなどの定期点検）を開く', onclick: function (e) { e.stopPropagation(); openAnnualPage(); } },
+      svgIcon('checkcal'), el('span', { class: 'lbl', text: ' 年間計画' }), el('span', { class: 'insp-bd', id: 'insp-btn-bd', hidden: true })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      return [item('年間計画' + (S.insp && S.insp.mine ? '（' + S.insp.mine + '）' : ''), openAnnualPage, close, 'Pマークなどの定期点検の年間計画'), S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     });
     document.addEventListener('click', closeAllMenus);
 
@@ -616,7 +619,8 @@
     return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })),
       FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : tabs,
-      el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
+      el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), annualBtn, FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
+    // （ボタンの件数は、読み込みずみなら、すぐ出す。まだなら、inspRefresh のあとに出る）
   }
 
   function renderShell() {
@@ -625,6 +629,8 @@
     if (S.page === 'admin' && S.me.user.role !== 'admin') { S.page = 'settings'; history.replaceState(null, '', location.pathname + location.search + '#settings'); } // 会社の管理は、管理者だけ
     if (S.page === 'settings' || S.page === 'admin') return renderSettingsPage();
     if (S.page === 'rooms') return renderRoomsPage();
+    if (S.page === 'annual' && FAMACCT) S.page = 'main'; // 家族のアカウントは、年間計画を使えない
+    if (S.page === 'annual') return renderAnnualPage();
     root.textContent = '';
     root.appendChild(buildTopbar(true));
     if (FAMACCT) { // 家族のアカウント: カレンダーだけ（ToDo・日報はない）
@@ -650,12 +656,12 @@
   function leaveSettings() { // カレンダーに戻る（ショートカットキーからも使う。設定のページ・会議室のページの、どちらからでも）
     if (S.page === 'main') return;
     S.page = 'main';
-    if (location.hash === '#settings' || location.hash === '#admin' || location.hash === '#rooms') history.pushState(null, '', location.pathname + location.search);
+    if (location.hash === '#settings' || location.hash === '#admin' || location.hash === '#rooms' || location.hash === '#annual') history.pushState(null, '', location.pathname + location.search);
     renderShell(); load();
   }
   window.addEventListener('hashchange', function () {
     if (SHARE || !S.me) return;
-    var want = FAMACCT ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#admin' ? 'admin' : location.hash === '#rooms' ? 'rooms' : 'main';
+    var want = FAMACCT ? 'main' : location.hash === '#settings' ? 'settings' : location.hash === '#admin' ? 'admin' : location.hash === '#rooms' ? 'rooms' : location.hash === '#annual' ? 'annual' : 'main';
     if (want === S.page) return;
     S.page = want; renderShell(); if (want === 'main') load();
   });
@@ -699,6 +705,9 @@
       { group: '人と日付', id: 'rooms', title: '会議室の設定', build: openRoomsAdmin, sum: function (set) {
         var t = ymd(new Date());
         return api('rooms_list', { params: { from: t, to: t } }).then(function (j) { set(sumText(j.rooms.filter(function (r) { return r.active; }).length + '部屋')); });
+      } },
+      { group: '人と日付', id: 'inspect', title: '点検項目（年間計画）', build: openInspectionAdmin, sum: function (set) {
+        return api('inspect_items').then(function (j) { var on = j.items.filter(function (x) { return x.active; }).length; set(sumText(on ? on + '項目' : 'まだ登録していません')); });
       } },
       { group: '通知と共有', id: 'slack', title: 'Slack通知', build: buildSlackSection, sum: function (set) {
         return Promise.all([api('slack_status'), api('slack_cfg')]).then(function (r) {
@@ -1063,6 +1072,7 @@
     if (!todoOnly) tb.appendChild(el('div', { class: 'view-banner ' + (SHARE ? (SHARE.kind === 'family' ? 'me' : 'team') : S.view), style: 'margin-top:8px' },
       el('span', { class: 'vb-text', text: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族のカレンダーです。共有されている予定と、家族が入れた予定が表示されます（自分が入れた予定だけ、変更・削除できます）。' : SHARE ? (SHARE.kind === 'family' ? '共有された予定です（閲覧専用）。' : offOnly() ? '会社の全員の休みだけを表示しています（閲覧専用）。「休みだけ」のチェックを外すと、業務の予定も表示されます。' : '会社の業務の予定と休みです（閲覧専用。プライベートの予定は含まれません）。')
         : S.view === 'team' ? (whoId() ? '業務版: ' + (whoId() === S.me.user.id ? '自分' : whoName() + 'さん') + 'の予定（業務・休み）だけを表示しています（プライベートの予定は含まれません）' : offOnly() ? '業務版: 全員の休みだけを表示しています（業務の予定・会議室の予約は隠しています。「休みだけ」のチェックを外すと戻ります）' : '業務版: 会社の全員に共有される予定だけを表示しています（プライベートの予定は含まれません）') : 'プライベート版: 自分のプライベート予定と、「家族に共有」にした業務・休みを表示しています（共有は、業務版で予定を開いて決めます）' })));
+    if (!SHARE && !FAMACCT && !todoOnly && S.view === 'team') { tb.appendChild(inspBand()); updateInspUI(); } // 今月の点検の帯（未実施・遅れ・確認待ちがあるときだけ出る）
   }
 
 
@@ -1102,6 +1112,7 @@
       S.loading = false;
       applyEvents(c); S.cache[evKey(params)] = c; renderBoard();
       if (!SHARE && !FAMACCT) memoRefreshDays(); // 休みなどが変わると、出勤日（日報の日）も変わる
+      if (!SHARE && !FAMACCT) inspRefresh(); // 上のボタンの件数と、今月の点検の帯
       if (!SHARE && !FAMACCT) prefetchOtherView(params, seq);
     }).catch(function (e) { if (seq === loadSeq) S.loading = false; fail(e); });
   }
@@ -1934,7 +1945,7 @@
     return api('todo_list', { params: { view: view } }).then(function (j) {
       S.tdCache[view] = j;
       if (seq !== todoSeq || view !== S.view) return; // 切り替えの途中で古い答えが届いたら、使わない
-      applyTodos(j); renderTodo(); syncMemoTodos();
+      applyTodos(j); renderTodo(); syncMemoTodos(); openPendingTodo();
     }).catch(fail);
   }
   var todoSeq = 0;
@@ -3994,7 +4005,7 @@
     if ((!S.pendEv && !S.pendTd) || !canRefresh()) return;
     var ev = S.pendEv, td = S.pendTd;
     S.pendEv = false; S.pendTd = false;
-    if (ev) { if (S.page === 'rooms') roomsLoad(true); else load(); }
+    if (ev) { if (S.page === 'rooms') roomsLoad(true); else if (S.page === 'annual') annualLoad(true); else load(); }
     if (td && !SHARE && !FAMACCT) loadTodos();
   }
   function pollRev() {
@@ -4013,6 +4024,272 @@
     setInterval(pollRev, POLL_MS);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) pollRev(); });
     window.addEventListener('focus', pollRev);
+  }
+
+  /* ---------- 年間計画（点検業務。v1.108.0〜） ----------
+     トップの「年間計画」ボタン（URL は #annual）で開く、1つのページ。行 = 点検項目、列 = 年度の12か月（7月はじまり）。
+     マスの状態: 確認済み・実施済み（確認待ち）・今月の未実施・期限を過ぎた・これから。マスを押すと、実施・確認の画面が開く。
+     点検は、月の最初の営業日に、サーバー（cron）が ToDo と期限の日の予定にして起票する。ToDo を完了にすると「実施済み」になる。
+     項目の登録は、管理者が「会社の管理」の「点検項目」で行う（openInspectionAdmin）。 */
+  var INSP_ST = { done: ['✓', '確認済み'], wait: ['◐', '実施済み・確認待ち'], now: ['●', '今月・未実施'], late: ['!', '期限を過ぎた'], plan: ['○', 'これから'] };
+  function openAnnualPage() { location.hash = 'annual'; }
+  function inspMd(s) { return s ? (+s.slice(5, 7)) + '/' + (+s.slice(8, 10)) : ''; }
+
+  /* 上のボタンの件数と、「今月の点検」の帯。サーバーの集計を取り直して、出ている部品を書き換える */
+  function inspRefresh() {
+    if (SHARE || FAMACCT || !S.me) return Promise.resolve();
+    return api('inspect_summary', { quiet: true }).then(function (j) { S.insp = j.summary; updateInspUI(); }).catch(function () { /* 帯が出ないだけなので、黙って次回に回す */ });
+  }
+  function updateInspUI() {
+    var s = S.insp, bd = document.getElementById('insp-btn-bd');
+    if (bd) { bd.textContent = s && s.mine ? String(s.mine) : ''; bd.hidden = !(s && s.mine); }
+    var band = document.getElementById('insp-band');
+    if (!band) return;
+    band.textContent = '';
+    var n = s ? s.now + s.late + s.wait : 0;
+    band.hidden = !(s && s.items > 0 && n > 0);
+    if (band.hidden) return;
+    band.className = 'insp-band' + (s.late > 0 ? ' late' : '');
+    band.appendChild(el('b', { text: '今月の点検' }));
+    [['未実施', s.now], ['遅れ', s.late], ['確認待ち', s.wait]].forEach(function (x) { if (x[1] > 0) band.appendChild(el('span', { class: 'insp-band-n ' + (x[0] === '遅れ' ? 'late' : ''), text: x[0] + ' ' + x[1] + '件' })); });
+    band.appendChild(el('button', { class: 'btn small', type: 'button', text: '年間計画を開く', onclick: function () { S.an = S.an || {}; S.an.flt = 'need'; openAnnualPage(); } }));
+  }
+  function inspBand() { return el('div', { id: 'insp-band', class: 'insp-band', role: 'status', hidden: true }); }
+
+  /* ---- ページ ---- */
+  function renderAnnualPage() {
+    root.textContent = '';
+    syncTodoHover();
+    S.an = S.an || {};
+    if (!S.an.flt) S.an.flt = 'all';
+    root.appendChild(buildTopbar(false, true));
+    root.appendChild(el('main', null, el('div', { id: 'annual-body', 'aria-live': 'polite' }, el('p', { class: 'muted', text: '読み込み中…' }))));
+    window.scrollTo(0, 0);
+    annualLoad();
+  }
+  function annualLoad(quiet) {
+    var an = S.an, seq = an.seq = (an.seq || 0) + 1;
+    return api('inspect_list', { params: an.fy ? { fy: an.fy } : {} }).then(function (j) {
+      if (seq !== an.seq || S.page !== 'annual') return;
+      an.data = j; an.fy = j.fy; S.revEv = j.rev; S.insp = j.summary; updateInspUI();
+      annualDraw();
+    }).catch(function (e) { if (!quiet) fail(e); });
+  }
+  function annualDraw() {
+    var an = S.an, d = an.data, box = document.getElementById('annual-body');
+    if (!d || !box) return;
+    box.textContent = '';
+    var items = d.items.filter(function (it) { return !an.plan || it.plan === an.plan; });
+    var cnt = { done: 0, wait: 0, now: 0, late: 0, plan: 0 };
+    items.forEach(function (it) { Object.keys(it.cells).forEach(function (k) { cnt[it.cells[k].status]++; }); });
+    var shown = items.filter(function (it) {
+      if (an.flt === 'mine') return it.mine;
+      if (an.flt === 'need') return Object.keys(it.cells).some(function (k) { var s = it.cells[k].status; return s === 'now' || s === 'late' || s === 'wait'; });
+      return true;
+    });
+    // 見出し・年度の移動・絞り込み
+    var fyBtn = function (n, label, title) { var to = d.fy + n, out = to > d.cur_fy + 2 || to < d.cur_fy - 5; return el('button', { class: 'btn small', type: 'button', 'aria-label': title, title: title, text: label, disabled: out, onclick: function () { an.fy = to; annualLoad(); } }); }; // 見られる年度は、今年度の5年前〜2年先（サーバーも同じ範囲）
+    var planSel = d.plans.length > 1 ? el('select', { 'aria-label': '計画', onchange: function () { an.plan = this.value; annualDraw(); } },
+      el('option', { value: '', text: 'すべての計画' }), d.plans.map(function (p) { return el('option', { value: p, text: p, selected: an.plan === p }); })) : null;
+    box.appendChild(el('div', { class: 'annual-head' },
+      el('h2', { text: '年間計画' }),
+      el('div', { class: 'annual-fy' }, fyBtn(-1, '‹', '前の年度'), el('span', { class: 'annual-fy-t', text: d.fy + '年度', title: d.fy + '年' + d.fy_start + '月〜' + (d.fy + 1) + '年' + (d.fy_start - 1) + '月' }), fyBtn(1, '›', '次の年度'),
+        d.fy === d.cur_fy ? null : el('button', { class: 'btn small', type: 'button', text: '今年度', onclick: function () { an.fy = d.cur_fy; annualLoad(); } })),
+      planSel,
+      el('span', { class: 'seg', role: 'group', 'aria-label': '表示' }, [['all', 'すべて'], ['mine', '自分の担当'], ['need', '要対応だけ']].map(function (m) {
+        return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'an-flt', checked: an.flt === m[0], onchange: function () { an.flt = m[0]; annualDraw(); } }), m[1]);
+      }))));
+    box.appendChild(el('div', { class: 'annual-sum' },
+      el('span', { class: 'insp-pill', text: '項目 ' + items.length }),
+      [['done', '確認済み'], ['wait', '確認待ち'], ['now', '今月・未実施'], ['late', '遅れ']].map(function (x) { return el('span', { class: 'insp-pill ' + x[0], text: x[1] + ' ' + cnt[x[0]] }); })));
+    if (!items.length) {
+      box.appendChild(el('div', { class: 'notice annual-empty' },
+        el('b', { text: 'この年度の点検は、まだ登録されていません' }),
+        el('p', { text: S.me.user.role === 'admin' ? '会社の管理の「点検項目」に、Pマークの年間スケジュールなどの定期点検を登録すると、実施する月の最初の営業日に、担当者の ToDo が自動で作られます。' : '管理者が、会社の管理の「点検項目」に登録すると、ここに表示されます。' }),
+        S.me.user.role === 'admin' ? el('a', { class: 'btn primary', href: '#admin', text: '会社の管理で、点検項目を登録する' }) : null));
+      return;
+    }
+    // 表
+    var thead = el('tr', null, el('th', { class: 'nm', scope: 'col', text: '点検項目' }), d.months.map(function (m) {
+      return el('th', { scope: 'col', class: m.ym === d.cur_ym ? 'cur' : '' }, m.m + '月', m.ym === d.cur_ym ? el('small', { text: '今月' }) : null);
+    }));
+    var tbody = el('tbody');
+    shown.forEach(function (it) {
+      var tr = el('tr', null, el('th', { class: 'nm', scope: 'row' }, el('b', { text: it.title }),
+        el('span', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') + ' ・ ' + it.due_label + (it.active ? '' : ' ・ やめた項目') })));
+      d.months.forEach(function (m) {
+        var c = it.cells[m.ym], td = el('td', { class: m.ym === d.cur_ym ? 'cur' : '' });
+        if (c) {
+          var sub = c.status === 'late' ? '+' + c.late_days + '日' : (c.status === 'done' || c.status === 'wait') ? inspMd(c.done_at) : inspMd(c.due);
+          td.appendChild(el('button', { type: 'button', class: 'an-cell ' + c.status, 'data-item': String(it.id), 'data-ym': m.ym, 'aria-label': it.title + ' ' + m.m + '月 ' + INSP_ST[c.status][1], title: INSP_ST[c.status][1] + (c.due ? '（期限 ' + inspMd(c.due) + '）' : ''), onclick: function () { openInspectCell(it, c); } },
+            el('span', { class: 's', text: INSP_ST[c.status][0] }), el('span', { class: 'd', text: sub })));
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    if (!shown.length) tbody.appendChild(el('tr', null, el('td', { class: 'an-none', colspan: '13', text: an.flt === 'mine' ? '自分が担当・確認する点検は、この年度にはありません。' : '要対応の点検は、ありません。' })));
+    box.appendChild(el('div', { class: 'annual-scroll' }, el('table', { class: 'annual-tbl', id: 'annual-tbl' }, el('thead', null, thead), tbody)));
+    box.appendChild(el('div', { class: 'annual-legend', 'aria-label': '凡例' }, ['done', 'wait', 'now', 'late', 'plan'].map(function (k) {
+      return el('span', null, el('i', { class: 's ' + k, text: INSP_ST[k][0] }), INSP_ST[k][1]);
+    })));
+    box.appendChild(helpText('マスを押すと、実施・確認の画面が開きます。点検の ToDo は、実施する月の最初の営業日に自動で作られ、期限の日がカレンダーに置かれます。ToDo を完了にすると、ここも「実施済み」になります。'));
+  }
+
+  /* マスを押したときの画面: 状態・期限・担当・手順と、実施済み／確認済み／取り消し */
+  function openInspectCell(it, c) {
+    var body = el('div', { class: 'form insp-dialog' });
+    var ov = openModal(it.title + '（' + c.month + '月分）', body);
+    var st = INSP_ST[c.status];
+    var rows = [['計画', it.plan],
+      ['期限', (c.due ? mdw(c.due) : '') + (c.status === 'late' ? '（' + c.late_days + '日過ぎています）' : '')],
+      ['担当', it.owner_name], ['確認者', it.checker_name || 'なし（実施で確認済み）']];
+    if (c.done_at) rows.push(['実施', mdw(c.done_at) + (c.done_by ? '（' + c.done_by + '）' : '')]);
+    if (c.checked_at) rows.push(['確認', mdw(c.checked_at) + (c.checked_by ? '（' + c.checked_by + '）' : '（実施で確認済み）')]);
+    if (c.note) rows.push(['メモ', c.note]);
+    body.appendChild(el('div', null, el('span', { class: 'insp-pill ' + c.status, text: st[0] + ' ' + st[1] })));
+    body.appendChild(el('dl', { class: 'insp-kv' }, rows.map(function (r) { return [el('dt', { text: r[0] }), el('dd', { text: r[1] })]; })));
+    if (it.steps) body.appendChild(el('div', null, el('div', { class: 'muted small', text: '点検の手順' }), el('ul', { class: 'insp-steps' }, it.steps.split('\n').filter(function (x) { return x.trim() !== ''; }).map(function (x) { return el('li', { text: x }); }))));
+    if (it.need_attach) body.appendChild(el('p', { class: 'hint', text: '完了にするとき、点検記録（写真・PDF など）の添付が必要です。ToDo のコメントに添付してください' + (c.todo_id ? '（いま ' + c.files + '件）。' : '。') }));
+    var dateIn = null, noteIn = null, actions = el('div', { class: 'actions' });
+    if (c.status === 'plan') {
+      body.appendChild(el('p', { class: 'muted', text: 'まだ先です。' + c.month + '月の最初の営業日に、担当者の ToDo が自動で作られます。' }));
+    } else if (c.can_done) {
+      dateIn = el('input', { type: 'date', value: S.an.data.today, max: S.an.data.today, 'aria-label': '実施した日' });
+      noteIn = el('textarea', { maxlength: '500', rows: '2', placeholder: '気づいたこと、差異の理由など（任意）', 'aria-label': 'メモ' });
+      body.appendChild(el('label', null, '実施した日', dateIn));
+      body.appendChild(el('label', null, 'メモ', noteIn));
+    } else if (c.status === 'now' || c.status === 'late') {
+      body.appendChild(el('p', { class: 'muted', text: '実施済みにできるのは、担当者（' + it.owner_name + 'さん）と管理者です。' }));
+    } else if (c.status === 'wait' && !c.can_check) {
+      body.appendChild(el('p', { class: 'muted', text: '確認できるのは、確認者（' + it.checker_name + 'さん）と管理者です。' }));
+    }
+    function act(action, msg) {
+      api('inspect_run_mark', { body: { id: c.run_id, action: action, date: dateIn ? dateIn.value : '', note: noteIn ? noteIn.value : '' } }).then(function (j) {
+        S.insp = j.summary; updateInspUI(); ov.close(); toast(msg); annualLoad(true); S.tdCache = {}; S.cache = {}; // ToDo・カレンダーの取り消し線も変わるので、戻ったときに読み直す
+      }).catch(fail);
+    }
+    if (c.todo_id) actions.appendChild(el('button', { class: 'btn left', type: 'button', text: 'ToDoを開く', onclick: function () { ov.close(); S.openTodoId = c.todo_id; S.view = 'team'; store('sched.view', 'team'); S.mode = 'list'; store('sched.mode', 'list'); leaveSettings(); } }));
+    if (c.can_reopen) actions.appendChild(el('button', { class: 'btn small danger', type: 'button', text: '実施を取り消す', onclick: function () { if (window.confirm('実施を取り消して、未実施に戻します（ToDo も未完了に戻ります）。よろしいですか？')) act('reopen', '未実施に戻しました'); } }));
+    if (c.can_uncheck) actions.appendChild(el('button', { class: 'btn small', type: 'button', text: '確認を取り消す', onclick: function () { act('uncheck', '確認待ちに戻しました'); } }));
+    actions.appendChild(el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }));
+    if (c.can_check) actions.appendChild(el('button', { class: 'btn primary', type: 'button', text: '確認済みにする', onclick: function () { act('check', '確認済みにしました'); } }));
+    if (c.can_done) actions.appendChild(el('button', { class: 'btn primary', type: 'button', text: it.checker_name ? '実施済みにする（' + it.checker_name + 'さんへ確認を依頼）' : '実施済みにする', onclick: function () { act('done', it.checker_name ? '実施済みにしました（確認待ち）' : '実施済みにしました'); } }));
+    body.appendChild(actions);
+  }
+  /* 年間計画の「ToDoを開く」から戻ってきたとき、その ToDo の画面を開く（ToDo の読み込みのあとに呼ぶ） */
+  function openPendingTodo() {
+    if (!S.openTodoId) return;
+    var id = S.openTodoId; S.openTodoId = null;
+    var all = (S.todos || []).concat(S.done || [], (S.others && S.others.todos) || [], (S.others && S.others.done) || []);
+    var t = all.filter(function (x) { return x.id === id; })[0];
+    if (t) openTodoThread(t); else toast('ToDoが見つかりません（完了して、しばらくたったものは、リストに出ません）');
+  }
+
+  /* ---- 会社の管理 › 点検項目（管理者）: 一覧と、追加・変更の入力 ---- */
+  var INSP_FY_ORDER = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+  function inspMonthStrip(months) {
+    var s = el('span', { class: 'insp-strip', 'aria-label': '実施する月: ' + months.join('・') + '月' });
+    INSP_FY_ORDER.forEach(function (m) { s.appendChild(el('i', { class: months.indexOf(m) >= 0 ? 'on' : '', title: m + '月' })); });
+    return s;
+  }
+  function openInspectionAdmin() {
+    var body = el('div', { class: 'form insp-admin' });
+    var ov = openModal('点検項目', body, true);
+    function refresh() {
+      api('inspect_items').then(function (j) { showList(j.items); }).catch(fail);
+    }
+    function showList(items) {
+      body.textContent = '';
+      body.appendChild(el('p', { class: 'hint', text: 'Pマークなどの定期点検を登録します（年度は7月はじまり）。実施する月の最初の営業日に、担当者の ToDo（【点検】項目名（○月分））が自動で作られ、期限の日がカレンダーに置かれます。担当者がToDoを完了にすると「実施済み」になり、確認者が年間計画で「確認済み」にします。' }));
+      body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
+        el('button', { class: 'btn primary', type: 'button', id: 'insp-add', text: '＋ 点検項目を追加', onclick: function () { showForm(null, items); } }),
+        el('a', { class: 'btn', href: '#annual', text: '年間計画を開く' })));
+      if (!items.length) { body.appendChild(el('p', { class: 'muted', text: 'まだ点検項目はありません。' })); return; }
+      var tbl = el('table', { class: 't insp-items' }, el('thead', null, el('tr', null, ['計画', '項目', '実施する月（7月はじまり）', '担当 → 確認', '期限', ''].map(function (h) { return el('th', { text: h }); }))),
+        el('tbody', null, items.map(function (it) {
+          return el('tr', { class: it.active ? '' : 'off' },
+            el('td', { text: it.plan }), el('td', null, el('b', { text: it.title }), it.active ? null : el('span', { class: 'muted', text: '（やめた）' })),
+            el('td', null, inspMonthStrip(it.months)), el('td', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') }), el('td', { text: it.due_label }),
+            el('td', null, el('button', { class: 'btn small', type: 'button', text: '変更', 'aria-label': it.title + 'を変更', onclick: function () { showForm(it, items); } })));
+        })));
+      body.appendChild(el('div', { class: 'annual-scroll' }, tbl));
+    }
+    function showForm(it, items) {
+      body.textContent = '';
+      var users = S.me.users;
+      var plans = []; items.forEach(function (x) { if (plans.indexOf(x.plan) < 0) plans.push(x.plan); });
+      var plan = el('input', { type: 'text', maxlength: '30', list: 'insp-plans', value: it ? it.plan : (plans[0] || 'Pマーク'), required: true });
+      var title = el('input', { type: 'text', maxlength: '60', required: true, value: it ? it.title : '', placeholder: '例: 内部監査' });
+      var months = {}; (it ? it.months : []).forEach(function (m) { months[m] = true; });
+      var rep = el('select', { 'aria-label': '繰り返し' }, [['year', '毎年（年1回）'], ['half', '半期ごと（年2回）'], ['quarter', '四半期ごと（年4回）'], ['month', '毎月'], ['free', '月を自分で選ぶ']].map(function (r) { return el('option', { value: r[0], text: r[1], selected: r[0] === 'free' }); }));
+      var base = el('select', { 'aria-label': 'はじめの月' }, INSP_FY_ORDER.map(function (m) { return el('option', { value: String(m), text: m + '月' }); }));
+      var chips = el('div', { class: 'insp-months', role: 'group', 'aria-label': '実施する月' });
+      var due = el('select', { 'aria-label': '期限' }, [['last', 'その月の最終営業日'], ['10', 'その月の10日'], ['15', 'その月の15日'], ['20', 'その月の20日'], ['25', 'その月の25日'], ['28', 'その月の28日']].map(function (d) { return el('option', { value: d[0], text: d[1], selected: it && it.due_rule === d[0] }); }));
+      var owner = el('select', { 'aria-label': '担当者' }, users.map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: it ? it.owner_id === u.id : u.id === S.me.user.id }); }));
+      var checker = el('select', { 'aria-label': '確認者' }, el('option', { value: '0', text: 'なし（実施で確認済み）' }), users.map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: it && it.checker_id === u.id }); }));
+      var adays = el('select', { 'aria-label': '事前のアラート' }, [[0, '送らない'], [1, '期限の1日前'], [3, '期限の3日前'], [7, '期限の7日前'], [14, '期限の14日前'], [21, '期限の21日前'], [30, '期限の30日前']].map(function (a) { return el('option', { value: String(a[0]), text: a[1], selected: (it ? it.alert_days : 7) === a[0] }); }));
+      var aDue = el('input', { type: 'checkbox', checked: it ? it.alert_due : true }), aLate = el('input', { type: 'checkbox', checked: it ? it.alert_late : true }), aCheck = el('input', { type: 'checkbox', checked: it ? it.alert_check : true });
+      var steps = el('textarea', { maxlength: '400', rows: '4', placeholder: '1行に1つ。点検の ToDo のメモに入ります', value: it ? it.steps : '' });
+      var attach = el('input', { type: 'checkbox', checked: it ? it.need_attach : false });
+      var active = el('input', { type: 'checkbox', checked: it ? it.active : true });
+      var sum = el('p', { class: 'hint', 'aria-live': 'polite' });
+      var err = el('p', { class: 'error', role: 'alert', hidden: true });
+      function sel() { return INSP_FY_ORDER.filter(function (m) { return months[m]; }); }
+      function redraw() {
+        chips.textContent = '';
+        INSP_FY_ORDER.forEach(function (m) {
+          chips.appendChild(el('button', { type: 'button', 'aria-pressed': months[m] ? 'true' : 'false', 'aria-label': m + '月', text: String(m), onclick: function () { months[m] = !months[m]; rep.value = 'free'; redraw(); } }));
+        });
+        var s = sel();
+        sum.textContent = s.length ? '年' + s.length + '回（' + s.map(function (m) { return m + '月'; }).join('・') + '）。各月の最初の営業日に、' + owner.options[owner.selectedIndex].text + 'さんの ToDo を作り、期限は' + due.options[due.selectedIndex].text + 'です。' : '実施する月を1つ以上選んでください。';
+      }
+      function applyRep() {
+        if (rep.value === 'free') return;
+        var step = { year: 12, half: 6, quarter: 3, month: 1 }[rep.value], b = INSP_FY_ORDER.indexOf(+base.value), k;
+        months = {};
+        for (k = 0; k < 12; k += step) months[INSP_FY_ORDER[(b + k) % 12]] = true;
+        redraw();
+      }
+      rep.addEventListener('change', applyRep);
+      base.addEventListener('change', function () { if (rep.value === 'free') rep.value = 'half'; applyRep(); });
+      due.addEventListener('change', redraw); owner.addEventListener('change', redraw);
+      if (!it) { rep.value = 'year'; base.value = '7'; applyRep(); }
+      redraw();
+      var form = el('form', { class: 'form', onsubmit: function (e) {
+        e.preventDefault();
+        err.hidden = true;
+        api('inspect_item_save', { body: { id: it ? it.id : 0, plan: plan.value, title: title.value, months: sel(), due_rule: due.value, alert_days: +adays.value, alert_due: aDue.checked, alert_late: aLate.checked, alert_check: aCheck.checked,
+          owner_id: +owner.value, checker_id: +checker.value, steps: steps.value, need_attach: attach.checked, active: active.checked } }).then(function () {
+          toast(it ? '点検項目を変更しました' : '点検項目を追加しました'); refresh(); inspRefresh();
+        }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+      } },
+        el('h4', { text: it ? '点検項目の変更' : '点検項目の追加' }),
+        el('datalist', { id: 'insp-plans' }, plans.map(function (p) { return el('option', { value: p }); })),
+        el('div', { class: 'row' }, el('label', null, '計画', plan), el('label', null, '項目の名前（60文字まで）', title)),
+        el('div', { class: 'row' }, el('label', null, '繰り返し', rep), el('label', null, 'はじめの月', base)),
+        el('div', null, el('div', { class: 'muted small', text: '実施する月（押して入り切り）' }), chips),
+        el('div', { class: 'row' }, el('label', null, '期限', due), el('label', null, '担当者', owner), el('label', null, '確認者（任意）', checker)),
+        el('div', null, el('div', { class: 'muted small', text: 'アラート（Slack）。朝の通知の時刻に送ります' }),
+          el('div', { class: 'row' }, el('label', null, '事前のアラート', adays)),
+          el('div', { class: 'insp-checks' }, el('label', { class: 'check' }, aDue, '期限の当日'), el('label', { class: 'check' }, aLate, '遅れたら翌営業日'), el('label', { class: 'check' }, aCheck, '実施済みになったら確認者へ'))),
+        el('label', null, '点検の手順（1行に1つ）', steps),
+        el('label', { class: 'check' }, attach, '完了にするとき、点検記録の添付を必須にする'),
+        it ? el('label', { class: 'check' }, active, 'この項目を続ける（外すと、これからの起票をやめます。過去の記録は残ります）') : null,
+        sum,
+        el('p', { class: 'muted small', text: '変更は次の月の起票から効きます（担当者の変更だけは、起票ずみで未実施の月にも効きます）。' }),
+        err,
+        el('div', { class: 'actions' },
+          it ? el('button', { class: 'btn small danger left', type: 'button', text: '削除', onclick: function () {
+            if (!window.confirm('「' + it.title + '」を削除します。よろしいですか？（記録がある項目は削除できません。その場合は「この項目を続ける」を外してください）')) return;
+            api('inspect_item_delete', { body: { id: it.id } }).then(function () { toast('削除しました'); refresh(); inspRefresh(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+          } }) : null,
+          el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: refresh }),
+          el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
+      body.appendChild(form);
+      title.focus();
+    }
+    refresh();
   }
 
   /* ---------- 会議室の予約 ----------
