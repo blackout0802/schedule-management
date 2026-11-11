@@ -3,6 +3,7 @@
 define('APP_ROOT', dirname(__DIR__));
 require_once __DIR__ . '/version.php';
 require_once __DIR__ . '/rooms.php';
+require_once __DIR__ . '/inspect.php';
 
 /** 設定ファイル(config.php)の場所 */
 function config_file_path(): string
@@ -88,7 +89,7 @@ function q(string $sql, array $params = []): PDOStatement
     $st->execute($params);
     // 画面に出るデータ（予定・ToDo・繰り返し・休業日・社員）を書き換えたら、更新番号を進める。
     // 開いている画面は、この番号が変わったときだけ、自動で表示を更新する。書き込み処理を足しても入れ忘れが出ないよう、ここで一括して行う
-    if (preg_match('/^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:events|todos|todo_comments|series|series_skips|company_holidays|users|rooms|room_bookings)\b/i', $sql)) {
+    if (preg_match('/^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:events|todos|todo_comments|series|series_skips|company_holidays|users|rooms|room_bookings|inspection_items|inspection_runs)\b/i', $sql)) {
         rev_mark_dirty();
     }
     return $st;

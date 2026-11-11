@@ -129,7 +129,7 @@ const EXAMPLE_SERIES = [
 
 /** GET（画面を開くだけ）でも使ってよい、読むだけの操作。これ以外は、POST（CSRFトークンの確認つき）だけ受け付ける */
 const API_READ_ACTIONS = ['me', 'rev', 'events', 'todo_list', 'todo_comments', 'todo_file', 'share_list', 'slack_status', 'slack_cfg',
-    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list'];
+    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list', 'inspect_list', 'inspect_summary', 'inspect_items'];
 
 function handle_api(): void
 {
@@ -395,7 +395,11 @@ function handle_api(): void
             if (!$t) {
                 api_fail('ToDoが見つかりません。', 404);
             }
+            if (!empty($in['done']) && ($why = inspect_todo_block($t)) !== null) {
+                api_fail($why); // 点検記録の添付が必要な点検は、添付がないと完了にできない
+            }
             $after = set_todo_done($t, !empty($in['done']));
+            inspect_todo_changed($t, $after); // 年間点検の ToDo なら、点検の記録（実施済み・未実施）も合わせる
             api_out(['ok' => true, 'events' => todo_done_sync_events($t, $after)]); // 早めに完了したら、予定の終了日を完了した日に（取り消したら戻す）
 
         case 'todo_status':
@@ -407,7 +411,11 @@ function handle_api(): void
             if (!in_array($st, ['todo', 'doing', 'hold', 'done'], true)) {
                 api_fail('状態は「未着手・進行中・保留・完了」のどれかです。');
             }
+            if ($st === 'done' && ($why = inspect_todo_block($t)) !== null) {
+                api_fail($why);
+            }
             $after = set_todo_status($t, $st);
+            inspect_todo_changed($t, $after);
             $synced = todo_done_sync_events($t, $after); // 早めに完了したら、予定の終了日を完了した日に（取り消したら戻す）
             if ($st !== 'done' && is_array($in['ids'] ?? null)) {
                 reorder_todos($in['ids'], $user); // 移した先の列での並び
@@ -1041,6 +1049,68 @@ function handle_api(): void
             }
             audit_log('room', 'update', '会議室の予約ルール｜先の予約 ' . $cfgNew['advance_months'] . 'か月・' . $cfgNew['open'] . '〜' . $cfgNew['close']);
             api_out(['ok' => true, 'cfg' => $cfgNew]);
+
+        case 'inspect_list': // 年間計画の表（1年度分。年度は7月はじまり。fy = はじまりの年）
+            $curFy = inspect_fy_of(date('Y-m'));
+            $fy = (int)($_GET['fy'] ?? $curFy);
+            if ($fy < $curFy - 5 || $fy > $curFy + 2) {
+                api_fail('年度が正しくありません。');
+            }
+            api_out(inspect_overview($fy, $user) + ['rev' => data_rev(), 'admin' => is_admin($user)]);
+
+        case 'inspect_summary': // 上のボタンの件数と、「今月の点検」の帯のための集計
+            api_out(['summary' => inspect_summary($user)]);
+
+        case 'inspect_items': // 点検項目の一覧（会社の管理の登録画面）
+            require_admin($user);
+            api_out(['items' => inspect_items_all($user), 'fy_start' => INSPECT_FY_START]);
+
+        case 'inspect_item_save': // 点検項目の追加・変更（管理者）
+            require_admin($user);
+            $existing = null;
+            if (!empty($in['id'])) {
+                $existing = row('SELECT * FROM inspection_items WHERE id = ?', [(int)$in['id']]);
+                if (!$existing) {
+                    api_fail('点検項目が見つかりません。', 404);
+                }
+            } elseif ((int)row('SELECT COUNT(*) AS c FROM inspection_items')['c'] >= INSPECT_MAX_ITEMS) {
+                api_fail('点検項目は、' . INSPECT_MAX_ITEMS . '件までです。');
+            }
+            [$data, $err] = inspect_validate_item($in, $existing);
+            if ($err) {
+                api_fail($err);
+            }
+            $saved = inspect_item_save($data, $existing);
+            audit_log('inspect', $existing ? 'update' : 'add', '点検項目｜' . $saved['title'] . '　' . $saved['plan'], '', (int)$saved['active'] === 1 ? '' : 'やめた');
+            api_out(['ok' => true, 'id' => (int)$saved['id']]);
+
+        case 'inspect_item_delete': // 点検項目の削除（管理者。記録がある項目は、消さずに「やめる」）
+            require_admin($user);
+            $item = row('SELECT * FROM inspection_items WHERE id = ?', [(int)($in['id'] ?? 0)]);
+            if (!$item) {
+                api_fail('点検項目が見つかりません。', 404);
+            }
+            if (row('SELECT id FROM inspection_runs WHERE item_id = ?', [$item['id']])) {
+                api_fail('記録のある点検項目は、削除できません。「やめる」にしてください（過去の記録は残ります）。');
+            }
+            q('DELETE FROM inspection_items WHERE id = ?', [$item['id']]);
+            audit_log('inspect', 'delete', '点検項目｜' . $item['title'] . '　' . $item['plan']);
+            api_out(['ok' => true]);
+
+        case 'inspect_run_mark': // 実施済み・確認済み・取り消し（done / check / uncheck / reopen）
+            $run = null;
+            if (!empty($in['id'])) {
+                $run = row('SELECT * FROM inspection_runs WHERE id = ?', [(int)$in['id']]);
+            }
+            if (!$run) {
+                api_fail('点検の記録が見つかりません。', 404);
+            }
+            try {
+                $after = inspect_run_mark($run, (string)($in['action'] ?? ''), $user, $in);
+            } catch (RuntimeException $x) {
+                api_fail($x->getMessage(), $x->getCode() >= 400 && $x->getCode() < 600 ? (int)$x->getCode() : 400);
+            }
+            api_out(['ok' => true, 'status' => inspect_status_of($after, date('Y-m-d')), 'summary' => inspect_summary($user)]);
 
         case 'holidays_list':
             api_out(['holidays' => rows('SELECT id, hdate, name FROM company_holidays ORDER BY hdate')]);

@@ -521,7 +521,7 @@ function notify_due(?int $now = null): array
             $msg[] = $n > 0 ? "{$label}の休み: {$n} 件を通知しました" : "{$label}は休みなしと通知しました";
         }
     }
-    return array_merge($msg, rooms_notify_due($now), slack_test_due($now)); // 会議室の予約（前日の夕方・当日の朝）／時刻を指定したテスト送信
+    return array_merge($msg, rooms_notify_due($now), slack_test_due($now), inspect_issue_due($now), inspect_notify_due($now)); // 会議室の予約（前日の夕方・当日の朝）／時刻を指定したテスト送信／年間点検の起票とアラート
 }
 
 // ---- 時刻ちょうどに送る ----
