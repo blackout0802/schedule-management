@@ -4098,15 +4098,17 @@
       planSel,
       el('span', { class: 'seg', role: 'group', 'aria-label': '表示' }, [['all', 'すべて'], ['mine', '自分の担当'], ['need', '要対応だけ']].map(function (m) {
         return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'an-flt', checked: an.flt === m[0], onchange: function () { an.flt = m[0]; annualDraw(); } }), m[1]);
-      }))));
+      })),
+      el('span', { class: 'spacer', style: 'flex:1' }),
+      el('button', { class: 'btn primary', type: 'button', id: 'insp-new', text: '＋ 点検項目を追加', title: '点検項目を登録する（管理者でなくても登録できます。委任されて代わりに登録する場合など）', onclick: function () { openInspectForm(null); } })));
     box.appendChild(el('div', { class: 'annual-sum' },
       el('span', { class: 'insp-pill', text: '項目 ' + items.length }),
       [['done', '確認済み'], ['wait', '確認待ち'], ['now', '今月・未実施'], ['late', '遅れ']].map(function (x) { return el('span', { class: 'insp-pill ' + x[0], text: x[1] + ' ' + cnt[x[0]] }); })));
     if (!items.length) {
       box.appendChild(el('div', { class: 'notice annual-empty' },
         el('b', { text: 'この年度の点検は、まだ登録されていません' }),
-        el('p', { text: S.me.user.role === 'admin' ? '会社の管理の「点検項目」に、Pマークの年間スケジュールなどの定期点検を登録すると、実施する月の最初の営業日に、担当者の ToDo が自動で作られます。' : '管理者が、会社の管理の「点検項目」に登録すると、ここに表示されます。' }),
-        S.me.user.role === 'admin' ? el('a', { class: 'btn primary', href: '#admin', text: '会社の管理で、点検項目を登録する' }) : null));
+        el('p', { text: 'Pマークの年間スケジュールなどの定期点検を登録すると、実施する月の最初の営業日に、担当者の ToDo が自動で作られます。登録は、管理者でなくてもできます（委任されて、代わりに登録する場合など）。' }),
+        el('button', { class: 'btn primary', type: 'button', id: 'insp-new-empty', text: '＋ 点検項目を追加', onclick: function () { openInspectForm(null); } })));
       return;
     }
     // 表
@@ -4116,7 +4118,8 @@
     var tbody = el('tbody');
     shown.forEach(function (it) {
       var tr = el('tr', null, el('th', { class: 'nm', scope: 'row' }, el('b', { text: it.title }),
-        el('span', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') + ' ・ ' + it.due_label + (it.active ? '' : ' ・ やめた項目') })));
+        el('span', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') + ' ・ ' + it.due_label + (it.active ? '' : ' ・ やめた項目') }),
+        it.can_edit ? el('button', { class: 'btn small ghost an-edit', type: 'button', text: '変更', 'aria-label': it.title + 'を変更', title: '登録した人と管理者が、項目を変更・やめる・削除できます', onclick: function () { openInspectForm(it); } }) : null));
       d.months.forEach(function (m) {
         var c = it.cells[m.ym], td = el('td', { class: m.ym === d.cur_ym ? 'cur' : '' });
         if (c) {
@@ -4134,6 +4137,15 @@
       return el('span', null, el('i', { class: 's ' + k, text: INSP_ST[k][0] }), INSP_ST[k][1]);
     })));
     box.appendChild(helpText('マスを押すと、実施・確認の画面が開きます。点検の ToDo は、実施する月の最初の営業日に自動で作られ、期限の日がカレンダーに置かれます。ToDo を完了にすると、ここも「実施済み」になります。'));
+  }
+
+  /* 年間計画のページから、点検項目を追加・変更する（追加は社員なら誰でも。変更は、登録した人と管理者） */
+  function openInspectForm(it) {
+    var d = S.an.data, holder = el('div', { class: 'insp-admin' });
+    var ov = openModal(it ? '点検項目の変更' : '点検項目の追加', holder, true);
+    var f = buildInspectForm(it, d.plans, function () { ov.close(); annualLoad(true); }, function () { ov.close(); });
+    holder.appendChild(f);
+    f.querySelector('input[maxlength="60"]').focus();
   }
 
   /* マスを押したときの画面: 状態・期限・担当・手順と、実施済み／確認済み／取り消し */
@@ -4193,32 +4205,11 @@
     INSP_FY_ORDER.forEach(function (m) { s.appendChild(el('i', { class: months.indexOf(m) >= 0 ? 'on' : '', title: m + '月' })); });
     return s;
   }
-  function openInspectionAdmin() {
-    var body = el('div', { class: 'form insp-admin' });
-    var ov = openModal('点検項目', body, true);
-    function refresh() {
-      api('inspect_items').then(function (j) { showList(j.items); }).catch(fail);
-    }
-    function showList(items) {
-      body.textContent = '';
-      body.appendChild(el('p', { class: 'hint', text: 'Pマークなどの定期点検を登録します（年度は7月はじまり）。実施する月の最初の営業日に、担当者の ToDo（【点検】項目名（○月分））が自動で作られ、期限の日がカレンダーに置かれます。担当者がToDoを完了にすると「実施済み」になり、確認者が年間計画で「確認済み」にします。' }));
-      body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
-        el('button', { class: 'btn primary', type: 'button', id: 'insp-add', text: '＋ 点検項目を追加', onclick: function () { showForm(null, items); } }),
-        el('a', { class: 'btn', href: '#annual', text: '年間計画を開く' })));
-      if (!items.length) { body.appendChild(el('p', { class: 'muted', text: 'まだ点検項目はありません。' })); return; }
-      var tbl = el('table', { class: 't insp-items' }, el('thead', null, el('tr', null, ['計画', '項目', '実施する月（7月はじまり）', '担当 → 確認', '期限', ''].map(function (h) { return el('th', { text: h }); }))),
-        el('tbody', null, items.map(function (it) {
-          return el('tr', { class: it.active ? '' : 'off' },
-            el('td', { text: it.plan }), el('td', null, el('b', { text: it.title }), it.active ? null : el('span', { class: 'muted', text: '（やめた）' })),
-            el('td', null, inspMonthStrip(it.months)), el('td', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') }), el('td', { text: it.due_label }),
-            el('td', null, el('button', { class: 'btn small', type: 'button', text: '変更', 'aria-label': it.title + 'を変更', onclick: function () { showForm(it, items); } })));
-        })));
-      body.appendChild(el('div', { class: 'annual-scroll' }, tbl));
-    }
-    function showForm(it, items) {
-      body.textContent = '';
+  function inspPlans(items) { var plans = []; items.forEach(function (x) { if (plans.indexOf(x.plan) < 0) plans.push(x.plan); }); return plans; }
+  /* 点検項目の入力（追加・変更）。会社の管理の一覧（その場に出す）と、年間計画のページ（ポップアップ）の両方で使う。
+     it = 変更する項目（なければ追加）、plans = これまでの計画の名前（候補）、onDone = 保存・削除のあと、onCancel = キャンセル */
+  function buildInspectForm(it, plans, onDone, onCancel) {
       var users = S.me.users;
-      var plans = []; items.forEach(function (x) { if (plans.indexOf(x.plan) < 0) plans.push(x.plan); });
       var plan = el('input', { type: 'text', maxlength: '30', list: 'insp-plans', value: it ? it.plan : (plans[0] || 'Pマーク'), required: true });
       var title = el('input', { type: 'text', maxlength: '60', required: true, value: it ? it.title : '', placeholder: '例: 内部監査' });
       var months = {}; (it ? it.months : []).forEach(function (m) { months[m] = true; });
@@ -4261,7 +4252,7 @@
         err.hidden = true;
         api('inspect_item_save', { body: { id: it ? it.id : 0, plan: plan.value, title: title.value, months: sel(), due_rule: due.value, alert_days: +adays.value, alert_due: aDue.checked, alert_late: aLate.checked, alert_check: aCheck.checked,
           owner_id: +owner.value, checker_id: +checker.value, steps: steps.value, need_attach: attach.checked, active: active.checked } }).then(function () {
-          toast(it ? '点検項目を変更しました' : '点検項目を追加しました'); refresh(); inspRefresh();
+          toast(it ? '点検項目を変更しました' : '点検項目を追加しました'); inspRefresh(); onDone();
         }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
       } },
         el('h4', { text: it ? '点検項目の変更' : '点検項目の追加' }),
@@ -4282,12 +4273,39 @@
         el('div', { class: 'actions' },
           it ? el('button', { class: 'btn small danger left', type: 'button', text: '削除', onclick: function () {
             if (!window.confirm('「' + it.title + '」を削除します。よろしいですか？（記録がある項目は削除できません。その場合は「この項目を続ける」を外してください）')) return;
-            api('inspect_item_delete', { body: { id: it.id } }).then(function () { toast('削除しました'); refresh(); inspRefresh(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
+            api('inspect_item_delete', { body: { id: it.id } }).then(function () { toast('削除しました'); inspRefresh(); onDone(); }).catch(function (x) { err.textContent = x.message; err.hidden = false; });
           } }) : null,
-          el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: refresh }),
+          el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: onCancel }),
           el('button', { class: 'btn primary', type: 'submit', text: '保存' })));
-      body.appendChild(form);
-      title.focus();
+      return form;
+  }
+  function openInspectionAdmin() {
+    var body = el('div', { class: 'form insp-admin' });
+    var ov = openModal('点検項目', body, true);
+    function refresh() {
+      api('inspect_items').then(function (j) { showList(j.items); }).catch(fail);
+    }
+    function showList(items) {
+      body.textContent = '';
+      body.appendChild(el('p', { class: 'hint', text: 'Pマークなどの定期点検を登録します（年度は7月はじまり）。実施する月の最初の営業日に、担当者の ToDo（【点検】項目名（○月分））が自動で作られ、期限の日がカレンダーに置かれます。担当者がToDoを完了にすると「実施済み」になり、確認者が年間計画で「確認済み」にします。' }));
+      body.appendChild(el('div', { class: 'actions', style: 'justify-content:flex-start' },
+        el('button', { class: 'btn primary', type: 'button', id: 'insp-add', text: '＋ 点検項目を追加', onclick: function () { showForm(null, items); } }),
+        el('a', { class: 'btn', href: '#annual', text: '年間計画を開く' })));
+      if (!items.length) { body.appendChild(el('p', { class: 'muted', text: 'まだ点検項目はありません。' })); return; }
+      var tbl = el('table', { class: 't insp-items' }, el('thead', null, el('tr', null, ['計画', '項目', '実施する月（7月はじまり）', '担当 → 確認', '期限', ''].map(function (h) { return el('th', { text: h }); }))),
+        el('tbody', null, items.map(function (it) {
+          return el('tr', { class: it.active ? '' : 'off' },
+            el('td', { text: it.plan }), el('td', null, el('b', { text: it.title }), it.active ? null : el('span', { class: 'muted', text: '（やめた）' })),
+            el('td', null, inspMonthStrip(it.months)), el('td', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') }), el('td', { text: it.due_label }),
+            el('td', null, el('button', { class: 'btn small', type: 'button', text: '変更', 'aria-label': it.title + 'を変更', onclick: function () { showForm(it, items); } })));
+        })));
+      body.appendChild(el('div', { class: 'annual-scroll' }, tbl));
+    }
+    function showForm(it, items) {
+      body.textContent = '';
+      var f = buildInspectForm(it, inspPlans(items), refresh, refresh);
+      body.appendChild(f);
+      f.querySelector('input[maxlength="60"]').focus();
     }
     refresh();
   }

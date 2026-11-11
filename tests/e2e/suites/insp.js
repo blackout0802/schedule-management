@@ -23,8 +23,8 @@ const MON = new Date().getMonth() + 1;
   ok('年間計画のボタンが、上の帯にある（件数のバッジは、まだ出ない）', await yam.locator('#insp-btn').count() === 1 && await yam.locator('#insp-btn-bd:visible').count() === 0);
   ok('項目がないと、今月の点検の帯は出ない', await yam.locator('#insp-band:visible').count() === 0);
   await yam.click('#insp-btn'); await yam.waitForSelector('.annual-empty');
-  ok('年間計画のページ（#annual）が開き、一般の社員には「管理者が登録する」と案内する', (await yam.evaluate(() => location.hash)) === '#annual' && (await yam.locator('.annual-empty').innerText()).includes('管理者が'));
-  ok('一般の社員には、登録のボタンは出ない', await yam.locator('.annual-empty a.btn').count() === 0);
+  ok('年間計画のページ（#annual）が開き、項目がないときは、登録を案内する（管理者でなくても登録できる）', (await yam.evaluate(() => location.hash)) === '#annual' && (await yam.locator('.annual-empty').innerText()).includes('管理者でなくてもできます'));
+  ok('一般の社員にも、「＋ 点検項目を追加」のボタンが出る（上と、案内の中）', await yam.locator('#insp-new').count() === 1 && await yam.locator('#insp-new-empty').count() === 1);
   await yam.goBack(); await yam.waitForSelector('.cal');
 
   // 管理者: 会社の管理 › 点検項目 で、項目を追加する
@@ -106,7 +106,29 @@ const MON = new Date().getMonth() + 1;
   await yam.goto(BASE + 'index.php'); await yam.waitForSelector('.seg label:has-text("カレンダー")'); await yam.click('.seg label:has-text("カレンダー")'); await yam.waitForSelector('#insp-band:visible'); // さっきリストを開いたので、カレンダーに戻す
   ok('帯は「遅れ 1件」で、注意の色になる', (await yam.locator('#insp-band').innerText()).includes('遅れ 1件') && await yam.locator('#insp-band.late').count() === 1);
 
-  // 項目の管理は、管理者だけ
+  // 委任: 一般の社員（山田）も、年間計画の画面から項目を追加できる。変更・削除は、登録した人と管理者
+  await yam.goto(BASE + 'index.php#annual'); await yam.reload(); await yam.waitForSelector('#annual-tbl');
+  ok('管理者が登録した項目には、一般の社員に「変更」が出ない', await yam.locator('#annual-tbl tbody tr:has-text("テスト点検A") .an-edit').count() === 0);
+  await yam.click('#insp-new'); await yam.waitForSelector('.insp-months');
+  await yam.fill('.insp-admin form input[maxlength="60"]', 'テスト点検B（委任）');
+  await yam.selectOption('select[aria-label=繰り返し]', 'month');
+  await yam.click('.insp-admin form button[type=submit]'); await yam.waitForSelector('.toast:has-text("追加しました")');
+  await yam.waitForSelector('#annual-tbl tbody tr:has-text("テスト点検B（委任）")');
+  const yamId = sql("SELECT id FROM users WHERE email = 'yamada@example.com'");
+  ok('一般の社員が追加した項目が表に出て、登録した人が記録され、本人には「変更」が出る', sql("SELECT created_by FROM inspection_items WHERE title = 'テスト点検B（委任）'") === yamId && await yam.locator('#annual-tbl tbody tr:has-text("テスト点検B（委任）") .an-edit').count() === 1);
+  await suz.reload(); await suz.waitForSelector('#annual-tbl'); await suz.waitForSelector('#annual-tbl tbody tr:has-text("テスト点検B（委任）")');
+  ok('ほかの社員には、その項目の「変更」が出ない', await suz.locator('#annual-tbl tbody tr:has-text("テスト点検B（委任）") .an-edit').count() === 0);
+  const itemB = sql("SELECT id FROM inspection_items WHERE title = 'テスト点検B（委任）'");
+  const post = (p, act, body) => p.evaluate(async ([act, body]) => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=' + act, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify(body) }); return r.status; }, [act, body]);
+  ok('API: 登録した人でも管理者でもない人は、変更・削除できない（403）', await post(suz, 'inspect_item_save', { id: +itemB, title: '乗っ取り', months: [7], owner_id: 1 }) === 403 && await post(suz, 'inspect_item_delete', { id: +itemB }) === 403 && await post(yam, 'inspect_item_save', { id: +itemId, title: '乗っ取り', months: [7], owner_id: 1 }) === 403);
+  await admin.reload(); await admin.waitForSelector('#annual-tbl');
+  ok('管理者には、どの項目にも「変更」が出る', await admin.locator('#annual-tbl .an-edit').count() === 2);
+  await yam.click('#annual-tbl tbody tr:has-text("テスト点検B（委任）") .an-edit'); await yam.waitForSelector('.insp-months');
+  await yam.fill('.insp-admin form input[maxlength="60"]', 'テスト点検B2'); await yam.click('.insp-admin form button[type=submit]'); await yam.waitForSelector('.toast:has-text("変更しました")');
+  await yam.waitForSelector('#annual-tbl tbody tr:has-text("テスト点検B2")');
+  ok('登録した人は、自分の項目を変更できる', sql(`SELECT title FROM inspection_items WHERE id = ${itemB}`) === 'テスト点検B2');
+
+  // 項目の管理（会社の管理の一覧）は、管理者だけ
   ok('API: 一般の社員は、点検項目の一覧（管理）を取れない（403）', await yam.evaluate(async () => { const r = await fetch('api.php?action=inspect_items'); return r.status; }) === 403);
 
   // スマホ幅・ダークモード
