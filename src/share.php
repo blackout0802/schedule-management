@@ -142,7 +142,7 @@ function share_events(array $link, string $from, string $to): array
             'id' => (int)$e['id'], 'title' => $plainOff ? '休み' : $e['title'], 'kind' => $e['kind'], 'tag' => $plainOff ? '' : $e['tag'],
             'start' => $e['start_date'], 'end' => $e['end_date'], 'start_time' => $e['start_time'], 'end_time' => $e['end_time'],
             'note' => $withNote ? $e['note'] : '', 'owner_id' => (int)$e['owner_id'], 'owner_name' => $e['owner_name'],
-            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'important' => (int)$e['important'] === 1, 'done' => ($e['todo_done_at'] ?? null) !== null, 'editable' => false, 'colors' => (object)($colors[(int)$e['owner_id']] ?? []),
+            'recurring' => $e['series_id'] !== null, 'series_id' => null, 'family_shared' => true, 'important' => (int)$e['important'] === 1, 'band' => $e['kind'] === 'private' ? (string)($e['band'] ?? '') : '', 'done' => ($e['todo_done_at'] ?? null) !== null, 'editable' => false, 'colors' => (object)($colors[(int)$e['owner_id']] ?? []),
         ];
     }, $list);
     if ($withNote) { // 家族用: 削除された予定は、取消線つきで残す（家族が「確認した」と消すまで）

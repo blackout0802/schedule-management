@@ -4,6 +4,10 @@
   --private: #8e35bd; --private-soft: #f3e8fb; --danger: #e0281e; --danger-soft: #fdeceb;
   --overlay: rgba(10, 18, 32, .5);
   --insp: #00788a; --insp-soft: #dcf1f5; --warn: #9a5a00; --warn-soft: #fdf0d9; /* 年間計画（点検）の色と、注意の色 */
+  /* プライベートの予定の帯の色（予定ごとに選ぶ。背景 -bg と文字 -fg。ライト／ダークで別の値） */
+  --bc-blue-bg: var(--work-soft); --bc-blue-fg: var(--work); --bc-green-bg: var(--off-soft); --bc-green-fg: var(--off);
+  --bc-orange-bg: #fbe9d6; --bc-orange-fg: #b25000; --bc-rose-bg: #fde7ef; --bc-rose-fg: #b0124f; --bc-mustard-bg: #fdf3cc; --bc-mustard-fg: #7a5a00;
+  --bc-lime-bg: #eef5d0; --bc-lime-fg: #4f6a00; --bc-teal-bg: #dcf1f5; --bc-teal-fg: #006b7b; --bc-brown-bg: #efe6df; --bc-brown-fg: #7a4a2b;
   --fw: 400; /* 文字の基本の太さ（Apple風に細め）。太く戻したいときは、ここを 500〜600 にする */
   --rec: #b25000; /* 毎月の繰り返し業務の文字色（単発の業務は青） */
   --rm0: #2459b8; --rm0-soft: #e1ebfa; --rm1: #b85a08; --rm1-soft: #fbe9d6; --rm2: #1f7a37; --rm2-soft: #e3f5e8; --rm3: #8e35bd; --rm3-soft: #f3e8fb; --on-rm: #fff; /* 会議室の色（部屋ごとに固定。大=青、小=オレンジ） */
@@ -16,6 +20,8 @@
     --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
     --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
     --insp: #4fc3d9; --insp-soft: #12353d; --warn: #f0b255; --warn-soft: #3d2b14;
+    --bc-orange-bg: #3d2b14; --bc-orange-fg: #f0a04b; --bc-rose-bg: #3d1a2a; --bc-rose-fg: #ff9ec0; --bc-mustard-bg: #3a3010; --bc-mustard-fg: #f2d45c;
+    --bc-lime-bg: #2a3410; --bc-lime-fg: #c4de6a; --bc-teal-bg: #12353d; --bc-teal-fg: #4fc3d9; --bc-brown-bg: #3a2a20; --bc-brown-fg: #dfb594;
     --rm0: #7ba2ff; --rm0-soft: #1b2c52; --rm1: #f0a04b; --rm1-soft: #3d2b14; --rm2: #4fd0a8; --rm2-soft: #123a31; --rm3: #c79bf2; --rm3-soft: #2e1d44; --on-rm: #0b1620;
   }
 }
@@ -24,6 +30,8 @@
   --work: #7ba2ff; --work-soft: #1b2c52; --off: #4fd0a8; --off-soft: #123a31;
   --private: #c79bf2; --private-soft: #2e1d44; --danger: #ff8d80; --danger-soft: #3d1c19; --rec: #ffb26b; color-scheme: dark;
   --insp: #4fc3d9; --insp-soft: #12353d; --warn: #f0b255; --warn-soft: #3d2b14;
+  --bc-orange-bg: #3d2b14; --bc-orange-fg: #f0a04b; --bc-rose-bg: #3d1a2a; --bc-rose-fg: #ff9ec0; --bc-mustard-bg: #3a3010; --bc-mustard-fg: #f2d45c;
+  --bc-lime-bg: #2a3410; --bc-lime-fg: #c4de6a; --bc-teal-bg: #12353d; --bc-teal-fg: #4fc3d9; --bc-brown-bg: #3a2a20; --bc-brown-fg: #dfb594;
   --rm0: #7ba2ff; --rm0-soft: #1b2c52; --rm1: #f0a04b; --rm1-soft: #3d2b14; --rm2: #4fd0a8; --rm2-soft: #123a31; --rm3: #c79bf2; --rm3-soft: #2e1d44; --on-rm: #0b1620;
 }
 :root[data-theme="light"] { color-scheme: light; }
@@ -1109,3 +1117,11 @@ table.annual-tbl { border-collapse: separate; border-spacing: 0; width: 100%; mi
   .annual-head h2 { flex: 1 1 100%; }
   .insp-months button { padding: 6px 0; font-size: 12px; }
 }
+
+/* ---- プライベートの予定の帯の色（予定の入力画面の色の選択）---- */
+.band-row { display: grid; gap: 4px; }
+.band-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.band-sw { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; display: grid; place-items: center; background: var(--bw-bg); box-shadow: inset 0 0 0 2px var(--bw-fg); }
+.band-sw[aria-pressed="true"] { border-color: var(--ink); }
+.band-sw[aria-pressed="true"]::after { content: "✓"; color: var(--bw-fg); font-weight: 700; font-size: 14px; line-height: 1; }
+.band-name { font-size: 12px; color: var(--muted); }

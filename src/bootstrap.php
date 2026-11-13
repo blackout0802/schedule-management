@@ -327,6 +327,11 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE inspection_items ADD COLUMN created_by ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'INT UNSIGNED' : 'INTEGER') . ' NULL');
     }
+    try { // プライベートの予定の帯の色（'' = 標準。EVENT_BANDS のどれか）。SCHEMA_VERSION 34
+        db()->query('SELECT band FROM events LIMIT 1')->fetchAll();
+    } catch (PDOException $e) {
+        db()->exec("ALTER TABLE events ADD COLUMN band VARCHAR(10) NOT NULL DEFAULT ''");
+    }
     try {
         db()->query('SELECT doing FROM todos LIMIT 1')->fetchAll();
     } catch (PDOException $e) {

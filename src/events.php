@@ -15,6 +15,9 @@ require_once __DIR__ . '/audit.php';
  * 「家族に共有する」の値。指定があればそれに従い、なければ種類ごとの初期値。
  * プライベート = 共有する（外した予定だけ隠す） / 業務・休み = 共有しない（選んだものだけ共有）
  */
+/** プライベートの予定の帯の色。'' は標準（設定の「プライベートの色」）。青・緑・オレンジ・ローズ・マスタード・ライム・ティール・ブラウンから選ぶ（紫は標準） */
+const EVENT_BANDS = ['blue', 'green', 'orange', 'rose', 'mustard', 'lime', 'teal', 'brown'];
+
 function family_flag(string $kind, array $in): int
 {
     if (array_key_exists('family_shared', $in)) {
@@ -135,6 +138,7 @@ function event_for_client(array $e, array $user, ?array $colorsMap = null): arra
         'owner_id' => (int)$e['owner_id'],
         'family_shared' => (int)$e['family_shared'] === 1,
         'important' => (int)($e['important'] ?? 0) === 1,
+        'band' => $e['kind'] === 'private' ? (string)($e['band'] ?? '') : '', // プライベートの予定の帯の色（'' = 標準）
         'todo_id' => ($e['todo_id'] ?? null) !== null ? (int)$e['todo_id'] : null, // ToDoをカレンダーに置いた予定
         'participants' => $e['kind'] === 'work' ? rooms_participants_named(event_participant_ids($e)) : [], // 一緒にやる社員（[{id, name}]）
         'done' => ($e['todo_done_at'] ?? null) !== null, // 元のToDoが完了（カレンダーでは取り消し線）
@@ -229,6 +233,8 @@ function validate_event_input(array $in, array $user): array
         // 「重要」（カレンダーで目立たせる）。指定がなければ、いまの状態のまま
         'important' => array_key_exists('important', $in) ? (empty($in['important']) ? 0 : 1) : null,
         'participants' => $parts,
+        // 帯の色（プライベートの予定だけ）。指定がなければ、いまのまま（null）。決められた色以外は、標準
+        'band' => $kind !== 'private' ? '' : (array_key_exists('band', $in) ? (in_array((string)$in['band'], EVENT_BANDS, true) ? (string)$in['band'] : '') : null),
     ], null];
 }
 
@@ -243,19 +249,20 @@ function save_event(array $data, array $user, ?array $existing): array
         $parts = event_parts_clean($data['participants'] ?? null, $existing, (int)$existing['owner_id']);
         // 日付を変えたら、完了で縮める前の終了日（end_before_done）は忘れる（取り消しで、手で決めた日付を上書きしないように）
         $ebd = $data['start'] === $existing['start_date'] && $data['end'] === $existing['end_date'] ? ($existing['end_before_done'] ?? null) : null;
-        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, participants=?, detached=?, end_before_done=?, updated_at=? WHERE id=?', [
+        $band = $data['kind'] === 'private' ? ($data['band'] ?? (string)($existing['band'] ?? '')) : '';
+        q('UPDATE events SET title=?, kind=?, tag=?, start_date=?, end_date=?, start_time=?, end_time=?, note=?, family_shared=?, important=?, participants=?, band=?, detached=?, end_before_done=?, updated_at=? WHERE id=?', [
             $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'], $data['note'],
-            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $parts, $existing['series_id'] !== null ? 1 : 0, $ebd, now_str(), $existing['id'],
+            $data['family_shared'] ?? 1, $data['important'] ?? (int)$existing['important'], $parts, $band, $existing['series_id'] !== null ? 1 : 0, $ebd, now_str(), $existing['id'],
         ]);
         $id = (int)$existing['id'];
         $after = row('SELECT * FROM events WHERE id = ?', [$id]);
         event_changed($existing, $after);
         return $after;
     } else {
-        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,participants,series_id,ym,detached,created_by,created_at,updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
+        q('INSERT INTO events (owner_id,title,kind,tag,start_date,end_date,start_time,end_time,note,family_shared,important,participants,band,series_id,ym,detached,created_by,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,0,?,?,?)', [
             $data['owner_id'], $data['title'], $data['kind'], $data['tag'], $data['start'], $data['end'], $data['start_time'], $data['end_time'],
-            $data['note'], $data['family_shared'] ?? 1, $data['important'] ?? 0, event_parts_clean($data['participants'] ?? null, null, (int)$data['owner_id']), $user['id'], now_str(), now_str(),
+            $data['note'], $data['family_shared'] ?? 1, $data['important'] ?? 0, event_parts_clean($data['participants'] ?? null, null, (int)$data['owner_id']), $data['kind'] === 'private' ? (string)($data['band'] ?? '') : '', $user['id'], now_str(), now_str(),
         ]);
         $id = (int)db()->lastInsertId();
     }
@@ -318,7 +325,7 @@ function duplicate_event(array $src, array $dates, array $user): array
         $created[] = save_event([
             'kind' => $src['kind'], 'title' => $src['title'], 'tag' => $src['tag'], 'start' => $d, 'end' => $end,
             'start_time' => $src['start_time'], 'end_time' => $src['end_time'], 'note' => $src['note'], 'owner_id' => (int)$src['owner_id'],
-            'family_shared' => (int)$src['family_shared'], 'important' => (int)$src['important'],
+            'family_shared' => (int)$src['family_shared'], 'important' => (int)$src['important'], 'band' => (string)($src['band'] ?? ''),
         ], $user, null);
     }
     return [$created, $skipped];
