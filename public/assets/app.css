@@ -938,6 +938,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 
 /* 家族のアカウント・家族の招待 */
 .fam-pill { background: var(--private-soft); color: var(--private); white-space: nowrap; }
+@media (max-width: 640px) { .topbar-in .fam-menu { margin-left: auto; } } /* 家族のアカウント: スマホで、名前のメニューを右に寄せる（左端にあると、開いたメニューが画面の外に切れる） */
 .fam-box .fam-member { margin: 8px 0; }
 .fam-box .fam-member.off { opacity: .65; }
 .fam-box .fam-add { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }

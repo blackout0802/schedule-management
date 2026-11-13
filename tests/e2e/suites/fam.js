@@ -120,6 +120,14 @@ const pad = n => String(n).padStart(2, '0');
   ok('利用を止めた家族は、ログインできず、使っていた画面も使えなくなる', (await api(f, 'events&from=' + today + '&to=' + today)).status === 401);
   await api(y, 'family_set_active', { id: mid, active: 1 });
   const f2 = await mk(); await login(f2, 'wife@example.com', 'familypass99'); await f2.waitForSelector('.cal');
+  // スマホ幅: 名前のメニューは右に寄り、開いたメニューが画面の外に切れない（左端にあると、メニューが左に切れていた）
+  const ph = await mk({ width: 390, height: 844 }); await login(ph, 'wife@example.com', 'familypass99'); await ph.waitForSelector('.cal');
+  const menuBtn = await ph.locator('.fam-menu .uname').boundingBox();
+  ok('スマホ幅: 家族の名前のメニューのボタンが、右の端に寄っている', menuBtn && menuBtn.x + menuBtn.width > 390 / 2 && menuBtn.x + menuBtn.width <= 390, menuBtn);
+  await ph.click('.fam-menu .uname'); await ph.waitForSelector('.fam-menu .menu-list');
+  const list = await ph.locator('.fam-menu .menu-list').boundingBox();
+  ok('スマホ幅: 開いたメニューが、画面の中に収まる', list && list.x >= 0 && list.x + list.width <= 390, list);
+  ok('スマホ幅: 上の帯は、横にはみ出さない', await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok('再開すると、また使えて、予定も戻る', (await api(y, 'events&from=' + today + '&to=' + today + '&view=me')).j.events.some(e => e.title === '妻の買い物'));
   const reset = await api(y, 'family_reset_password', { id: mid });
   ok('パスワードをリセットすると、一時パスワードが返り、いまのパスワードは使えなくなる', reset.j.password.length >= 8 && (await api(f2, 'events&from=' + today + '&to=' + today)).status === 401);
