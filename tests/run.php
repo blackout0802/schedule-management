@@ -2120,6 +2120,24 @@ q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version'
 ensure_schema();
 check('更新: 古いデータベースに、点検項目の created_by の列が足される', (function () { try { db()->query('SELECT created_by FROM inspection_items LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
 
+// ---- 管理者の「家族の画面の確認」（確認用の仮の家族。家族が入れた予定は出さない）
+[$pvFid] = family_add($b, '確認用に家族', 'preview-fam@example.com');
+$pvFam = row('SELECT * FROM users WHERE id = ?', [$pvFid]);
+$mk($b, ['kind' => 'private', 'title' => '確認用・家族に共有', 'start' => '2031-05-12', 'family_shared' => true]);
+$mk($b, ['kind' => 'private', 'title' => '確認用・ひみつ', 'start' => '2031-05-12', 'family_shared' => false]);
+$mk($b, ['kind' => 'work', 'title' => '確認用・会社の予定', 'tag' => '打ち合わせ', 'start' => '2031-05-12']);
+$mk($pvFam, ['kind' => 'private', 'title' => '確認用・家族の予定', 'start' => '2031-05-12']);
+$pvTitles = function (array $u) { return array_map(function ($e) { return $e['title']; }, list_events($u, '2031-05-01', '2031-05-31', 'me')); };
+$pvUser = family_preview_user((int)$b['id']);
+check('家族の画面の確認: 実際の家族には、家族に共有した予定と、家族の予定が見える', $pvTitles($pvFam), ['確認用・家族に共有', '確認用・家族の予定']);
+check('家族の画面の確認: 確認用の仮の家族には、家族に共有した予定だけ（家族が入れた予定・ひみつ・業務は出ない）', $pvTitles($pvUser), ['確認用・家族に共有']);
+check('家族の画面の確認: 仮の家族は、家族のアカウントとして扱われる（持ち主は選んだ社員・番号は実在しない 0）', [is_family($pvUser), family_owner_id($pvUser), $pvUser['id']], [true, (int)$b['id'], 0]);
+check('家族の画面の確認: 仮の家族は、どの予定も編集できない', can_edit_event(row("SELECT * FROM events WHERE title = '確認用・家族に共有'"), $pvUser), false);
+check('家族の画面の確認: 持ち主が家族の共有の範囲を変えると（休みをすべて）、仮の家族にも同じに効く', (function () use ($b, $mk, $pvTitles, $pvUser) { $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-05-13']); save_family_share($b, true, []); $t = array_map(function ($e) { return $e['tag']; }, array_filter(list_events($pvUser, '2031-05-01', '2031-05-31', 'me'), function ($e) { return $e['kind'] === 'off'; })); save_family_share($b, false, []); return array_values($t); })(), ['有給']);
+check('家族の画面の確認: 確認用の表示は、家族のアカウントが使える操作（FAMILY_ALLOWED_ACTIONS）に、開始・終了を含まない', array_intersect(FAMILY_ALLOWED_ACTIONS, ['family_preview_start', 'family_preview_stop']), []);
+q("DELETE FROM events WHERE title LIKE '確認用・%' OR (kind = 'off' AND start_date = '2031-05-13')");
+family_delete($b, (int)$pvFid);
+
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
 exec('python3 ' . escapeshellarg(__DIR__ . '/../tools/stage_deploy.py') . ' ' . escapeshellarg($stageDir) . ' 2>&1', $stageOut, $stageRc);

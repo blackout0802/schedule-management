@@ -604,6 +604,7 @@
     var annualBtn = FAMACCT ? null : el('div', { class: 'menu annual-btn' }, el('button', { class: 'btn small insp-btn' + (S.page === 'annual' ? ' on' : ''), id: 'insp-btn', type: 'button', 'aria-label': '年間計画', 'aria-current': S.page === 'annual' ? 'page' : null, title: '年間計画（Pマークなどの定期点検）を開く', onclick: function (e) { e.stopPropagation(); openAnnualPage(); } },
       svgIcon('checkcal'), el('span', { class: 'lbl', text: ' 年間計画' }), el('span', { class: 'insp-bd', id: 'insp-btn-bd', hidden: true })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
+      if (FAMACCT && S.me.family_preview) return [item('確認を終えて、元の画面に戻る', stopFamilyPreview, close)]; // 確認用の表示では、表示名・パスワードの変更・ログアウトは出さない
       if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
       return [item('年間計画' + (S.insp && S.insp.mine ? '（' + S.insp.mine + '）' : ''), openAnnualPage, close, 'Pマークなどの定期点検の年間計画'), S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     }, FAMACCT ? 'fam-menu' : '');
@@ -632,6 +633,7 @@
     if (S.page === 'annual' && FAMACCT) S.page = 'main'; // 家族のアカウントは、年間計画を使えない
     if (S.page === 'annual') return renderAnnualPage();
     root.textContent = '';
+    if (S.me.family_preview) root.appendChild(previewBar()); // 管理者の確認用の表示
     root.appendChild(buildTopbar(true));
     if (FAMACCT) { // 家族のアカウント: カレンダーだけ（ToDo・日報はない）
       root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
@@ -702,6 +704,7 @@
           set(sumText(n ? '次: ' + (+n.hdate.slice(5, 7)) + '/' + (+n.hdate.slice(8, 10)) + ' ' + n.name : 'これからの休業日は、登録なし'));
         });
       } },
+      { group: '人と日付', id: 'famprev', title: '家族の画面の確認', build: openFamilyPreviewDialog, sum: function (set) { set(sumText('家族から見た画面を確かめる')); } },
       { group: '人と日付', id: 'rooms', title: '会議室の設定', build: openRoomsAdmin, sum: function (set) {
         var t = ymd(new Date());
         return api('rooms_list', { params: { from: t, to: t } }).then(function (j) { set(sumText(j.rooms.filter(function (r) { return r.active; }).length + '部屋')); });
@@ -4024,6 +4027,29 @@
     setInterval(pollRev, POLL_MS);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) pollRev(); });
     window.addEventListener('focus', pollRev);
+  }
+
+  /* ---------- 家族の画面の確認（管理者。v1.111.0〜） ----------
+     選んだ社員の家族が、家族のアカウントでログインしたときの見え方を、確認用に開く（家族用のカレンダーと同じ画面）。
+     開発・運用のとき、本物の家族のアカウントを作らずに確かめるためのもの。変更はできない。家族が入れた予定は、家族のプライバシーのため、出ない。1時間で自動的に終わる。 */
+  function previewBar() {
+    return el('div', { class: 'preview-bar', role: 'status' },
+      el('span', { text: '確認用の表示: ' + (S.me.family_owner_name || '') + 'さんの家族の画面です（変更はできません。家族が入れた予定は、出ません）' }),
+      el('button', { class: 'btn small', type: 'button', id: 'preview-stop', text: '確認を終える', onclick: stopFamilyPreview }));
+  }
+  function stopFamilyPreview() {
+    api('family_preview_stop', { body: {} }).then(function () { history.replaceState(null, '', location.pathname + '#admin'); location.reload(); }).catch(fail);
+  }
+  function openFamilyPreviewDialog() {
+    var users = S.me.users;
+    var sel = el('select', { id: 'preview-owner', 'aria-label': '社員' }, users.map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: u.id === S.me.user.id }); }));
+    var body = el('div', { class: 'form' },
+      el('p', { class: 'hint', text: '選んだ社員の家族が、家族のアカウントでログインしたときの画面を、確認用に開きます（家族に共有した予定・休みなどが、家族用のカレンダーに出ます）。変更はできません。家族が入れた予定は、家族のプライバシーのため、出ません。1時間たつか、「確認を終える」を押すと、元の画面に戻ります。' }),
+      el('label', null, 'どの社員の家族の画面を見るか', sel),
+      el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', id: 'preview-start', text: '家族の画面を開く', onclick: function () {
+        api('family_preview_start', { body: { owner_id: +sel.value } }).then(function () { location.href = location.pathname; }).catch(fail);
+      } })));
+    openModal('家族の画面の確認', body);
   }
 
   /* ---------- 年間計画（点検業務。v1.108.0〜） ----------

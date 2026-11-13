@@ -17,6 +17,17 @@ function is_family(array $u): bool
     return ($u['role'] ?? '') === 'family';
 }
 
+const FAMILY_PREVIEW_SECONDS = 3600; // 確認用の表示は、1時間で自動的に終わる
+
+/**
+ * 管理者が「家族の画面で見るとどう見えるか」を確認するための、仮の家族（実在しない。番号は 0）。
+ * 持ち主（社員）の家族用の見え方（家族に共有した予定など）だけが出る。家族が入れた予定は出ない。変更はできない（api.php が、POST を断る）
+ */
+function family_preview_user(int $ownerId): array
+{
+    return ['id' => 0, 'name' => '（確認用の家族）', 'email' => '', 'role' => 'family', 'slack_id' => null, 'active' => 1, 'must_change_password' => 0, 'family_of' => $ownerId, 'pwv' => '', 'preview' => true];
+}
+
 /** 家族のアカウントが、だれの家族か（持ち主の番号）。家族でなければ 0 */
 function family_owner_id(array $u): int
 {
@@ -189,7 +200,7 @@ function family_account_cond(array $user): array
 {
     $owner = family_owner_id($user);
     [$fcond, $fparams] = family_visible_cond($owner);
-    $ids = family_member_ids($owner);
+    $ids = !empty($user['preview']) ? [] : family_member_ids($owner); // 管理者の確認用の表示では、家族が入れた予定は出さない（家族のプライバシー）
     $ids[] = (int)$user['id']; // 本人（利用停止にされても、見えなくなるだけで、ここには来ない）
     $ids = array_values(array_unique($ids));
     $ph = implode(',', array_fill(0, count($ids), '?'));
