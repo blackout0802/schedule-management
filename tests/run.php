@@ -2120,6 +2120,34 @@ q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version'
 ensure_schema();
 check('更新: 古いデータベースに、点検項目の created_by の列が足される', (function () { try { db()->query('SELECT created_by FROM inspection_items LIMIT 1')->fetchAll(); return true; } catch (PDOException $e) { return false; } })(), true);
 
+// ---- プライベートの予定の帯の色（v1.111.0）
+$bnU = function (array $e, array $in, array $user) { [$d, $err] = validate_event_input($in, $user); if ($err) { throw new RuntimeException($err); } return save_event($d, $user, $e); };
+$bn1 = $mk($a, ['kind' => 'private', 'title' => '帯の色', 'start' => '2031-06-10', 'band' => 'rose']);
+check('帯の色: プライベートの予定に、選んだ色が付く（band = rose）。画面に返す予定にも入る', [$bn1['band'], event_for_client(array_merge($bn1, ['owner_name' => '山田']), $a)['band']], ['rose', 'rose']);
+$bn1 = $bnU($bn1, ['kind' => 'private', 'title' => '帯の色（直した）', 'start' => '2031-06-10'], $a);
+check('帯の色: 色を送らずに保存し直しても、いまの色のまま', $bn1['band'], 'rose');
+$bn1 = $bnU($bn1, ['kind' => 'private', 'title' => '帯の色', 'start' => '2031-06-10', 'band' => 'teal'], $a);
+check('帯の色: 別の色に変えられる', $bn1['band'], 'teal');
+$bn1 = $bnU($bn1, ['kind' => 'private', 'title' => '帯の色', 'start' => '2031-06-10', 'band' => ''], $a);
+check('帯の色: 空にすると、標準に戻る', $bn1['band'], '');
+check('帯の色: 決められた色以外（おかしな名前・紫・色コード）は、標準になる', array_map(function ($v) use ($mk, $a) { return $mk($a, ['kind' => 'private', 'title' => '色の検査', 'start' => '2031-06-11', 'band' => $v])['band']; }, ['zzz', 'purple', '#ff0000', 'ROSE']), ['', '', '', '']);
+check('帯の色: 業務・休みの予定には、色が付かない', [$mk($a, ['kind' => 'work', 'title' => '業務の色', 'tag' => '打ち合わせ', 'start' => '2031-06-12', 'band' => 'rose'])['band'], $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-06-13', 'band' => 'rose'])['band']], ['', '']);
+$bn2 = $mk($a, ['kind' => 'private', 'title' => '種類を変える', 'start' => '2031-06-14', 'band' => 'lime']);
+$bn2 = $bnU($bn2, ['kind' => 'work', 'title' => '種類を変える', 'tag' => '打ち合わせ', 'start' => '2031-06-14'], $a);
+check('帯の色: プライベートから業務に変えると、色は消える（業務の予定は、会社の全員に見える）', $bn2['band'], '');
+$bn3 = $mk($a, ['kind' => 'private', 'title' => '複製の元', 'start' => '2031-06-16', 'band' => 'brown']);
+[$bnDup] = duplicate_event($bn3, ['2031-06-17'], $a);
+check('帯の色: 予定を複製すると、色も引き継ぐ', $bnDup[0]['band'], 'brown');
+check('帯の色: 色は、プライベートの予定だけ（EVENT_BANDS は8色。紫は標準）', [EVENT_BANDS, count(EVENT_BANDS)], [['blue', 'green', 'orange', 'rose', 'mustard', 'lime', 'teal', 'brown'], 8]);
+q("DELETE FROM events WHERE start_date BETWEEN '2031-06-10' AND '2031-06-17'");
+// 古い版（SCHEMA_VERSION 33。events に band が無い）のデータベースからの更新: 列が足される（入っている予定は標準のまま）
+db()->exec('ALTER TABLE events DROP COLUMN band');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '33']);
+ensure_schema();
+check('更新: 古いデータベースに、予定の band の列が足される（入っている予定は標準のまま）', (function () use ($mk, $a) { try { db()->query('SELECT band FROM events LIMIT 1')->fetchAll(); } catch (PDOException $e) { return false; } return $mk($a, ['kind' => 'private', 'title' => '更新後', 'start' => '2031-06-20'])['band'] === ''; })(), true);
+q("DELETE FROM events WHERE start_date = '2031-06-20'");
+
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
 exec('python3 ' . escapeshellarg(__DIR__ . '/../tools/stage_deploy.py') . ' ' . escapeshellarg($stageDir) . ' 2>&1', $stageOut, $stageRc);
