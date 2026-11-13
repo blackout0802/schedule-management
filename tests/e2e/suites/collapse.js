@@ -22,7 +22,7 @@ const BASE = 'http://127.0.0.1:8099/';
   ok('左の一覧の項目を押すと、その項目が開く', (await p.locator('#set-family.open').count()) === 1);
   // 会社の管理も、初めは畳んである
   await p.click('.set-switch button:has-text("会社の管理")'); await p.waitForSelector('.admin-page .set-sec');
-  ok('会社の管理の項目も、初めは、すべて畳んである', (await p.locator('.set-sec').count()) === 7 && (await p.locator('.set-sec.open').count()) === 0); // 点検項目（年間計画）・家族の画面の確認が増えたので 5 → 7
+  ok('会社の管理の項目も、初めは、すべて畳んである', (await p.locator('.set-sec').count()) === 6 && (await p.locator('.set-sec.open').count()) === 0); // 点検項目（年間計画）が増えたので 5 → 6
   await p.click('.set-nav a:has-text("会社の休業日")'); await p.waitForSelector('#set-holidays.open');
   // 開いた項目は、覚える
   await p.click('.set-switch button:has-text("設定")'); await p.waitForSelector('.settings-page:not(.admin-page)');

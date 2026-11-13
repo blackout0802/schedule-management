@@ -158,33 +158,6 @@ function handle_api(): void
             }
         }
     }
-    // 管理者が、家族の画面の見え方を確認する（確認用の表示。変更はできない。1時間で自動的に終わる）
-    if ($action === 'family_preview_start') {
-        require_admin($user);
-        $owner = row("SELECT id, name FROM users WHERE id = ? AND active = 1 AND role <> 'family'", [(int)($in['owner_id'] ?? 0)]);
-        if (!$owner) {
-            api_fail('どの社員の家族の画面を見るか、選んでください。');
-        }
-        $_SESSION['family_preview'] = ['owner' => (int)$owner['id'], 'until' => time() + FAMILY_PREVIEW_SECONDS];
-        audit_log('security', 'update', '家族の画面の確認を開始｜' . $owner['name'] . 'さんの家族');
-        api_out(['ok' => true]);
-    }
-    if ($action === 'family_preview_stop') {
-        unset($_SESSION['family_preview']);
-        api_out(['ok' => true]);
-    }
-    $preview = $_SESSION['family_preview'] ?? null;
-    if (is_array($preview) && (!is_admin($user) || time() > (int)$preview['until'])) { // 管理者でなくなった・1時間たったときは、元に戻す
-        unset($_SESSION['family_preview']);
-        $preview = null;
-    }
-    if (is_array($preview)) {
-        if ($isPost) {
-            api_fail('家族の画面の確認中は、変更できません。右上の「確認を終える」を押して、元の画面に戻ってください。', 403);
-        }
-        $user = family_preview_user((int)$preview['owner']); // 以降は、家族のアカウントとして（FAMILY_ALLOWED_ACTIONS だけ）読む
-        $GLOBALS['family_preview_info'] = ['owner_id' => (int)$preview['owner'], 'until' => (int)$preview['until']];
-    }
     if ($action === 'rev') {
         // 画面の自動更新用。何も書き換えず、すぐ返す（待たせない・負担をかけない）
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -220,7 +193,6 @@ function handle_api(): void
                 'family_owner_name' => is_family($user) ? (string)(row('SELECT name FROM users WHERE id = ?', [family_owner_id($user)])['name'] ?? '') : null, // 家族のアカウントのとき、持ち主の名前
                 'family_owner_pname' => is_family($user) ? private_name_of(row('SELECT name, private_name FROM users WHERE id = ?', [family_owner_id($user)]) ?: []) : null, // 家族のアカウントのとき、持ち主のプライベート版の名前
                 'family_owner_offmark' => is_family($user) ? get_prefs(['id' => family_owner_id($user)])['offmark']['me'] : null, // 家族のアカウントのとき、持ち主の休みの出し方（プライベート版の設定）
-                'family_preview' => isset($GLOBALS['family_preview_info']) ? ['until' => $GLOBALS['family_preview_info']['until']] : null, // 管理者の確認用の表示のとき
                 'backup_alert' => is_admin($user) ? backup_alert_for_screen() : null, // 月1回の手動バックアップのお知らせ（管理者だけ）
                 'prefs' => get_prefs($user),
                 'work_tags' => cfg('work_tags'),

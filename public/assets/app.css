@@ -937,9 +937,6 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .set-body .sc-table.sc-grid { max-width: none; }
 
 /* 家族のアカウント・家族の招待 */
-/* 管理者の「家族の画面の確認」: 上に出す帯 */
-.preview-bar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 6px 12px; background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line); }
-.preview-bar .btn { margin-left: auto; }
 .fam-pill { background: var(--private-soft); color: var(--private); white-space: nowrap; }
 @media (max-width: 640px) { .topbar-in .fam-menu { margin-left: auto; } } /* 家族のアカウント: スマホで、名前のメニューを右に寄せる（左端にあると、開いたメニューが画面の外に切れる） */
 .fam-box .fam-member { margin: 8px 0; }

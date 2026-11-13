@@ -33,7 +33,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('.set-switch button:has-text("会社の管理")'); await a.waitForSelector('.admin-page');
   ok('切り替えで、会社の管理のページになる（URL は #admin）', a.url().endsWith('#admin') && (await a.locator('.settings-page > h2').innerText()) === '会社の管理');
   t = await titles(a);
-  ok('会社の管理: 社員・休業日・家族の画面の確認・会議室・点検項目・Slack通知・会社用の共有の7項目', t.join(',') === '社員の管理,会社の休業日,家族の画面の確認,会議室の設定,点検項目（年間計画）,Slack通知,会社用の共有', t); // 点検項目（年間計画）・家族の画面の確認が増えたので、5 → 7項目
+  ok('会社の管理: 社員・休業日・会議室・点検項目・Slack通知・会社用の共有の6項目', t.join(',') === '社員の管理,会社の休業日,会議室の設定,点検項目（年間計画）,Slack通知,会社用の共有', t); // 点検項目（年間計画）が増えたので、5 → 6項目
   ok('まとまりの見出し（人と日付・通知と共有・管理の道具）', (await a.locator('.set-content > .set-group').allInnerTexts()).join(',') === '人と日付,通知と共有,管理の道具');
   ok('管理の道具は、4つのタイル（利用状況・変更履歴・バックアップ・運用の手引き）', (await a.locator('#set-tools .set-tile').count()) === 4 && (await a.getAttribute('#set-backup', 'href')) === 'backup.php' && (await a.getAttribute('#set-guide', 'target')) === '_blank');
   await a.waitForFunction(() => document.querySelector('#set-slack .set-sum').innerText.trim() !== '' && document.querySelector('#set-usage .tile-sub').innerText.trim() !== '' && document.querySelector('#set-backup .tile-sub').innerText.trim() !== '');
