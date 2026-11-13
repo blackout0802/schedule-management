@@ -606,7 +606,7 @@
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
       if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
       return [item('年間計画' + (S.insp && S.insp.mine ? '（' + S.insp.mine + '）' : ''), openAnnualPage, close, 'Pマークなどの定期点検の年間計画'), S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
-    });
+    }, FAMACCT ? 'fam-menu' : '');
     document.addEventListener('click', closeAllMenus);
 
     var tabs = FAMACCT ? null : el('div', { class: 'tabs', role: 'tablist' },
