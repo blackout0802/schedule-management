@@ -20,6 +20,8 @@ async function login(b, email, pw) {
   await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal'));
   const s = await login(b, 'suzuki@example.com', 'suzukipass1');
   await s.evaluate(() => localStorage.setItem('sched.span', '"week"')); await s.reload(); await s.waitForSelector('.cal');
+  // 日報の「当日」（cur）は、土日には次の出勤日（来週の月曜など）になる。週の表示が cur の週になるまで進める（どの曜日でも通るように）
+  for (let i = 0; i < 3 && !(await s.locator('.cell[data-date="' + cur + '"]').count()); i++) { await s.click('button[aria-label="次の週"]'); await s.waitForTimeout(400); }
   await s.selectOption('#who-sel', { label: '自分' }).catch(() => {}); await s.waitForSelector('.bar:has-text("棚卸し")');
   const sb = await s.locator('.bar:has-text("棚卸し")').first().innerText();
   ok('一緒にやる人（鈴木さん）の「自分」の表示にも出る。先頭に、持ち主と一緒にやる人の姓', sb.startsWith('山田・鈴木｜'), sb);
