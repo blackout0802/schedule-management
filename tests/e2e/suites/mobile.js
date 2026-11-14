@@ -13,8 +13,9 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await Promise.all([p.waitForURL('**/index.php'), p.tap('button[type=submit]')]); await p.waitForSelector('.cal'); await p.waitForTimeout(500);
   const size = () => p.evaluate(() => ({ h: document.documentElement.scrollHeight, vh: window.innerHeight, w: document.documentElement.scrollWidth, vw: window.innerWidth }));
   const fit = async (n) => { const s = await size(); ok(n + ': 1画面に収まる（縦にスクロールしない）', s.h <= s.vh, s); ok(n + ': 横にはみ出さない', s.w <= s.vw, s); };
-  // カレンダー
-  await fit('カレンダー');
+  // カレンダー（v1.112.0 から、カレンダーの下に「予定の一覧」があるので、ページは縦に続く。カレンダー自体が1画面に収まることを確かめる）
+  const calFit = async (n) => { const s = await p.evaluate(() => ({ bottom: Math.round(document.querySelector('.cal-wrap').getBoundingClientRect().bottom + scrollY), vh: innerHeight, w: document.documentElement.scrollWidth, vw: innerWidth, ag: !!document.querySelector('.cal-wrap + #agenda') })); ok(n + ': カレンダーは1画面に収まり、その下に予定の一覧', s.bottom <= s.vh && s.ag, s); ok(n + ': 横にはみ出さない', s.w <= s.vw, s); };
+  await calFit('カレンダー');
   const top = await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height);
   ok('上の帯は2行（タイトル／設定／ユーザー と 業務版・プライベート版）で、90px以内', top <= 90, top);
   await p.screenshot({ path: 'mobile-top.png', clip: { x: 0, y: 0, width: 390, height: 160 } });
@@ -26,11 +27,11 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   // 6週ある月でも、1画面
   let guard = 0; while ((await p.locator('.week').count()) < 6 && guard++ < 14) { await p.tap('button[aria-label="次の月"]'); await p.waitForTimeout(250); }
   ok('6週ある月を探せた', (await p.locator('.week').count()) === 6);
-  await fit('6週の月のカレンダー');
+  await calFit('6週の月のカレンダー');
   await p.tap('button:has-text("今日")'); await p.waitForTimeout(300);
   // 予定を追加するダイアログ
-  await p.locator('.cell:not(.other)').nth(10).tap(); await p.waitForSelector('.modal');
-  if (!(await p.locator('.modal input[name=title]').count())) { await p.tap('.modal button:has-text("予定を追加")'); }
+  await p.locator('.cell:not(.other)').nth(10).tap(); await p.waitForSelector('#agenda .ag-selbar'); // スマホは、日付を押すと一覧のその日が選ばれる（v1.112.0〜）
+  await p.tap('#agenda button:has-text("この日に予定を追加")');
   await p.waitForSelector('.modal input[name=title]'); await p.waitForTimeout(200);
   const mh = await p.evaluate(() => { const m = document.querySelector('.modal'); const r = m.getBoundingClientRect(); return { h: r.height, vh: innerHeight, right: r.right, w: innerWidth, over: Array.from(m.querySelectorAll('input,select,textarea')).filter(e => e.getBoundingClientRect().right > r.right + 1).length }; });
   ok('予定の追加ダイアログが、1画面に収まる', mh.h <= mh.vh - 16, mh);
@@ -48,7 +49,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.tap('.pane-seg label:has-text("ToDo")'); await p.waitForSelector('#todo-mgr', { state: 'visible' });
   await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal');
   // プライベート版
-  await p.tap('.tab[data-view=me]'); await p.waitForTimeout(400); await fit('プライベート版');
+  await p.tap('.tab[data-view=me]'); await p.waitForTimeout(400); await calFit('プライベート版');
   // 設定
   await p.goto(BASE + 'index.php#settings'); await p.waitForSelector('.settings-page'); await p.waitForTimeout(500);
   const secs = await p.evaluate(() => ({ n: document.querySelectorAll('.set-sec.collapsible').length, open: document.querySelectorAll('.set-sec.collapsible.open').length, nav: getComputedStyle(document.querySelector('.set-nav')).display, h: document.documentElement.scrollHeight }));
