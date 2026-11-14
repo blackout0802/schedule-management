@@ -84,7 +84,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await small('日報メモ（日報の入力欄を含む）');
   await p.tap('.pane-seg label:has-text("ToDo")'); await p.waitForSelector('#todo-mgr', { state: 'visible' }); await small('ToDo');
   await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal'); await small('カレンダー（表示する人）');
-  await p.locator('.cell:not(.other)').nth(10).tap(); await p.waitForSelector('.modal'); if (!(await p.locator('.modal input[name=title]').count())) await p.tap('.modal button:has-text("予定を追加")'); await p.waitForSelector('.modal input[name=title]'); await small('予定の追加ダイアログ'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+  await p.locator('.cell:not(.other)').nth(10).tap(); await p.waitForSelector('#agenda .ag-selbar'); await p.tap('#agenda button:has-text("この日に予定を追加")'); await p.waitForSelector('.modal input[name=title]'); await small('予定の追加ダイアログ'); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
   ok('画面でエラーが出ていない', errs.length === 0, errs);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
