@@ -27,13 +27,15 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   const card = p.locator('.kb-card:has-text("見積書を作る")');
   await card.locator('button:has-text("日付")').click();
   await p.waitForSelector('.modal input[type=date]');
-  const today = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date());
+  // 置く日は、日報の「当日」（土日は次の出勤日になる）。今日にすると、土日には日報の当日に入らず、落ちていた（どの曜日でも通るように）
+  const today = (await p.evaluate(async () => (await fetch('api.php?action=memo_get')).json())).cur;
   await p.fill('.modal input[type=date]', today); await p.click('.modal button[type=submit]');
   await p.waitForTimeout(900);
   ok('置いたToDoは「進行中」の列に移る', await p.locator('.kb-col.doing .kb-card:has-text("見積書を作る")').count() === 1 || await p.locator('.kb-col:has(.kb-card:has-text("見積書を作る"))').getAttribute('class').then(c => /doing/.test(c)));
   ok('カードに置いた日が出る', await p.locator('.kb-card:has-text("見積書を作る") .pill.sched').count() === 1);
   // カレンダーに予定がある
   await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal');
+  if (!(await p.locator('.cell[data-date="' + today + '"]').count())) { await p.click('button[aria-label="次の月"]'); await p.waitForSelector('.cell[data-date="' + today + '"]'); } // 当日が来月（月末の土日）のとき
   await p.waitForSelector('.bar:has-text("見積書を作る")');
   ok('カレンダーに予定が出ている（まだ取り消し線なし）', await p.locator('.bar.work:has-text("見積書を作る")').count() === 1 && await p.locator('.bar.done:has-text("見積書を作る")').count() === 0);
   // 完了へ
