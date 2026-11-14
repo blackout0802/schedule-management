@@ -33,7 +33,7 @@ const day1 = new Date(t.getFullYear(), t.getMonth(), 1);
   await post(y, 'event_save', { kind: 'private', title: '家族旅行', start: ymd(tripA), end: ymd(tripZ), band: 'teal' });
   if (hasPast) await post(y, 'event_save', { kind: 'private', title: '歯医者', start: ymd(day1), end: ymd(day1), start_time: '19:00' });
   await post(y, 'event_save', { kind: 'work', title: '棚の整理', tag: '個人作業', start: today, end: today });
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me', { state: 'attached' }); await y.waitForSelector('#agenda');
+  await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me', { state: 'attached' }); await y.waitForFunction(() => /ポケモン/.test(document.getElementById('agenda')?.textContent || '')); // 予定を読み込む前の一覧を見ないように、予定が出るまで待つ（CI で1回、空の一覧を見て落ちた）
 
   // ---- 月の表示（プライベート版）
   const rows = async () => y.locator('#agenda .ag-item').allInnerTexts();
@@ -78,7 +78,7 @@ const day1 = new Date(t.getFullYear(), t.getMonth(), 1);
   await y.click('.span-sw button:has-text("月")'); await y.waitForSelector('#agenda');
 
   // ---- 業務版（全社）: ほかの人の予定は、その人の名前
-  await y.click('.tab[data-view=team]'); await y.waitForSelector('.view-banner:not(.me)', { state: 'attached' }); await y.waitForSelector('#agenda');
+  await y.click('.tab[data-view=team]'); await y.waitForSelector('.view-banner:not(.me)', { state: 'attached' }); await y.waitForFunction(() => /棚の整理/.test(document.getElementById('agenda')?.textContent || ''));
   r = await rows(); ok('業務版（自分）: 自分の業務の予定が出て、ほかの人の予定は出ない', r.some(x => x.includes('自分｜棚の整理')) && !r.some(x => x.includes('全社の朝礼')), r);
   await y.selectOption('#who-sel', 'all'); await y.waitForFunction(() => /全社の朝礼/.test(document.getElementById('agenda')?.textContent || ''));
   r = await rows();
@@ -90,7 +90,7 @@ const day1 = new Date(t.getFullYear(), t.getMonth(), 1);
   await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me', { state: 'attached' });
   await post(y, 'event_save', { kind: 'private', title: '家族で外食', start: today, end: today, start_time: '19:00', family_shared: 1 });
   const sh = await post(y, 'share_create', { kind: 'family' });
-  const g = await mk(Object.assign({ colorScheme: 'dark' }, phone)); await g.goto(BASE + sh.path); await g.waitForSelector('#agenda');
+  const g = await mk(Object.assign({ colorScheme: 'dark' }, phone)); await g.goto(BASE + sh.path); await g.waitForFunction(() => /家族で外食/.test(document.getElementById('agenda')?.textContent || ''));
   const gr = await g.locator('#agenda .ag-item').allInnerTexts();
   ok('家族用リンク: 一覧が出る（家族に共有した予定）', gr.some(x => x.includes('家族で外食') && x.includes('19:00')), gr);
   await g.locator('.cell[data-date="' + today + '"]').click({ position: { x: 20, y: 4 } }); await g.waitForSelector('#agenda .ag-selbar');
