@@ -16,8 +16,11 @@ const BASE = 'http://127.0.0.1:8099/';
   await touch(p, 250, cy, 215, cy); ok('短いスワイプ（35px）では、動かない', (await month(p)) === m0);
   await touch(p, 200, cy, 150, cy + 200); ok('縦に動かす（スクロール）では、動かない', (await month(p)) === m0);
   await touch(p, 300, cy, 100, cy, 1500); ok('ゆっくり動かした（1.5秒）ときは、動かない', (await month(p)) === m0);
-  await p.tap('.cell >> nth=10'); await p.waitForSelector('.modal'); ok('日付のタップで、これまでどおり、その日の予定が出る', (await p.locator('.modal').innerText()).includes('この日'));
-  await touch(p, 320, 400, 80, 400); ok('ダイアログを開いている間は、動かない', (await month(p)) === m0); await p.click('.modal button:has-text("閉じる")'); await p.waitForFunction(() => !document.querySelector('.modal'));
+  // v1.112.0 から、スマホで日付をタップすると、ポップアップではなく、下の「予定の一覧」のその日が選ばれる（仕様を変えたため）
+  await p.tap('.cell >> nth=10'); await p.waitForSelector('#agenda .ag-selbar'); ok('日付のタップで、月は変わらず、予定の一覧のその日が選ばれる', (await month(p)) === m0 && (await p.locator('.modal').count()) === 0);
+  await p.click('#agenda button:has-text("この日に予定を追加")'); await p.waitForSelector('.modal');
+  await touch(p, 320, 400, 80, 400); ok('ダイアログを開いている間は、動かない', (await month(p)) === m0); await p.click('.modal button:has-text("キャンセル")'); await p.waitForFunction(() => !document.querySelector('.modal'));
+  await p.evaluate(() => window.scrollTo(0, 0));
   // 連続でめくる
   for (let i = 0; i < 3; i++) await touch(p, 320, cy, 80, cy); ok('続けて3回スワイプすると、3か月先に進む', (await month(p)) === label(3), await month(p));
   await p.click('.toolbar button:has-text("今日")'); await p.waitForTimeout(400);
