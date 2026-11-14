@@ -1125,3 +1125,31 @@ table.annual-tbl { border-collapse: separate; border-spacing: 0; width: 100%; mi
 .band-sw[aria-pressed="true"] { border-color: var(--ink); }
 .band-sw[aria-pressed="true"]::after { content: "✓"; color: var(--bw-fg); font-weight: 700; font-size: 14px; line-height: 1; }
 .band-name { font-size: 12px; color: var(--muted); }
+
+/* スマホ: カレンダーの下の、予定の一覧（v1.112.0。app.js の agendaSection）。1件1行「日付 時刻 誰｜予定」。色の点は、帯と同じ色 */
+.agenda { margin-top: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.ag-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.ag-head h3 { margin: 0; font-size: 15px; }
+.ag-range { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ag-selbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; background: var(--work-soft); color: var(--work); font-size: 13px; }
+.ag-selbar > span { margin-right: auto; }
+.ag-selbar .ag-unsel { color: inherit; font-size: 16px; line-height: 1; padding: 2px 8px; }
+.ag-past { display: block; width: 100%; text-align: left; border: 0; background: var(--surface-2); color: var(--work); font: inherit; font-size: 13px; padding: 6px 12px; cursor: pointer; }
+.ag-list { list-style: none; margin: 0; padding: 0; }
+.ag-list > li + li { border-top: 1px solid var(--line); }
+.ag-item { display: flex; align-items: baseline; gap: 8px; width: 100%; min-width: 0; text-align: left; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px; padding: 8px 12px; cursor: pointer; }
+.ag-item.hl { background: var(--work-soft); }
+.ag-item.past { opacity: .6; }
+.ag-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; align-self: center; background: var(--muted); }
+.ag-item.work .ag-dot { background: var(--uc-work, var(--work)); }
+.ag-item.off .ag-dot { background: var(--uc-off, var(--off)); }
+.ag-item.private .ag-dot { background: var(--uc-private, var(--private)); }
+.ag-item.room .ag-dot { background: var(--rc, var(--muted)); }
+.ag-date { flex: none; min-width: 5.6em; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ag-time { flex: none; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ag-text { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-who { font-weight: 700; }
+.ag-none .ag-text { color: var(--muted); }
+.ag-item.done .ag-text, .ag-item.deleted .ag-text { text-decoration: line-through; opacity: .7; }
+.ag-empty { margin: 0; padding: 10px 12px; font-size: 13px; }
+.cal .cell.ag-sel { box-shadow: inset 0 0 0 2px var(--work); }

@@ -1281,7 +1281,7 @@
   /* 日付の横の「休」のアイコン（半休は「半休」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
   function offMarkFor(e, ds) {
     return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? '半休' : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
-      onclick: function (ev) { ev.stopPropagation(); if (useDayPopup()) openDayPopup(ds); else openEventDialog(e); } });
+      onclick: function (ev) { ev.stopPropagation(); if (useDayPopup()) dayTap(ds); else openEventDialog(e); } });
   }
   function weekSegments(days) {
     var segs = [];
@@ -1311,7 +1311,7 @@
   function barFor(g, days) {
     var e = g.ev;
     if (e.kind === 'room') { // 会議室の予約の帯（会議室予約のページと同じ見た目: 部屋の色・頭に部屋の一文字）
-      var rbar = roomsBar(e.rb, allView(), function () { if (NARROW()) openDayPopup(e.start); else openRoomView(e.rb); });
+      var rbar = roomsBar(e.rb, allView(), function () { if (NARROW()) dayTap(e.start); else openRoomView(e.rb); });
       rbar.style.gridColumn = (g.s + 1) + ' / ' + (g.e + 2); rbar.style.gridRow = String(g.lane + 2);
       return rbar;
     }
@@ -1324,7 +1324,7 @@
         if (NARROW()) { // スマホ: 帯の文字は短く切れるので、押した日の予定の一覧を出す
           var rect = bar.parentNode.getBoundingClientRect();
           var col = Math.max(g.s, Math.min(g.e, Math.floor((ev.clientX - rect.left) / (rect.width / 7))));
-          return openDayPopup(ymd(days[col]));
+          return dayTap(ymd(days[col]));
         }
         openEventDialog(e);
       },
@@ -1447,6 +1447,8 @@
     if (!FAMILY && !NARROW()) tips.push('ショートカット: ? を押すと、キーの一覧が出ます。');
     if (NARROW()) tips.push('カレンダーを左右にスワイプすると、前の月・次の月に切り替わります。');
     if (POLL_MS && !FAMILY) tips.push('他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に、自動で反映されます。');
+    var ag = agendaSection(); // スマホ: カレンダーのすぐ下に、表示している期間の予定の一覧（「日付 誰｜予定」）
+    if (ag) board.appendChild(ag);
     if (!SHARE && S.view === 'me') return; // プライベート版は、カレンダーの下（凡例・月のまとめ）を出さない
     var legend = el('div', { class: 'legend' },
       personColorOn() ? personLegend() : [el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
@@ -1506,9 +1508,9 @@
     var week = el('div', { class: 'week', role: 'row', style: 'grid-template-rows:' + HEAD + 'px repeat(' + VIS + ',' + LH + 'px) ' + MORE + 'px' });
     days.forEach(function (d, c) {
       var s = ymd(d), hol = S.holidays[s];
-      var cls = 'cell' + (!wk && d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '');
+      var cls = 'cell' + (!wk && d.getMonth() + 1 !== S.month ? ' other' : '') + (d.getDay() === 0 ? ' sun' : '') + (d.getDay() === 6 ? ' sat' : '') + (hol ? ' hol' : '') + (s === todayStr ? ' today' : '') + (S.offDays && S.offDays[s] && offdayPref().on ? ' offday' : '') + (S.agSel === s && agendaOn() ? ' ag-sel' : '');
       week.appendChild(el('div', { class: cls, role: 'gridcell', 'data-col': String(c), 'data-date': s,
-        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) openDayPopup(s); else if (!SHARE) openEventDialog(null, s); } },
+        style: 'grid-column:' + (c + 1) + ';grid-row:1 / ' + (L + 3), onclick: function () { if (useDayPopup()) dayTap(s); else if (!SHARE) openEventDialog(null, s); } },
         el('div', { class: 'num' }, el('span', { class: 'd', text: String(d.getDate()) }), (function () { var o = S.events.filter(function (e) { return offAsIcon(e) && shownOn(e, s); })[0]; return o ? offMarkFor(o, s) : null; })(), hol ? el('span', { class: 'hname', text: hol }) : null)));
     });
     var hidden = [0, 0, 0, 0, 0, 0, 0];
@@ -1519,7 +1521,7 @@
     hidden.forEach(function (n, c) {
       if (!n) return;
       var ds = ymd(days[c]);
-      week.appendChild(el('button', { type: 'button', class: 'more', style: 'grid-column:' + (c + 1) + ';grid-row:' + (VIS + 2), title: 'この日の予定を、すべて見る', text: '他 ' + n + '件', onclick: function (ev) { ev.stopPropagation(); openDayPopup(ds); } }));
+      week.appendChild(el('button', { type: 'button', class: 'more', style: 'grid-column:' + (c + 1) + ';grid-row:' + (VIS + 2), title: 'この日の予定を、すべて見る', text: '他 ' + n + '件', onclick: function (ev) { ev.stopPropagation(); dayTap(ds); } }));
     });
 
     // ドロップ先: ポインタのある列が、その日になる（バーの上でも同じ）
@@ -3296,6 +3298,104 @@
         SHARE ? null : el('button', { class: 'btn primary', type: 'button', text: '＋ この日に予定を追加', onclick: function () { ov.close(); openEventDialog(null, ds); } }),
         el('button', { class: 'btn', type: 'button', text: '閉じる', onclick: function () { ov.close(); } }))));
     ov.outsideClose = true;
+  }
+  /* ---------- スマホ: カレンダーの下の、予定の一覧（v1.112.0） ----------
+     表示している期間（週の表示は7日・月の表示はその月）の予定を、1件1行の「日付 時刻 誰｜予定」で並べる。
+     2日以上の予定は「11/12〜13」の1行にまとめる。その日の中は、休み → 終日 → 時刻の早い順（日付のポップアップと同じ）。
+     月の表示で今日がその月にあるときは、今日より前に終わった予定を「過去の予定 N件」に畳む（S.agPast で開く。開き直すと畳む）。
+     日付・帯・「他 n件」を押すと、ポップアップの代わりに、一覧のその日の行へ移って色を付ける（S.agSel）。予定の追加は、選んだ日の「＋ この日に予定を追加」から */
+  function agendaOn() { return NARROW() && S.mode !== 'list'; }
+  function agendaRange() {
+    if (S.span === 'week') return { a: S.wk, z: ymd(addDays(parse(S.wk), 6)) };
+    return { a: S.year + '-' + pad(S.month) + '-01', z: ymd(new Date(S.year, S.month, 0)) };
+  }
+  function dayTap(ds) { if (agendaOn() && document.getElementById('agenda')) agendaSelect(ds); else openDayPopup(ds); }
+  function agMd(s) { var d = parse(s); return (d.getMonth() + 1) + '/' + d.getDate(); }
+  function agWhen(e, first) {
+    if (e.start === e.end || e.kind === 'room') return mdw(first);
+    var a = parse(e.start), z = parse(e.end);
+    return agMd(e.start) + '〜' + (a.getMonth() === z.getMonth() && a.getFullYear() === z.getFullYear() ? z.getDate() : agMd(e.end));
+  }
+  /* 誰の予定か: ログインした本人の予定は「自分」（一緒にやる人がいれば「自分・佐藤」）。ほかは、カレンダーの帯と同じ名前の出し方 */
+  function agWho(e) {
+    if (e.kind === 'room') return e.rb.owner_name ? ownerShort({ owner_name: e.rb.owner_name }) : '';
+    if (FAMILY) return SHARE.pname || '';
+    if (!SHARE && S.me && e.owner_id === S.me.user.id) return ['自分'].concat(e.kind === 'work' ? (e.participants || []).map(function (u) { return ownerShort({ owner_name: u.name }); }) : []).join('・');
+    if (!e.owner_name) return '';
+    if (e.kind === 'work') return evPeople(e);
+    if (FAMACCT || e.kind === 'private') return famWho(e);
+    return ownerShort(e);
+  }
+  function agTitle(e) {
+    if (e.kind === 'room') return e.rb.title || '会議室の予約';
+    if (e.kind === 'off') {
+      if (FAMILY || FAMACCT || (!SHARE && S.view === 'me')) return /半休/.test(e.tag || '') ? '半休' : '休み';
+      return (e.tag || '休み') + (e.title && e.title !== '休み' ? '（' + e.title + '）' : '');
+    }
+    return (e.important ? '★ ' : '') + (e.recurring ? '↻ ' : '') + e.title;
+  }
+  function agendaItems() {
+    var r = agendaRange(), out = [];
+    calEvents().forEach(function (e) {
+      if (e.end < r.a || e.start > r.z) return;
+      var first = null, last = null;
+      for (var d = parse(e.start < r.a ? r.a : e.start), end = parse(e.end > r.z ? r.z : e.end), n = 0; d <= end && n < 40; d = addDays(d, 1), n++) {
+        var s = ymd(d); if (shownOn(e, s)) { if (!first) first = s; last = s; }
+      }
+      if (first) out.push({ e: e, first: first, last: last });
+    });
+    var ord = function (e) { return e.kind === 'off' ? 0 : 1; };
+    out.sort(function (x, y) { return x.first < y.first ? -1 : x.first > y.first ? 1 : ord(x.e) - ord(y.e) || (x.e.start_time || '').localeCompare(y.e.start_time || '') || x.e.id - y.e.id; });
+    return out;
+  }
+  function agendaSection() {
+    if (!agendaOn()) return null;
+    var r = agendaRange(), today = ymd(new Date()), items = agendaItems(), sel = S.agSel && S.agSel >= r.a && S.agSel <= r.z ? S.agSel : '';
+    var fold = S.span !== 'week' && today >= r.a && today <= r.z; // 月の表示で、今日がその月にあるとき
+    var past = fold ? items.filter(function (x) { return x.last < today; }) : [];
+    var showPast = !past.length || !!S.agPast;
+    var rows = [];
+    var noneRow = function (ds) { return el('li', null, el('div', { class: 'ag-item ag-none hl', 'data-date': ds }, el('span', { class: 'ag-date', text: mdw(ds) }), el('span', { class: 'ag-text', text: 'この日の予定はありません' }))); };
+    var selDone = !sel;
+    items.forEach(function (x) {
+      if (!showPast && x.last < today) return;
+      if (!selDone && x.first > sel) { rows.push(noneRow(sel)); selDone = true; }
+      var e = x.e, hit = !!sel && shownOn(e, sel);
+      if (hit) selDone = true;
+      var who = agWho(e);
+      rows.push(el('li', null, el('button', { type: 'button', class: 'ag-item ' + e.kind + (e.kind === 'room' ? ' rm-s' + roomOf(e.rb.room_id).slot : '') + (hit ? ' hl' : '') + (e.deleted ? ' deleted' : '') + (e.done ? ' done' : '') + (x.last < today ? ' past' : ''),
+        'data-date': x.first, 'data-ev': String(e.id), style: e.kind === 'room' ? null : (eventColorStyle(e) || null),
+        title: e.kind === 'room' ? null : eventLabel(e, true, false, true),
+        onclick: function () { if (e.kind === 'room') openRoomView(e.rb); else openEventDialog(e); } },
+        el('i', { class: 'ag-dot', 'aria-hidden': 'true' }),
+        el('span', { class: 'ag-date', text: agWhen(e, x.first) }),
+        e.start_time ? el('span', { class: 'ag-time', text: e.start_time }) : null,
+        el('span', { class: 'ag-text' }, who ? el('b', { class: 'ag-who', text: who }) : null, who ? '｜' : null, (e.deleted ? '削除された予定: ' : '') + agTitle(e)))));
+    });
+    if (!selDone && (showPast || sel >= today)) rows.push(noneRow(sel));
+    var shown = items.length - (showPast ? 0 : past.length);
+    return el('section', { class: 'agenda', id: 'agenda', 'aria-label': '予定の一覧' },
+      el('div', { class: 'ag-head' }, el('h3', { text: '予定の一覧' }), el('span', { class: 'ag-range', text: agMd(r.a) + '〜' + agMd(r.z) + '・' + items.length + '件' })),
+      sel ? el('div', { class: 'ag-selbar' }, el('span', null, el('b', { text: mdw(sel) }), (S.holidays[sel] ? ' ' + S.holidays[sel] : '') + (sel === today ? '（今日）' : '')),
+        SHARE ? null : el('button', { class: 'btn small primary', type: 'button', text: '＋ この日に予定を追加', onclick: function () { openEventDialog(null, sel); } }),
+        el('button', { class: 'btn small ghost ag-unsel', type: 'button', text: '×', title: '選ぶのをやめる', 'aria-label': '日付を選ぶのをやめる', onclick: function () { agendaSelect(''); } })) : null,
+      past.length ? el('button', { class: 'ag-past', type: 'button', 'aria-expanded': showPast ? 'true' : 'false', text: showPast ? '▾ 過去の予定（' + past.length + '件）を隠す' : '▸ 過去の予定 ' + past.length + '件',
+        onclick: function () { S.agPast = !showPast; agendaRefresh(); } }) : null,
+      rows.length ? el('ul', { class: 'ag-list' }, rows) : el('p', { class: 'muted ag-empty', text: shown || items.length ? 'これからの予定はありません。' : 'この期間の予定はありません。' }));
+  }
+  function agendaRefresh() {
+    var old = document.getElementById('agenda'), nu = agendaSection();
+    if (old && nu) old.parentNode.replaceChild(nu, old);
+    return nu;
+  }
+  function agendaSelect(ds) {
+    S.agSel = ds || '';
+    if (ds && ds < ymd(new Date())) S.agPast = true; // 過去の日を選んだら、畳んだ過去の予定も開く
+    Array.prototype.forEach.call(document.querySelectorAll('.cal .cell'), function (c) { c.classList.toggle('ag-sel', !!ds && c.getAttribute('data-date') === ds); });
+    var sec = agendaRefresh();
+    if (!sec || !ds) return;
+    var hit = sec.querySelector('.ag-item.hl') || sec.querySelector('.ag-selbar');
+    try { (hit || sec).scrollIntoView({ block: 'center', behavior: window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } catch (x) { (hit || sec).scrollIntoView(); }
   }
   function openDeletedView(ev) {
     var when = ev.start === ev.end ? mdw(ev.start) : mdw(ev.start) + ' 〜 ' + mdw(ev.end);

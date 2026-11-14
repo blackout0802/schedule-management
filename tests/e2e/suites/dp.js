@@ -17,18 +17,22 @@ const BASE = 'http://127.0.0.1:8099/';
   // 背景: ダーク端末では黒い（自動）
   const bg = () => a.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const dark = await bg(); ok('端末がダークモードだと、自動のときは黒い背景になる', /rgb\(14, 21, 34\)/.test(dark), dark);
-  // 日付を押す → ポップアップ
-  await a.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('.day-list');
-  const tx = await a.locator('.modal').innerText();
-  ok('日付（空き）を押すと、その日の予定がポップアップで出る', tx.includes('全体会議') && tx.includes('10:00') && tx.includes('会議室Aで実施') && tx.includes('有給'), tx);
-  ok('本人が休み（有給）の日には、期間のある業務（棚卸し作業 13〜15日）は出さない（休みを優先）', !tx.includes('棚卸し作業'), tx);
-  ok('見出しに、日付と曜日が出る', /\d+\/14（.）/.test(await a.locator('.modal h2, .modal .modal-title, .modal header').first().innerText().catch(() => tx)) || /\d+\/14（.）/.test(tx));
-  ok('「この日に予定を追加」がある', tx.includes('この日に予定を追加'));
-  await a.click('.day-item:has-text("全体会議")'); await a.waitForSelector('.modal input[name=title]'); ok('予定を押すと、編集画面が開く', (await a.inputValue('.modal input[name=title]')) === '全体会議'); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
-  // 帯を押しても、押した日の一覧が出る（スマホ）
-  await a.locator('.bar:has-text("棚卸し")').first().click({ position: { x: 10, y: 8 } }); await a.waitForSelector('.day-list'); ok('スマホでは、帯を押しても、その日の一覧が出る', (await a.locator('.modal').innerText()).includes('棚卸し作業'));
-  await a.click('.modal button:has-text("この日に予定を追加")'); await a.waitForSelector('.modal input[name=title]'); ok('「この日に予定を追加」で、新規の登録画面が開く', (await a.inputValue('.modal input[name=title]')) === ''); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
-  await a.locator('.cell[data-date="' + `${M}-22` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('.day-list, .modal .muted'); ok('予定のない日は、「予定はありません」', (await a.locator('.modal').innerText()).includes('予定はありません')); await a.click('.modal button:has-text("閉じる")');
+  // 日付を押す → スマホでは、ポップアップの代わりに、カレンダーの下の「予定の一覧」のその日に色が付く（v1.112.0 で仕様を変えた。以前はポップアップ）
+  await a.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('#agenda .ag-selbar');
+  ok('スマホで日付を押しても、ポップアップは出ない', (await a.locator('.modal').count()) === 0);
+  const hl = (await a.locator('#agenda .ag-item.hl').allInnerTexts()).join(' / ');
+  ok('日付を押すと、一覧のその日の予定に色が付く（時刻・休みも）', hl.includes('全体会議') && hl.includes('10:00') && hl.includes('有給'), hl);
+  ok('本人が休み（有給）の日には、期間のある業務（棚卸し作業 13〜15日）は、その日の行に入らない（休みを優先）', !hl.includes('棚卸し作業'), hl);
+  ok('押した日に、カレンダーのマスにも枠が付く', (await a.getAttribute('.cell[data-date="' + `${M}-14` + '"]', 'class')).includes('ag-sel'));
+  const sb = await a.locator('#agenda .ag-selbar').innerText();
+  ok('選んだ日の見出しに、日付と曜日、「この日に予定を追加」', /\d+\/14（.）/.test(sb) && sb.includes('この日に予定を追加'), sb);
+  await a.click('#agenda .ag-item.hl:has-text("全体会議")'); await a.waitForSelector('.modal input[name=title]'); ok('一覧の予定を押すと、編集画面が開く', (await a.inputValue('.modal input[name=title]')) === '全体会議'); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
+  // 帯を押しても、押した日が選ばれる（スマホ）
+  await a.locator('.bar:has-text("棚卸し")').first().click({ position: { x: 10, y: 8 } }); await a.waitForFunction(() => /棚卸し作業/.test([...document.querySelectorAll('#agenda .ag-item.hl')].map(x => x.textContent).join(' ')));
+  ok('スマホでは、帯を押すと、押した日の行に色が付く', (await a.locator('.modal').count()) === 0);
+  await a.click('#agenda button:has-text("この日に予定を追加")'); await a.waitForSelector('.modal input[name=title]'); ok('「この日に予定を追加」で、新規の登録画面が開く', (await a.inputValue('.modal input[name=title]')) === ''); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
+  await a.locator('.cell[data-date="' + `${M}-22` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('#agenda .ag-none'); ok('予定のない日は、「この日の予定はありません」の行', (await a.locator('#agenda .ag-none').innerText()).includes('22（'));
+  await a.click('#agenda .ag-unsel'); await a.waitForFunction(() => !document.querySelector('#agenda .ag-selbar')); ok('×で、選ぶのをやめる', (await a.locator('.cal .cell.ag-sel').count()) === 0);
   // 画面の色: 上の帯のアイコン（太陽＝ライト／モニター＝自動／月＝ダーク）
   ok('上の帯に、画面の色のアイコン（ライト・自動・ダーク）が並ぶ', (await a.locator('.topbar .theme-sw button').count()) === 3);
   ok('設定のページには、画面の色の項目は無い', await (async () => { await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page'); const n = await a.locator('#set-theme').count(); await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal'); return n === 0; })());
@@ -42,12 +46,12 @@ const BASE = 'http://127.0.0.1:8099/';
   for (const [i, nm] of [[0, '会社用'], [1, '家族用']]) {
     const g = await mk(phone, 'light'); await g.goto(BASE + sh[i]); await g.waitForSelector('.cal'); await g.waitForTimeout(400);
     if (i === 0) await g.uncheck('#off-only'); // 会社用リンクは、最初は「休みだけ」。業務の予定を見るには、チェックを外す
-    await g.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g.waitForSelector('.modal');
-    const gt = await g.locator('.modal').innerText(); ok(nm + 'リンク: 日付を押すと、その日の予定が出る（閲覧のみ・追加ボタンなし）', (i === 0 ? gt.includes('全体会議') : gt.includes('家族で外食') && gt.includes('19:00')), gt); ok(nm + 'リンク: 「予定を追加」は出ない', !gt.includes('予定を追加'));
-    if (i === 0) { await g.click('.day-item:has-text("全体会議")'); await g.waitForSelector('.modal'); ok('会社用: 予定を押すと、詳細（閲覧）が出る', (await g.locator('.modal').innerText()).includes('予定の詳細')); }
+    await g.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g.waitForSelector('#agenda .ag-selbar');
+    const gt = (await g.locator('#agenda .ag-item.hl').allInnerTexts()).join(' / '); ok(nm + 'リンク: 日付を押すと、一覧のその日の予定に色が付く', (i === 0 ? gt.includes('全体会議') : gt.includes('家族で外食') && gt.includes('19:00')), gt); ok(nm + 'リンク: 「予定を追加」は出ない', !(await g.locator('#agenda').innerText()).includes('予定を追加'));
+    if (i === 0) { await g.click('#agenda .ag-item:has-text("全体会議")'); await g.waitForSelector('.modal'); ok('会社用: 予定を押すと、詳細（閲覧）が出る', (await g.locator('.modal').innerText()).includes('予定の詳細')); }
     ok(nm + 'リンク: 画面の色のアイコン（ライト・自動・ダーク）がある', (await g.locator('header .theme-sw button').count()) === 3);
     await g.close(); }
-  const g2 = await mk(phone, 'light'); await g2.goto(BASE + sh[0]); await g2.waitForSelector('.cal'); await g2.uncheck('#off-only'); await g2.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g2.waitForSelector('.day-list'); await g2.screenshot({ path: 'dp-popup.png' });
+  const g2 = await mk(phone, 'light'); await g2.goto(BASE + sh[0]); await g2.waitForSelector('.cal'); await g2.uncheck('#off-only'); await g2.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g2.waitForSelector('#agenda .ag-item.hl'); await g2.screenshot({ path: 'dp-popup.png', fullPage: true });
   // PC幅では、これまでどおり（空きの日を押すと、登録画面）
   const d = await mk({ viewport: { width: 1280, height: 900 } }, 'light'); await login(d);
   await d.locator('.cell[data-date="' + `${M}-22` + '"]').click({ position: { x: 20, y: 30 } }); await d.waitForSelector('.modal'); ok('PCでは、空きの日を押すと、これまでどおり登録画面', (await d.locator('.modal').innerText()).includes('予定') && !!(await d.locator('.modal input[name=title]').count()));
