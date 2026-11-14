@@ -77,7 +77,9 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   const m = await (await b.newContext({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true })).newPage();
   await m.goto(BASE + path); await m.waitForSelector('.cell[data-date="' + day + '"] .offmark');
   await m.screenshot({ path: 'offmark-mobile.png' });
-  await m.locator('.cell[data-date="' + day + '"] .offmark').tap(); await m.waitForSelector('.modal');
-  ok('スマホ: アイコンを押すと、その日の一覧に休みが出る', (await m.locator('.modal').innerText()).includes('休み'), await m.locator('.modal').innerText());
+  // v1.112.0 から、スマホではポップアップの代わりに、カレンダーの下の「予定の一覧」のその日の行に色が付く（仕様を変えたため）
+  await m.locator('.cell[data-date="' + day + '"] .offmark').tap(); await m.waitForSelector('#agenda .ag-item.hl');
+  const mt = (await m.locator('#agenda .ag-item.hl').allInnerTexts()).join(' / ');
+  ok('スマホ: アイコンを押すと、予定の一覧のその日に休みが出る', mt.includes('休み'), mt);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
