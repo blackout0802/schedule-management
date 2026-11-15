@@ -526,12 +526,12 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .audit-item.delete .au-label { text-decoration: line-through; text-decoration-thickness: 1px; }
 
 /* ---- スマホ: 左右にスワイプして月を切り替える ---- */
-@media (max-width: 640px) { .cal-wrap { touch-action: pan-y; } }
+@media (max-width: 640px) { .cal-wrap, #agenda { touch-action: pan-y; } }
 @keyframes slide-from-right { from { transform: translateX(26px); opacity: .35; } to { transform: none; opacity: 1; } }
 @keyframes slide-from-left { from { transform: translateX(-26px); opacity: .35; } to { transform: none; opacity: 1; } }
-.cal-wrap.slide-next { animation: slide-from-right .22s ease-out; }
-.cal-wrap.slide-prev { animation: slide-from-left .22s ease-out; }
-@media (prefers-reduced-motion: reduce) { .cal-wrap.slide-next, .cal-wrap.slide-prev { animation: none; } }
+.cal-wrap.slide-next, .agenda.slide-next { animation: slide-from-right .22s ease-out; }
+.cal-wrap.slide-prev, .agenda.slide-prev { animation: slide-from-left .22s ease-out; }
+@media (prefers-reduced-motion: reduce) { .cal-wrap.slide-next, .cal-wrap.slide-prev, .agenda.slide-next, .agenda.slide-prev { animation: none; } }
 
 /* ---- v1.29 デザイン: Apple のデザインガイドラインに沿った、上品な見た目（ベース＝案01、見出しだけ案13の大きなタイトル）---- */
 body { letter-spacing: .01em; -webkit-font-smoothing: antialiased; }
@@ -1153,3 +1153,10 @@ table.annual-tbl { border-collapse: separate; border-spacing: 0; width: 100%; mi
 .ag-item.done .ag-text, .ag-item.deleted .ag-text { text-decoration: line-through; opacity: .7; }
 .ag-empty { margin: 0; padding: 10px 12px; font-size: 13px; }
 .cal .cell.ag-sel { box-shadow: inset 0 0 0 2px var(--work); }
+
+/* スマホ: 今日の日付の丸と「休」のアイコンが、1日のマス（約50px）に収まるように詰める（v1.113.0）。
+   以前は今日の丸（左右7px）が広く、アイコンが隣の日のマスの下にはみ出して、押せなかった */
+@media (max-width: 640px) {
+  .cell.today .num .d { padding: 1px 4px; }
+  .num .offmark { padding: 0 3px; font-size: 10px; letter-spacing: -.02em; }
+}

@@ -28,6 +28,20 @@ const BASE = 'http://127.0.0.1:8099/';
   await p.evaluate(() => { window.__sl = []; new MutationObserver(() => { const w = document.querySelector('.cal-wrap'); if (w) window.__sl.push(w.className); }).observe(document.getElementById('board'), { childList: true, subtree: true, attributes: true }); });
   await touch(p, 320, cy, 80, cy, 100); ok('次の月へ: 右から入るアニメーションのクラス（slide-next）が付く', (await p.evaluate(() => window.__sl)).some(c => c.includes('slide-next')));
   await touch(p, 80, cy, 320, cy, 100); ok('前の月へ: 左から入るアニメーションのクラス（slide-prev）が付く', (await p.evaluate(() => window.__sl)).some(c => c.includes('slide-prev')));
+  // 予定の一覧（カレンダーの下）を左右にスワイプしても、月・週が替わる（v1.113.0）
+  await p.click('.toolbar button:has-text("今日")'); await p.waitForTimeout(400);
+  const agBox = async () => { await p.locator('#agenda').scrollIntoViewIfNeeded(); await p.waitForTimeout(150); const bx = await p.locator('#agenda').boundingBox(); return { y: bx.y + Math.min(30, bx.height / 2) }; };
+  let ab = await agBox(); await touch(p, 320, ab.y, 80, ab.y); ok('予定の一覧を左へスワイプ → 次の月', (await month(p)) === label(1), await month(p));
+  ok('予定の一覧も、次の月の範囲になる', (await p.locator('#agenda .ag-range').innerText()).startsWith((M % 12 + 1) + '/1〜'), await p.locator('#agenda .ag-range').innerText());
+  ab = await agBox(); await touch(p, 80, ab.y, 320, ab.y); ok('予定の一覧を右へスワイプ → 元の月', (await month(p)) === m0, await month(p));
+  ab = await agBox(); await touch(p, 200, ab.y, 150, ab.y + 200); ok('予定の一覧を縦に動かす（スクロール）では、動かない', (await month(p)) === m0);
+  ab = await agBox(); await touch(p, 250, ab.y, 215, ab.y); ok('予定の一覧の短いスワイプでは、動かない', (await month(p)) === m0);
+  await p.click('.span-sw button:has-text("週")'); await p.waitForFunction(() => document.querySelectorAll('.cal .week').length === 1);
+  const w0 = await month(p); ab = await agBox(); await touch(p, 320, ab.y, 80, ab.y); await p.waitForTimeout(300);
+  const w1 = await month(p); ok('週の表示: 予定の一覧を左へスワイプ → 次の週', w1 !== w0 && /日〜/.test(w1), [w0, w1]);
+  ab = await agBox(); await touch(p, 80, ab.y, 320, ab.y); await p.waitForTimeout(300); ok('週の表示: 右へスワイプ → 元の週', (await month(p)) === w0, await month(p));
+  await p.click('.span-sw button:has-text("月")'); await p.waitForFunction(() => document.querySelectorAll('.cal .week').length >= 4);
+  await p.evaluate(() => window.scrollTo(0, 0));
   // リスト表示では動かない
   await p.click('.seg label:has-text("リスト")'); await p.waitForTimeout(500); const ml = await month(p); await touch(p, 320, 600, 80, 600); ok('リスト表示では、スワイプしても、月は変わらない', (await month(p)) === ml);
   await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal');
