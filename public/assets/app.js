@@ -1010,10 +1010,11 @@
     S.slide = slide ? (delta > 0 ? 'next' : 'prev') : ''; renderToolbar(); load();
   }
 
-  /* スマホ: カレンダーを、左右にスワイプして、月を切り替える（左へ＝次の月、右へ＝前の月）。
+  /* スマホ: カレンダーを、左右にスワイプして、月を切り替える（左へ＝次の月、右へ＝前の月。週の表示は週）。
+     カレンダーの下の「予定の一覧」（#agenda）を左右にスワイプしても、同じように切り替わる（v1.113.0）。
      縦のスクロール・日付のタップ・入力中・ダイアログを開いている間は、動かさない */
   var swipe = null;
-  function swipeTarget(t) { return !!(t && t.closest && t.closest('#board .cal-wrap') && S.mode === 'cal' && S.page === 'main' && !modals.length && !S.drag); }
+  function swipeTarget(t) { return !!(t && t.closest && (t.closest('#board .cal-wrap') || t.closest('#board #agenda')) && S.mode === 'cal' && S.page === 'main' && !modals.length && !S.drag); }
   document.addEventListener('touchstart', function (e) {
     swipe = null;
     if (e.touches.length !== 1 || !swipeTarget(e.target)) return;
@@ -1278,9 +1279,9 @@
     return (m && m[v] ? m[v] : 'bar') === 'icon';
   }
   function offAsIcon(e) { return e.kind === 'off' && !e.deleted && offMarkIcon() && (!!SHARE || FAMACCT || e.owner_id === S.me.user.id); }
-  /* 日付の横の「休」のアイコン（半休は「半休」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
+  /* 日付の横の「休」のアイコン（半休は「半休」。スマホ幅は、1日のマスに収まるよう「半」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
   function offMarkFor(e, ds) {
-    return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? '半休' : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
+    return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? (NARROW() ? '半' : '半休') : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
       onclick: function (ev) { ev.stopPropagation(); if (useDayPopup()) dayTap(ds); else openEventDialog(e); } });
   }
   function weekSegments(days) {
@@ -1448,7 +1449,7 @@
     if (NARROW()) tips.push('カレンダーを左右にスワイプすると、前の月・次の月に切り替わります。');
     if (POLL_MS && !FAMILY) tips.push('他の人の更新は、約' + Math.round(POLL_MS / 1000) + '秒以内に、自動で反映されます。');
     var ag = agendaSection(); // スマホ: カレンダーのすぐ下に、表示している期間の予定の一覧（「日付 誰｜予定」）
-    if (ag) board.appendChild(ag);
+    if (ag) { if (slide) ag.classList.add('slide-' + slide); board.appendChild(ag); } // スワイプで切り替えたときは、一覧も横から入る
     if (!SHARE && S.view === 'me') return; // プライベート版は、カレンダーの下（凡例・月のまとめ）を出さない
     var legend = el('div', { class: 'legend' },
       personColorOn() ? personLegend() : [el('span', null, el('i', { style: 'background:var(--uc-work, var(--work))' }), '業務'),
