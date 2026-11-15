@@ -1279,9 +1279,9 @@
     return (m && m[v] ? m[v] : 'bar') === 'icon';
   }
   function offAsIcon(e) { return e.kind === 'off' && !e.deleted && offMarkIcon() && (!!SHARE || FAMACCT || e.owner_id === S.me.user.id); }
-  /* 日付の横の「休」のアイコン（半休は「半休」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
+  /* 日付の横の「休」のアイコン（半休は「半休」。スマホ幅は、1日のマスに収まるよう「半」）。押すと、帯を押したときと同じ（スマホ・共有ページは、その日の一覧） */
   function offMarkFor(e, ds) {
-    return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? '半休' : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
+    return el('button', { type: 'button', class: 'offmark', text: /半休/.test(e.tag || '') ? (NARROW() ? '半' : '半休') : '休', title: eventLabel(e, true, false, true) + (e.note ? '\n' + e.note : ''), 'aria-label': eventLabel(e, true, false, true),
       onclick: function (ev) { ev.stopPropagation(); if (useDayPopup()) dayTap(ds); else openEventDialog(e); } });
   }
   function weekSegments(days) {

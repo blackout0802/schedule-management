@@ -81,7 +81,8 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   const fitIn = await m.evaluate(() => [...document.querySelectorAll('.cell .offmark')].map(o => { const c = o.closest('.cell').getBoundingClientRect(), r = o.getBoundingClientRect(); return { d: o.closest('.cell').dataset.date, t: o.textContent, out: Math.round(r.right - c.right) }; }));
   ok('スマホ: 休みのアイコンが、その日のマスからはみ出さない', fitIn.length > 0 && fitIn.every(x => x.out <= 0), fitIn);
   const todayFit = await m.evaluate(() => { const c = document.querySelector('.cell.today'), o = [...document.querySelectorAll('.cell .offmark')].find(x => x.textContent === '休'); if (!c || !o) return null; const d = c.querySelector('.num .d').getBoundingClientRect(), r = c.getBoundingClientRect(); return { room: Math.round(r.right - d.right), need: Math.ceil(o.getBoundingClientRect().width) + 2 }; });
-  ok('スマホ: 今日の日付の丸のあとに、休みのアイコン（休）が入る余白がある（どの日が今日でも）', !todayFit || todayFit.room >= todayFit.need, todayFit);
+  ok('スマホ: 今日の日付の丸のあとに、休みのアイコン（休）が入る余白がある（どの日が今日でも。端末の字の幅の違いに備えて、3px 以上の余裕）', !todayFit || todayFit.room >= todayFit.need + 3, todayFit);
+  ok('スマホ: 半休のアイコンは「半」の1文字（1日のマスに収まるように）', await m.evaluate(() => [...document.querySelectorAll('.cell .offmark')].every(o => o.textContent === '休' || o.textContent === '半')));
   // v1.112.0 から、スマホではポップアップの代わりに、カレンダーの下の「予定の一覧」のその日の行に色が付く（仕様を変えたため）
   await m.locator('.cell[data-date="' + day + '"] .offmark').tap(); await m.waitForSelector('#agenda .ag-item.hl');
   const mt = (await m.locator('#agenda .ag-item.hl').allInnerTexts()).join(' / ');
