@@ -3765,39 +3765,55 @@
     var body = el('div', { class: 'form' });
     var ov = openModal('Slack通知の設定・テスト', body, true);
     var result = el('div', { class: 'slack-result', role: 'status', 'aria-live': 'polite' });
-    function send(kind, btn) {
+    function showResult(r, single) {
+      var rs = r.results || [];
+      if (r.ok) { result.className = 'slack-result ok'; result.textContent = '✓ 送信できました' + (rs.length ? '（' + rs.map(function (x) { return x.name; }).join('・') + '）' : '') + '。Slack の送り先チャンネルに、届いているか確認してください。'; return; }
+      result.className = 'slack-result ng'; result.textContent = '';
+      if (rs.length > 1 && !single) {
+        result.appendChild(document.createTextNode(r.any ? '△ 一部の送り先に、送信できませんでした。' : '✕ 送信できませんでした。'));
+        rs.forEach(function (x) { result.appendChild(el('div', { class: 'slack-res-row', text: (x.ok ? '✓ ' : '✕ ') + x.name + (x.ok ? '' : ' … ' + slackFailHint(x)) })); });
+      } else result.textContent = '✕ 送信できませんでした。' + slackFailHint(rs[0] || r);
+    }
+    function send(kind, btn, id) {
       btn.disabled = true; result.className = 'slack-result wait'; result.textContent = '送信しています…';
-      api('slack_test', { body: { kind: kind } }).then(function (j) {
-        var r = j.result;
-        if (r.ok) { result.className = 'slack-result ok'; result.textContent = '✓ 送信できました。Slack の送り先チャンネルに、届いているか確認してください。'; }
-        else { result.className = 'slack-result ng'; result.textContent = '✕ 送信できませんでした。' + slackFailHint(r); }
+      api('slack_test', { body: id ? { kind: kind, id: id } : { kind: kind } }).then(function (j) {
+        if (j.slack) draw(j.slack);
+        showResult(j.result, !!id);
       }).catch(function (x) { result.className = 'slack-result ng'; result.textContent = '✕ ' + x.message; }).then(function () { btn.disabled = false; });
+    }
+    function lastText(l) {
+      if (!l) return 'まだ送っていません';
+      var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})/.exec(l.at || ''), at = m ? (+m[2]) + '/' + (+m[3]) + ' ' + m[4] : (l.at || '');
+      return '最後に送った: ' + at + (l.ok ? ' ✓ 届けました' : ' ✕ 送れませんでした' + (l.err ? '（' + l.err + '）' : ''));
     }
     function draw(st) {
       body.textContent = '';
+      result.className = 'slack-result'; result.textContent = '';
       var url = el('input', { type: 'text', id: 'slack-url', placeholder: 'https://hooks.slack.com/services/…', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Slack の Webhook URL' });
       var nm = el('input', { type: 'text', id: 'slack-name', placeholder: '例: #休み連絡', maxlength: '30', autocomplete: 'off', 'aria-label': 'チャンネル名' });
       var err = el('p', { class: 'error', role: 'alert', hidden: true });
       var fail2 = function (x) { err.textContent = x.message; err.hidden = false; };
       var t1 = el('button', { class: 'btn primary', type: 'button', text: 'テスト通知を送る', disabled: !st.configured, onclick: function () { send('simple', this); } });
       var dests = st.dests || [];
-      var pick = el('select', { id: 'slack-pick', 'aria-label': '通知の送り先', disabled: !dests.length, onchange: function () {
-        api('slack_use', { body: { id: pick.value } }).then(function (j) { toast('送り先を「' + j.slack.active_name + '」に切り替えました'); draw(j.slack); }).catch(function (x) { fail(x); draw(st); });
-      } });
-      if (!dests.length) pick.appendChild(el('option', { value: '', text: '（まだ登録がありません）' }));
-      dests.forEach(function (d) { pick.appendChild(el('option', { value: d.id, text: d.name + '　' + d.masked, selected: d.id === st.active })); });
       body.appendChild(el('div', { class: 'slack-status ' + (st.configured ? 'on' : 'off') },
         el('span', { class: 'pill' + (st.configured ? ' admin' : ''), text: st.configured ? '通知先: ' + st.active_name : '未設定' })));
-      body.appendChild(el('label', null, '通知の送り先（選ぶと、すぐに切り替わります）', pick));
-      body.appendChild(el('p', { class: 'hint', text: '選んだ送り先に、朝と夕方の「お休み」の通知（cron の設定が必要）が届きます。送る時刻や文章は、「通知の時間・文面を変える」で決めます。' }));
-      var mine = dests.filter(function (d) { return d.id !== 'config'; });
-      if (mine.length) {
-        body.appendChild(el('div', { class: 'slack-dests' }, mine.map(function (d) {
-          return el('div', { class: 'slack-dest' }, el('b', { text: d.name }), el('code', { text: d.masked }), d.id === st.active ? el('span', { class: 'pill admin', text: '使用中' }) : null,
-            el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
-              if (!window.confirm('「' + d.name + '」を削除します。よろしいですか？' + (d.id === st.active ? '\n（使用中のため、残りの送り先に自動で切り替わります）' : ''))) return;
-              api('slack_delete', { body: { id: d.id } }).then(function (j) { toast('削除しました'); draw(j.slack); }).catch(fail);
-            } }));
+      body.appendChild(el('p', { class: 'hint', text: '「送る」にチェックした送り先の全部に、朝と夕方の「お休み」の通知（cron の設定が必要）や、会議室・年間点検の通知が届きます（チャンネルを、いくつでも選べます）。送る時刻や文章は、「時刻と文面」で決めます。' }));
+      if (dests.length) {
+        body.appendChild(el('div', { class: 'slack-dests' }, dests.map(function (d) {
+          var box = el('input', { type: 'checkbox', class: 'slack-send', id: 'slack-on-' + d.id, checked: !!d.send, 'aria-label': d.name + ' に送る', onchange: function () {
+            var on = this.checked; this.disabled = true;
+            api('slack_send', { body: { id: d.id, on: on } }).then(function (j) { toast(on ? '「' + d.name + '」にも送ります' : '「' + d.name + '」には送りません'); draw(j.slack); }).catch(function (x) { fail(x); draw(st); });
+          } });
+          return el('div', { class: 'slack-dest' + (d.send ? ' on' : ''), 'data-id': d.id },
+            el('label', { class: 'slack-on' }, box, ' 送る'),
+            el('div', { class: 'slack-dest-main' }, el('div', null, el('b', { text: d.name }), ' ', el('code', { text: d.masked })),
+              el('div', { class: 'hint slack-last' + (d.last && !d.last.ok ? ' ng' : ''), text: lastText(d.last) })),
+            el('div', { class: 'row-btns' },
+              el('button', { class: 'btn small', type: 'button', text: 'テスト', title: 'この送り先だけに、テスト通知を送ります（「送る」のチェックが無くても試せます）', onclick: function () { send('simple', this, d.id); } }),
+              d.id === 'config' ? null : el('button', { class: 'btn small danger', type: 'button', text: '削除', onclick: function () {
+                if (!window.confirm('「' + d.name + '」を削除します。よろしいですか？')) return;
+                api('slack_delete', { body: { id: d.id } }).then(function (j) { toast('削除しました'); draw(j.slack); }).catch(fail);
+              } })));
         })));
       }
       body.appendChild(el('form', { class: 'form slack-add', onsubmit: function (e) {
@@ -3805,7 +3821,7 @@
         api('slack_add', { body: { name: nm.value.trim(), webhook: url.value.trim() } }).then(function (j) { toast('送り先を保存しました'); draw(j.slack); }).catch(fail2);
       } },
         el('h3', { text: '送り先を追加' }),
-        el('label', null, 'チャンネル名（プルダウンに出る名前。自分で分かる名前を付けてください）', nm),
+        el('label', null, 'チャンネル名（一覧に出る名前。自分で分かる名前を付けてください）', nm),
         el('label', null, 'Slack の Webhook URL', url),
         el('p', { class: 'hint', text: '取得方法: Slack の「アプリを追加」→「Incoming Webhooks」→「Slack に追加」→ 送り先のチャンネルを選ぶと、URL が表示されます。チャンネルごとに1つずつ作り、ここに名前を付けて保存します（最大10件）。URL は画面に全部は出さず、サーバーに保存されます。' }),
         err, el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'submit', text: '追加して保存' }))));

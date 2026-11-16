@@ -701,11 +701,11 @@ $U2 = 'https://hooks.slack.com/services/T0123ABC/B0456DEF/zyxwVUTS9876zyxwVUTS98
 $wasUrl = slack_webhook_url();
 check('Slack: 最初は、画面での登録なし', [slack_dests(), slack_status()['source']], [[], $wasUrl !== '' ? 'config' : 'none']);
 $d1 = slack_dest_add('#休み連絡', $U1);
-check('Slack: 最初の1件は、そのまま使う送り先になる', [slack_webhook_url(), slack_active_id() === $d1['id'], slack_enabled(), slack_status()['source'], slack_status()['active_name']], [$U1, true, true, 'ui', '#休み連絡']);
+check('Slack: 最初の1件は、そのまま使う送り先になる', [slack_webhook_url(), slack_send_ids() === [$d1['id']], slack_enabled(), slack_status()['source'], slack_status()['active_name']], [$U1, true, true, 'ui', '#休み連絡']);
 $d2 = slack_dest_add('#全体連絡', $U2);
 check('Slack: 2件目を足しても、使う送り先は変わらない。一覧は名前で分かる', [slack_webhook_url(), array_column(slack_status()['dests'], 'name')], [$U1, array_merge($wasUrl !== '' ? ['config.php の設定'] : [], ['#休み連絡', '#全体連絡'])]);
 slack_dest_use($d2['id']);
-check('Slack: プルダウンで選んだ送り先に切り替わる', [slack_webhook_url(), slack_status()['active_name']], [$U2, '#全体連絡']);
+check('Slack: その送り先だけに送る（slack_use）に切り替わる', [slack_webhook_url(), slack_status()['active_name']], [$U2, '#全体連絡']);
 $st = slack_status();
 check('Slack: 状態には URL そのものを含めない（伏せた形だけ）', [strpos(json_encode($st), 'abcdEFGH1234abcdEFGH1234') === false, strpos(json_encode($st), 'zyxwVUTS9876zyxwVUTS9876') === false, $st['masked']], [true, true, 'https://hooks.slack.com/…9876']);
 $bad = [];
@@ -719,6 +719,41 @@ slack_dest_delete($d2['id']);
 check('Slack: 使用中の送り先を消すと、残りの先頭に切り替わる', [slack_webhook_url(), count(slack_dests())], [$U1, 1]);
 slack_dest_delete($d1['id']);
 check('Slack: 全部消すと、config.php の設定に戻る', [slack_webhook_url(), slack_status()['source']], [$wasUrl, $wasUrl !== '' ? 'config' : 'none']);
+// ---- 複数の送り先に同時に送る（v1.114.0）----
+$m1 = slack_dest_add('#スケジュール', $U1);
+$m2 = slack_dest_add('#連絡', $U2);
+check('Slack 複数: 2件目は、足しただけでは送らない（チェックを入れると送る）', [slack_send_ids(), array_column(slack_status()['dests'], 'send', 'id')[$m2['id']]], [[$m1['id']], false]);
+slack_dest_send($m2['id'], true);
+$st = slack_status();
+check('Slack 複数: 「送る」を入れると、両方に送る（名前は「・」でつなぐ）', [slack_send_ids(), count(slack_targets()), $st['active_name'], $st['configured'], array_values(array_filter(array_column($st['dests'], 'send', 'id')))], [[$m1['id'], $m2['id']], 2, '#スケジュール・#連絡', true, [true, true]]);
+slack_dest_send($m2['id'], true);
+check('Slack 複数: 同じ送り先を2回入れても、1つ', slack_send_ids(), [$m1['id'], $m2['id']]);
+slack_dest_send($m1['id'], false);
+check('Slack 複数: 外すと、残りだけに送る', [slack_send_ids(), slack_webhook_url(), slack_status()['active_name']], [[$m2['id']], $U2, '#連絡']);
+$n = 0; try { slack_dest_send('nothing', true); } catch (RuntimeException $e) { $n = 1; }
+check('Slack 複数: 登録にない送り先は、入れられない', [$n, slack_send_ids()], [1, [$m2['id']]]);
+slack_dest_send($m2['id'], false);
+check('Slack 複数: 全部外すと、どこにも送らない（未設定）', [slack_send_ids(), slack_enabled(), slack_status()['configured'], slack_post('x')], [[], false, false, false]);
+$m3 = slack_dest_add('#新しく', 'https://hooks.slack.com/services/T0123ABC/B0789GHI/newNEWnew1234newNEWnew12');
+check('Slack 複数: どこにも送っていないときに足した送り先には、送る', slack_send_ids(), [$m3['id']]);
+slack_dest_send($m1['id'], true);
+slack_dest_delete($m3['id']);
+check('Slack 複数: 送っている送り先を消しても、ほかに送る先があれば、それだけ', slack_send_ids(), [$m1['id']]);
+slack_meta_set('slack_send', ''); slack_meta_set('slack_active', $m2['id']); // v1.113.0 までのデータ（使う送り先が1つ）
+check('Slack 複数: v1.113.0 までに選んでいた「使う送り先」1つに、そのまま送る', [slack_send_ids(), slack_webhook_url()], [[$m2['id']], $U2]);
+slack_dest_send($m1['id'], true);
+check('Slack 複数: v1.113.0 までのデータに、チェックを足せる（元の送り先も残る）', slack_send_ids(), [$m1['id'], $m2['id']]);
+slack_last_record($m1['id'], ['ok' => true, 'code' => 200, 'error' => '', 'body' => 'ok']);
+slack_last_record($m2['id'], ['ok' => false, 'code' => 404, 'error' => '', 'body' => 'no_service']);
+$ls = array_column(slack_status()['dests'], 'last', 'id');
+check('Slack 複数: 送り先ごとに、最後に送った結果が残る（失敗は理由つき）', [$ls[$m1['id']]['ok'], $ls[$m1['id']]['err'], $ls[$m2['id']]['ok'], $ls[$m2['id']]['err'], (bool)preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $ls[$m2['id']]['at'])], [true, '', false, 'HTTP 404 no_service', true]);
+slack_dest_delete($m2['id']);
+check('Slack 複数: 消した送り先の結果は、残さない', [array_key_exists($m2['id'], slack_last_all()), array_key_exists($m1['id'], slack_last_all())], [false, true]);
+$n = 0; try { slack_dest_must('nothing'); } catch (RuntimeException $e) { $n = 1; }
+check('Slack 複数: 1つだけを試す送り先が登録にないと、送らない', [$n, slack_post_detailed('x', 'nothing')['ok'], slack_post_detailed('x', 'nothing')['results']], [1, false, []]);
+slack_dest_delete($m1['id']);
+slack_meta_set('slack_send', ''); slack_meta_set('slack_active', ''); slack_meta_set('slack_last', '');
+check('Slack 複数: 片付けたあとは、はじめと同じ', [slack_dests(), slack_webhook_url()], [[], $wasUrl]);
 slack_meta_set('slack_webhook', $U1); // 古い版（1件だけ登録）のデータ
 check('Slack: 古い版で登録した1件は、「登録済みの送り先」として引き継がれる', [slack_webhook_url(), array_column(slack_dests(), 'name')], [$U1, ['登録済みの送り先']]);
 $d3 = slack_dest_add('#新しい', $U2);

@@ -409,7 +409,13 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .slack-dests { display: grid; gap: 6px; }
 .slack-dest { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 .slack-dest code { font-size: 12px; color: var(--muted); }
-.slack-dest .btn { margin-left: auto; }
+.slack-dest.on { border-color: var(--work); }
+.slack-dest .slack-on { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; color: var(--ink); font-weight: 700; white-space: nowrap; cursor: pointer; }
+.slack-dest .slack-on input { width: auto; margin: 0; }
+.slack-dest-main { flex: 1 1 220px; min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.slack-dest .slack-last.ng { color: var(--danger); }
+.slack-dest .row-btns { margin-left: auto; }
+.slack-res-row { font-weight: 500; margin-top: 2px; }
 .slack-add { border-top: 1px solid var(--line); padding-top: 10px; }
 .slack-add h3 { margin: 0; font-size: 14px; }
 .slack-test { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
@@ -737,7 +743,7 @@ details.help-sm > summary::-webkit-details-marker { display: none; }
 details.help-sm[open] > summary { margin-bottom: 2px; }
 @media (max-width: 640px) {
   /* 上の帯: 1行目にタイトル・設定・ユーザー、2行目に 業務版／プライベート版。画面の上に張り付けない（スクロールで消える） */
-  .topbar { position: static; }
+  .topbar { position: relative; } /* スマホでは帯を固定しない。z-index（10）は残す（static にすると、名前のメニューが下の「カレンダー／リスト」のボタンの後ろに隠れる。v1.114.0） */
   .topbar-in { padding: 4px 10px 6px; gap: 4px 8px; }
   .topbar-in .lbl { display: none; }
   .brand { width: auto; flex: 1 1 auto; margin: 0; min-width: 0; font-size: 15px; white-space: nowrap; }

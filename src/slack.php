@@ -1,9 +1,11 @@
 <?php
 // Slack の Incoming Webhook へ通知する。失敗してもアプリの動作は止めない。
 
-// 送り先（Incoming Webhook）は、チャンネル名を付けて複数登録でき、どれを使うかをプルダウンで選ぶ。
+// 送り先（Incoming Webhook）は、チャンネル名を付けて複数登録でき、送り先ごとに「送る」を選ぶ（選んだ全部に、同じ通知を送る。v1.114.0〜）。
 //   app_meta.slack_dests  … 登録した送り先の一覧（JSON: [{id,name,url}]）
-//   app_meta.slack_active … 使う送り先の id（'config' なら config.php の設定）
+//   app_meta.slack_send   … 通知を送る送り先の id の一覧（JSON: ["id", …]。'config' は config.php の設定）。v1.114.0〜
+//   app_meta.slack_active … v1.113.0 までの「使う送り先」（1つ）。slack_send がまだ無いときは、これを使う
+//   app_meta.slack_last   … 送り先ごとの、最後に送った結果（JSON: {id: {at, ok, err}}）
 //   app_meta.slack_webhook … 古い版（1件だけ登録）のもの。あれば「登録済みの送り先」として引き継ぐ
 const SLACK_MAX_DESTS = 10;
 
@@ -51,7 +53,7 @@ function slack_dests_save(array $list): void
     slack_meta_set('slack_webhook', ''); // 古い版の登録は、一覧に取り込んだので消す
 }
 
-/** 使う送り先の id。選ばれていない／消えているときは、登録の先頭、なければ config.php */
+/** 使う送り先の id（v1.113.0 までの1つだけの選び方）。選ばれていない／消えているときは、登録の先頭、なければ config.php */
 function slack_active_id(): string
 {
     $list = slack_dests();
@@ -70,24 +72,58 @@ function slack_active_id(): string
     return (string)cfg('slack_webhook', '') !== '' ? 'config' : '';
 }
 
-/** 通知の送り先（Incoming Webhook の URL）。選んだ送り先。なければ空 */
-function slack_webhook_url(): string
+/** 選べる送り先の全部（config.php の設定があれば、先頭に 'config'）。[{id,name,url}] */
+function slack_all_dests(): array
 {
-    $id = slack_active_id();
-    if ($id === 'config') {
-        return (string)cfg('slack_webhook', '');
+    $all = [];
+    $c = (string)cfg('slack_webhook', '');
+    if ($c !== '') {
+        $all[] = ['id' => 'config', 'name' => 'config.php の設定', 'url' => $c];
     }
-    foreach (slack_dests() as $d) {
-        if ($d['id'] === $id) {
-            return $d['url'];
+    return array_merge($all, slack_dests());
+}
+
+/** 通知を送る送り先の id（並びは一覧の順）。まだ選んだことがなければ、v1.113.0 までの「使う送り先」1つ */
+function slack_send_ids(): array
+{
+    $raw = slack_meta_get('slack_send');
+    if ($raw === '') {
+        $a = slack_active_id();
+        return $a === '' ? [] : [$a];
+    }
+    $j = json_decode($raw, true);
+    $want = is_array($j) ? array_map('strval', $j) : [];
+    $out = [];
+    foreach (slack_all_dests() as $d) {
+        if (in_array($d['id'], $want, true)) {
+            $out[] = $d['id'];
         }
     }
-    return '';
+    return $out;
+}
+
+function slack_send_ids_save(array $ids): void
+{
+    slack_meta_set('slack_send', json_encode(array_values(array_unique($ids))));
+}
+
+/** 通知を送る送り先 [{id,name,url}] */
+function slack_targets(): array
+{
+    $ids = slack_send_ids();
+    return array_values(array_filter(slack_all_dests(), function ($d) use ($ids) { return in_array($d['id'], $ids, true); }));
+}
+
+/** 通知を送る送り先の、先頭の URL（なければ空） */
+function slack_webhook_url(): string
+{
+    $t = slack_targets();
+    return $t ? $t[0]['url'] : '';
 }
 
 function slack_enabled(): bool
 {
-    return slack_webhook_url() !== '';
+    return slack_targets() !== [];
 }
 
 /** 画面から登録できる URL の形（Slack の Incoming Webhook だけ。任意のサーバーへ送らせないため） */
@@ -119,15 +155,15 @@ function slack_dest_add(string $name, string $url): array
         }
     }
     $hadActive = slack_enabled();
+    $ids = slack_send_ids();
     $d = ['id' => bin2hex(random_bytes(4)), 'name' => $name, 'url' => $url];
     $list[] = $d;
     if (mb_strlen(json_encode($list, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) > 1900) { // 保存先の欄（2000文字）に収まらない
         throw new RuntimeException('登録が多すぎます。使わないものを削除してください。');
     }
     slack_dests_save($list);
-    if (!$hadActive) {
-        slack_meta_set('slack_active', $d['id']);
-    }
+    // 送る送り先がまだ無ければ、足した送り先に送る。あれば、いまの選び方のまま（足した送り先は、チェックを入れると送る）
+    slack_send_ids_save($hadActive ? $ids : [$d['id']]);
     return $d;
 }
 
@@ -138,24 +174,76 @@ function slack_dest_delete(string $id): void
     if (count($keep) === count($list)) {
         throw new RuntimeException('その送り先は、登録にありません。');
     }
-    $wasActive = slack_active_id() === $id;
+    $ids = slack_send_ids();
+    $wasOn = in_array($id, $ids, true);
     slack_dests_save($keep);
-    if ($wasActive) {
-        slack_meta_set('slack_active', ''); // 残りの先頭（なければ config.php）に自動で切り替わる
+    $ids = array_values(array_diff($ids, [$id]));
+    if ($wasOn && !$ids) { // 送っていた送り先が無くなったら、残りの先頭（なければ config.php）に送る
+        if ($keep) {
+            $ids = [$keep[0]['id']];
+        } elseif ((string)cfg('slack_webhook', '') !== '') {
+            $ids = ['config'];
+        }
+    }
+    slack_send_ids_save($ids);
+    slack_last_forget($id);
+}
+
+/** 登録にある送り先か（'config' は config.php の設定）。無ければ RuntimeException */
+function slack_dest_must(string $id): array
+{
+    foreach (slack_all_dests() as $d) {
+        if ($d['id'] === $id) {
+            return $d;
+        }
+    }
+    throw new RuntimeException($id === 'config' ? 'config.php には、送り先が設定されていません。' : 'その送り先は、登録にありません。');
+}
+
+/** その送り先だけに送る（ほかの送り先は外す）。'config' は config.php の設定 */
+function slack_dest_use(string $id): void
+{
+    slack_dest_must($id);
+    slack_send_ids_save([$id]);
+}
+
+/** 送り先ごとに、通知を「送る／送らない」を切り替える */
+function slack_dest_send(string $id, bool $on): void
+{
+    slack_dest_must($id);
+    $ids = array_values(array_diff(slack_send_ids(), [$id]));
+    if ($on) {
+        $ids[] = $id;
+    }
+    slack_send_ids_save($ids);
+}
+
+/** 送り先ごとの、最後に送った結果 {id: {at, ok, err}} */
+function slack_last_all(): array
+{
+    $j = json_decode(slack_meta_get('slack_last'), true);
+    return is_array($j) ? $j : [];
+}
+
+function slack_last_record(string $id, array $r): void
+{
+    $all = slack_last_all();
+    $err = $r['ok'] ? '' : ($r['error'] !== '' ? $r['error'] : trim('HTTP ' . $r['code'] . ' ' . $r['body']));
+    $all[$id] = ['at' => date('Y-m-d H:i:s'), 'ok' => (bool)$r['ok'], 'err' => mb_substr($err, 0, 60)];
+    try {
+        slack_meta_set('slack_last', json_encode($all, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    } catch (Throwable $e) {
+        // 記録できなくても、通知は止めない
     }
 }
 
-/** 使う送り先を選ぶ。'config' は config.php の設定 */
-function slack_dest_use(string $id): void
+function slack_last_forget(string $id): void
 {
-    if ($id === 'config') {
-        if ((string)cfg('slack_webhook', '') === '') {
-            throw new RuntimeException('config.php には、送り先が設定されていません。');
-        }
-    } elseif (!array_filter(slack_dests(), function ($d) use ($id) { return $d['id'] === $id; })) {
-        throw new RuntimeException('その送り先は、登録にありません。');
+    $all = slack_last_all();
+    if (isset($all[$id])) {
+        unset($all[$id]);
+        slack_meta_set('slack_last', $all ? json_encode($all, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '');
     }
-    slack_meta_set('slack_active', $id);
 }
 
 function slack_mask(string $url): string
@@ -167,25 +255,24 @@ function slack_mask(string $url): string
     return ($p['scheme'] ?? 'https') . '://' . ($p['host'] ?? '') . '/…' . substr($url, -4);
 }
 
-/** 送り先の状態。URL そのものは返さず、伏せた形だけ返す */
+/** 送り先の状態。URL そのものは返さず、伏せた形だけ返す。active・active_name は、送る送り先の先頭と、名前を「・」でつないだもの */
 function slack_status(): array
 {
-    $active = slack_active_id();
-    $dests = array_map(function ($d) { return ['id' => $d['id'], 'name' => $d['name'], 'masked' => slack_mask($d['url'])]; }, slack_dests());
-    $cfg = (string)cfg('slack_webhook', '');
-    if ($cfg !== '') {
-        array_unshift($dests, ['id' => 'config', 'name' => 'config.php の設定', 'masked' => slack_mask($cfg)]);
-    }
-    $name = '';
+    $ids = slack_send_ids();
+    $last = slack_last_all();
+    $dests = array_map(function ($d) use ($ids, $last) {
+        return ['id' => $d['id'], 'name' => $d['name'], 'masked' => slack_mask($d['url']), 'send' => in_array($d['id'], $ids, true), 'last' => $last[$d['id']] ?? null];
+    }, slack_all_dests());
+    $names = array_column(array_filter($dests, function ($d) { return $d['send']; }), 'name');
+    $active = $ids ? $ids[0] : '';
     $mask = '';
     foreach ($dests as $d) {
         if ($d['id'] === $active) {
-            $name = $d['name'];
             $mask = $d['masked'];
         }
     }
-    return ['configured' => $active !== '', 'active' => $active, 'active_name' => $name, 'masked' => $mask, 'dests' => $dests,
-        'source' => $active === '' ? 'none' : ($active === 'config' ? 'config' : 'ui'),
+    return ['configured' => $ids !== [], 'active' => $active, 'active_name' => implode('・', $names), 'masked' => $mask, 'send' => $ids, 'dests' => $dests,
+        'source' => $active === '' ? 'none' : ($active === 'config' && count($ids) === 1 ? 'config' : 'ui'),
         'base_url' => (string)cfg('base_url', '') !== '', 'link' => slack_link_kind(), 'sched' => slack_test_state(), 'cron' => cron_commands()];
 }
 
@@ -202,15 +289,11 @@ function cron_commands(): array
 }
 
 /**
- * 通知を送り、結果を詳しく返す（テスト送信用）。
+ * 1つの送り先に送り、結果を詳しく返す。
  * @return array{ok:bool,code:int,error:string,body:string}
  */
-function slack_post_detailed(string $text): array
+function slack_post_to(string $url, string $text): array
 {
-    $url = slack_webhook_url();
-    if ($url === '') {
-        return ['ok' => false, 'code' => 0, 'error' => '送り先（Webhook URL）が設定されていません。', 'body' => ''];
-    }
     $payload = json_encode(['text' => $text], JSON_UNESCAPED_UNICODE);
     $res = false;
     $code = 0;
@@ -257,12 +340,50 @@ function slack_post_detailed(string $text): array
     return ['ok' => $ok, 'code' => $code, 'error' => $err, 'body' => $body];
 }
 
+/**
+ * 通知を、送る送り先の全部に送り（$only を渡すと、その送り先だけ）、結果を詳しく返す（テスト送信用）。
+ * ok = 全部に送れた。any = 1つでも送れた。results = 送り先ごとの結果。code・error・body は、最初に失敗した送り先のもの（全部送れたら、先頭のもの）
+ * @return array{ok:bool,any:bool,code:int,error:string,body:string,results:array}
+ */
+function slack_post_detailed(string $text, ?string $only = null): array
+{
+    $targets = $only !== null ? array_values(array_filter(slack_all_dests(), function ($d) use ($only) { return $d['id'] === $only; })) : slack_targets();
+    if (!$targets) {
+        return ['ok' => false, 'any' => false, 'code' => 0, 'error' => '送り先（Webhook URL）が設定されていません。', 'body' => '', 'results' => []];
+    }
+    $results = [];
+    $first = null;
+    $any = false;
+    $all = true;
+    foreach ($targets as $d) {
+        $r = slack_post_to($d['url'], $text);
+        slack_last_record($d['id'], $r);
+        $results[] = ['id' => $d['id'], 'name' => $d['name']] + $r;
+        $any = $any || $r['ok'];
+        $all = $all && $r['ok'];
+        if ($first === null && !$r['ok']) {
+            $first = $r;
+        }
+    }
+    $first = $first ?? $results[0];
+    $error = $first['error'];
+    if (!$all && count($targets) > 1) { // どこに送れなかったかを、名前で添える
+        $ng = array_column(array_filter($results, function ($r) { return !$r['ok']; }), 'name');
+        $error = '送れなかった送り先: ' . implode('・', $ng) . ($error !== '' ? '（' . $error . '）' : '');
+    }
+    return ['ok' => $all, 'any' => $any, 'code' => $first['code'], 'error' => $error, 'body' => $first['body'], 'results' => $results];
+}
+
+/**
+ * 通知を、送る送り先の全部に送る。1つでも送れたら true（送れなかった送り先は、送り先ごとの結果に残し、画面で分かるようにする。
+ * 全部に送り直すと、送れた送り先に同じ通知が二重に届くため、やり直すのは、どこにも送れなかったときだけ）
+ */
 function slack_post(string $text): bool
 {
     if (!slack_enabled()) {
         return false;
     }
-    return slack_post_detailed($text)['ok'];
+    return slack_post_detailed($text)['any'];
 }
 
 /** 同じ通知を二重に送らないための記録。初めての ref なら true */
