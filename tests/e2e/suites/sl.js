@@ -19,36 +19,45 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
   // テスト通知
   await a.click('button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ok'); ok('テスト通知を送ると、「送信できました」と出る', (await a.locator('#set-slack-dest .slack-result').innerText()).includes('送信できました'));
   ok('Slack（受け口）に、テスト通知が届いている', log().includes('Slack通知のテストです') && log().includes('管理者 太郎'), log());
-  // 画面から、名前を付けて複数登録 → プルダウンで選ぶ
+  // 画面から、名前を付けて複数登録 → 送り先ごとに「送る」を選ぶ（選んだ全部に送る。v1.114.0〜。以前はプルダウンで1つだけ選んでいた）
   const HOOK = ['https:', '', 'hooks.slack' + '.com', 'services'].join('/'); // 見本のURL（実在しない）。ファイルに、そのままの文字列を置かない（秘密情報の検出に引っかかるため）
   const U1 = HOOK + '/T0123ABCD/B0123ABCD/' + 'abcdEFGH1234abcdEFGH1234', U2 = HOOK + '/T0123ABCD/B0456DEFG/' + 'zyxwVUTS9876zyxwVUTS9876';
   const add = async (n, u) => { await a.fill('#slack-name', n); await a.fill('#slack-url', u); await a.click('#set-slack-dest .slack-add button[type=submit]'); };
+  const row = n => a.locator('#set-slack-dest .slack-dest', { hasText: n });
+  const status = () => a.locator('#set-slack-dest .slack-status').innerText();
+  const toggle = async (n, want) => { await row(n).locator('input.slack-send').click(); await a.waitForFunction(([n, want]) => { const r = Array.from(document.querySelectorAll('#set-slack-dest .slack-dest')).find(x => x.innerText.includes(n)); const c = r && r.querySelector('input.slack-send'); return c && !c.disabled && c.checked === want; }, [n, want]); };
   await add('', U1); await a.waitForSelector('#set-slack-dest .error:not([hidden])'); ok('チャンネル名が空だと、保存できない', (await a.locator('#set-slack-dest .error').innerText()).includes('チャンネル名'));
   await add('#休み連絡', 'https://evil.example.com/x'); await a.waitForSelector('#set-slack-dest .error:not([hidden])'); ok('Slack以外のURLは、保存できない（案内が出る）', (await a.locator('#set-slack-dest .error').innerText()).includes('hooks.slack.com'));
-  await add('#休み連絡', U1); await a.waitForSelector('.slack-dest', { timeout: 5000 }).catch(async () => console.log('ERRTEXT', await a.locator('#set-slack-dest .error').innerText()));
-  let opts = await a.locator('#slack-pick option').allInnerTexts(); ok('登録すると、プルダウンにチャンネル名が出る（URLは伏せ字）', opts.some(o => o.includes('#休み連絡') && o.includes('1234') && !o.includes('abcdEFGH1234abcdEFGH1234')), opts);
-  ok('config.php の設定も、プルダウンで選べる', opts.some(o => o.includes('config.php の設定')), opts);
-  ok('最初の1件は、そのまま使う送り先（使用中）', (await a.locator('.slack-dest').innerText()).includes('使用中') && (await a.locator('#slack-pick').inputValue()) !== 'config');
-  await add('#全体連絡', U2); await a.waitForFunction(() => document.querySelectorAll('.slack-dest').length === 2);
-  ok('2件目を足しても、使う送り先は変わらない', (await a.locator('.slack-status').innerText()).includes('#休み連絡'), await a.locator('.slack-status').innerText());
-  await a.selectOption('#slack-pick', { label: (await a.locator('#slack-pick option').allInnerTexts()).find(o => o.includes('#全体連絡')) }); await a.waitForFunction(() => /通知先: #全体連絡/.test(document.querySelector('.slack-status').innerText));
-  ok('プルダウンで選ぶと、通知先が切り替わる（テスト送信の見出しにも出る）', (await a.locator('.slack-test h3').innerText()).includes('#全体連絡'));
+  await add('#休み連絡', U1); await a.waitForFunction(() => document.querySelectorAll('#set-slack-dest .slack-dest').length === 2, null, { timeout: 5000 }).catch(async () => console.log('ERRTEXT', await a.locator('#set-slack-dest .error').innerText()));
+  const r1 = await row('#休み連絡').innerText();
+  ok('登録すると、一覧にチャンネル名が出る（URLは伏せ字）', r1.includes('1234') && !r1.includes('abcdEFGH1234abcdEFGH1234'), r1);
+  ok('config.php の設定も、一覧に出る（削除のボタンはない）', (await row('config.php の設定').count()) === 1 && (await row('config.php の設定').locator('button:has-text("削除")').count()) === 0);
+  ok('足しただけでは送らない（いままでの送り先に送ったまま）', (await row('config.php の設定').locator('input.slack-send').isChecked()) && !(await row('#休み連絡').locator('input.slack-send').isChecked()) && (await status()).includes('通知先: config.php の設定') && !(await status()).includes('#休み連絡'), await status());
+  await toggle('#休み連絡', true);
+  ok('「送る」を入れると、両方に送る（通知先に2つとも出る）', (await status()).includes('config.php の設定・#休み連絡'), await status());
   await a.reload(); await a.waitForSelector('.settings-page'); await a.waitForSelector('#set-slack-dest .slack-status');
-  ok('開き直しても、登録と選んだ送り先が残っている', (await a.locator('.slack-status').innerText()).includes('#全体連絡') && (await a.locator('.slack-dest').count()) === 2);
-  await a.click('button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ng, .slack-result.ok', { timeout: 30000 }); const ng = await a.locator('#set-slack-dest .slack-result').innerText();
-  ok('送れなかったときは、失敗と、原因の案内が出る（サンドボックスは外へ出られない）', ng.includes('送信できませんでした') && ng.length > 30, ng);
-  await a.selectOption('#slack-pick', 'config'); await a.waitForFunction(() => /通知先: config\.php/.test(document.querySelector('.slack-status').innerText));
-  fs.writeFileSync(LOG, ''); await a.click('button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ok'); ok('config.php の設定を選ぶと、届く', log().includes('テストです'));
-  // 削除（確認あり）。使用中の送り先を消すと、残りに切り替わる
-  await a.selectOption('#slack-pick', { label: (await a.locator('#slack-pick option').allInnerTexts()).find(o => o.includes('#全体連絡')) }); await a.waitForFunction(() => /通知先: #全体連絡/.test(document.querySelector('.slack-status').innerText));
-  await a.locator('.slack-dest', { hasText: '#全体連絡' }).locator('button:has-text("削除")').click(); await a.waitForFunction(() => document.querySelectorAll('.slack-dest').length === 1);
-  ok('使用中の送り先を消すと、残りの送り先に切り替わる', (await a.locator('.slack-status').innerText()).includes('#休み連絡'), await a.locator('.slack-status').innerText());
-  await a.locator('.slack-dest').locator('button:has-text("削除")').click(); await a.waitForSelector('.slack-status:has-text("config.php")');
-  ok('全部消すと、config.php の設定に戻る', true);
-  fs.writeFileSync(LOG, ''); await a.click('button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ok'); ok('戻したあとは、また届く', log().includes('テストです'));
+  ok('開き直しても、登録と「送る」が残っている', (await status()).includes('config.php の設定・#休み連絡') && (await a.locator('#set-slack-dest .slack-dest input.slack-send:checked').count()) === 2);
+  fs.writeFileSync(LOG, ''); await a.click('#set-slack-dest button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ng', { timeout: 30000 }); const part = await a.locator('#set-slack-dest .slack-result').innerText();
+  ok('両方に送る: 届いた送り先には届く（config.php の受け口）', log().includes('Slack通知のテストです'), log());
+  ok('両方に送る: 一部に送れなかったときは、どこに送れなかったかと、原因の案内が出る（見本のURLは届かない）', part.includes('一部') && part.includes('✓ config.php の設定') && part.includes('✕ #休み連絡') && part.length > 40, part);
+  ok('送り先ごとに、最後に送った結果が出る', (await row('config.php の設定').locator('.slack-last').innerText()).includes('✓') && (await row('#休み連絡').locator('.slack-last.ng').innerText()).includes('送れませんでした'), [await row('config.php の設定').innerText(), await row('#休み連絡').innerText()]);
+  await a.locator('#set-slack-dest').screenshot({ path: 'slack-dests.png' });
+  fs.writeFileSync(LOG, ''); await row('config.php の設定').locator('button:has-text("テスト")').click(); await a.waitForSelector('#set-slack-dest .slack-result.ok');
+  ok('送り先ごとの「テスト」は、その送り先だけに送る', (await a.locator('#set-slack-dest .slack-result').innerText()).includes('config.php の設定') && log().split('Slack通知のテストです').length === 2, log());
+  await toggle('config.php の設定', false);
+  ok('外すと、そこには送らない', (await status()).includes('通知先: #休み連絡') && !(await status()).includes('config.php'), await status());
+  fs.writeFileSync(LOG, ''); await row('config.php の設定').locator('button:has-text("テスト")').click(); await a.waitForSelector('#set-slack-dest .slack-result.ok');
+  ok('「送る」を外した送り先でも、「テスト」で試せる', log().includes('テストです'));
+  // 削除（確認あり）。送っていた送り先が無くなると、残りに送る
+  await add('#全体連絡', U2); await a.waitForFunction(() => document.querySelectorAll('#set-slack-dest .slack-dest').length === 3);
+  await row('#休み連絡').locator('button:has-text("削除")').click(); await a.waitForFunction(() => document.querySelectorAll('#set-slack-dest .slack-dest').length === 2);
+  ok('送っていた送り先を消すと、残りの送り先に送る', (await status()).includes('#全体連絡'), await status());
+  await row('#全体連絡').locator('button:has-text("削除")').click(); await a.waitForSelector('#set-slack-dest .slack-status:has-text("config.php")');
+  ok('全部消すと、config.php の設定に戻る', (await a.locator('#set-slack-dest .slack-dest').count()) === 1 && (await row('config.php の設定').locator('input.slack-send').isChecked()));
+  fs.writeFileSync(LOG, ''); await a.click('#set-slack-dest button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ok'); ok('戻したあとは、また届く', log().includes('テストです'));
   // 権限
-  const r = await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const x = await fetch('api.php?action=slack_test', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: '{}' }); const y = await fetch('api.php?action=slack_add', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ webhook: 'https://hooks.slack.com/services/T0/B0/x' }) }); return [x.status, y.status]; });
-  ok('管理者でない人は、テスト送信も送り先の変更もできない（403）', r[0] === 403 && r[1] === 403, r);
+  const r = await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const x = await fetch('api.php?action=slack_test', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: '{}' }); const y = await fetch('api.php?action=slack_add', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ webhook: 'https://hooks.slack.com/services/T0/B0/x' }) }); const z = await fetch('api.php?action=slack_send', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ id: 'config', on: false }) }); return [x.status, y.status, z.status]; });
+  ok('管理者でない人は、テスト送信も送り先の変更もできない（403）', r[0] === 403 && r[1] === 403 && r[2] === 403, r);
   // 実際の休みの登録通知も、送り先に届く
   fs.writeFileSync(LOG, ''); const d = new Date(); const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   await s.evaluate(async (ds) => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=event_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'off', title: '', tag: '有給', start: ds, end: ds }) }); }, ds); await s.waitForTimeout(800);

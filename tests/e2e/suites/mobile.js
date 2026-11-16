@@ -20,7 +20,15 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('上の帯は2行（タイトル／設定／ユーザー と 業務版・プライベート版）で、90px以内', top <= 90, top);
   await p.screenshot({ path: 'mobile-top.png', clip: { x: 0, y: 0, width: 390, height: 160 } });
   ok('スマホでも、版がパソコンと同じ場所（左上のアプリ名のところ）に出る', await p.evaluate(() => { const v = document.querySelector('.topbar .brand .ver'); return !!v && v.offsetWidth > 0 && /^v\d+\.\d+\.\d+$/.test(v.textContent) && v.getBoundingClientRect().right <= window.innerWidth; }));
-  ok('上の帯は、画面に張り付かない（スクロールで消える）', await p.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position) === 'static');
+  // v1.114.0: 重なりの順番（z-index）を効かせるため static → relative に変えた（張り付かないことは同じ）
+  ok('上の帯は、画面に張り付かない（スクロールで消える）', ['static', 'relative'].includes(await p.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position)));
+  // 名前のメニューを開くと、下の「会議室予約／カレンダー／リスト」のボタンより手前に出る（v1.113.0 までは、ボタンがメニューの上に重なって見えた）
+  await p.tap('.topbar button.uname'); await p.waitForSelector('.topbar .menu-list');
+  const hid = await p.evaluate(() => Array.from(document.querySelectorAll('.topbar .menu-list button')).map(bt => { const r = bt.getBoundingClientRect(); const pts = [[r.left + 6, r.top + r.height / 2], [r.left + r.width / 2, r.top + r.height / 2], [r.right - 6, r.top + r.height / 2]]; return pts.some(([x, y]) => !bt.contains(document.elementFromPoint(x, y))) ? bt.textContent : null; }).filter(Boolean));
+  ok('スマホ: 名前のメニューの項目が、ほかのボタンの後ろに隠れない', hid.length === 0 && (await p.locator('.topbar .menu-list button').count()) >= 3, hid);
+  await p.screenshot({ path: 'mobile-menu.png', clip: { x: 0, y: 0, width: 390, height: 360 } });
+  await p.tap('.topbar .brand'); await p.waitForTimeout(150);
+  if (await p.locator('.topbar .menu-list').count()) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
   const rows = await p.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { seg: r('.toolbar .seg').top, who: r('#who-sel').top }; });
   ok('表示する人・会議室予約／カレンダー／リスト が、同じ1行に並ぶ', Math.abs(rows.seg - rows.who) < 8, rows);
   ok('長い説明の文は、スマホでは出さない（凡例だけが残る）', await p.evaluate(() => getComputedStyle(document.querySelector('.view-banner .vb-text')).display === 'none' && !!document.querySelector('.view-banner .legend')));

@@ -489,6 +489,18 @@ function handle_api(): void
             audit_log('slack', 'update', '通知の送り先を切り替え', '', '→ ' . slack_status()['active_name']);
             api_out(['slack' => slack_status()]);
 
+        case 'slack_send': // 送り先ごとに、通知を送る／送らないを切り替える（管理者。選んだ全部に送る）
+            require_admin($user);
+            try {
+                $sd = slack_dest_must((string)($in['id'] ?? ''));
+                slack_dest_send($sd['id'], !empty($in['on']));
+            } catch (RuntimeException $e) {
+                api_fail($e->getMessage());
+            }
+            $ss = slack_status();
+            audit_log('slack', 'update', '通知の送り先を変更: ' . $sd['name'] . ' に' . (!empty($in['on']) ? '送る' : '送らない'), '', '→ ' . ($ss['active_name'] !== '' ? $ss['active_name'] : 'なし'));
+            api_out(['slack' => $ss]);
+
         case 'slack_cfg': // 通知の時間・文面の設定（管理者）
             require_admin($user);
             api_out(['cfg' => slack_cfg(), 'defaults' => slack_cfg_defaults(), 'placeholders' => SLACK_PLACEHOLDERS, 'preview' => slack_preview(slack_cfg())]);
@@ -527,11 +539,18 @@ function handle_api(): void
 
         case 'slack_test': // テスト通知を送る（管理者）
             require_admin($user);
-            if (!slack_enabled()) {
+            $only = isset($in['id']) && (string)$in['id'] !== '' ? (string)$in['id'] : null; // 送り先を1つ選んで試す（送るのチェックが無くても試せる）
+            if ($only !== null) {
+                try {
+                    slack_dest_must($only);
+                } catch (RuntimeException $e) {
+                    api_fail($e->getMessage());
+                }
+            } elseif (!slack_enabled()) {
                 api_fail('送り先（Webhook URL）がまだ設定されていません。', 400);
             }
             $kind = in_array($in['kind'] ?? 'simple', ['morning', 'evening'], true) ? $in['kind'] : 'simple';
-            api_out(['result' => slack_post_detailed(slack_test_message($kind, $user)), 'kind' => $kind]);
+            api_out(['result' => slack_post_detailed(slack_test_message($kind, $user), $only), 'kind' => $kind, 'slack' => slack_status()]);
 
         case 'offmark_save': // 自分の休みの出し方（業務版・プライベート版ごと。本人の画面と、家族用リンク・家族の画面）
             api_out(['prefs' => save_offmark_pref($user, is_array($in['offmark'] ?? null) ? $in['offmark'] : [])]);
