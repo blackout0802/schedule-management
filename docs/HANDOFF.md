@@ -1,6 +1,6 @@
 # 引き継ぎメモ（スケジュール管理アプリ）
 
-新しいセッションの最初に、これを読んでください。最終更新: 2026-11-18（作業の進め方の基本方針 `docs/WORKFLOW.md` を足した。個人用 Mac の準備がすんだ）/ 現在の版: **v1.115.0**（v1.115.0（年間計画の PDF からの取り込み・元の資料）は、作業ブランチ `claude/adoring-hawking-khhqhu` から PR #59 で自動マージし、本番に反映ずみ（2026-11-18 01:07 UTC、run 44210765581）。ユーザーの実機確認待ち。v1.114.0（スマホの名前のメニューの重なりの直し・Slack の複数の送り先に同時に送る）は PR #57 で本番に反映ずみ（2026-11-16 14:02 UTC、run 43879428499）で、ユーザーの確認待ち。v1.112.0・v1.113.0 は、ユーザーがスマホで確認ずみ（2026-11-15「問題なし」）。v1.102.0 まではユーザー確認ずみ。v1.103.0〜v1.111.0 は、ユーザーの確認待ち）
+新しいセッションの最初に、これを読んでください。最終更新: 2026-11-18（作業の進め方の基本方針 `docs/WORKFLOW.md` を足した。個人用 Mac の準備がすんだ）/ 現在の版: **v1.115.1**（画像の縮小の直し。本番に反映ずみ）（v1.115.0（年間計画の PDF からの取り込み・元の資料）は、作業ブランチ `claude/adoring-hawking-khhqhu` から PR #59 で自動マージし、本番に反映ずみ（2026-11-18 01:07 UTC、run 44210765581）。ユーザーの実機確認待ち。v1.114.0（スマホの名前のメニューの重なりの直し・Slack の複数の送り先に同時に送る）は PR #57 で本番に反映ずみ（2026-11-16 14:02 UTC、run 43879428499）で、ユーザーの確認待ち。v1.112.0・v1.113.0 は、ユーザーがスマホで確認ずみ（2026-11-15「問題なし」）。v1.102.0 まではユーザー確認ずみ。v1.103.0〜v1.111.0 は、ユーザーの確認待ち）
 
 ## 1. アプリと作業場所
 
@@ -364,7 +364,7 @@
      - 道具（git・gh・php・node・coreutils の `timeout`・playwright 1.56.1）は入っていた。gh はログインずみ。git の設定4つ（`pull.ff only`・`fetch.prune`・`push.autoSetupRemote`・`init.defaultBranch`）を足した。
      - **Chromium**: 最新の Node 26 では `playwright install chromium` が止まる。`brew install node@22` で入れて、取得のときだけ `PATH=/opt/homebrew/opt/node@22/bin:$PATH playwright install chromium`（既定の node は 26 のまま。画面テストの実行は 26 で通る）。
      - **PHP は 8.3 を使う**: 最新の `php`（8.5）だと、画面テストが落ちる（`src/slack.php` 324 行の `$http_response_header` の非推奨警告が API の返事に混ざり、JSON として読めない）。`brew install php@8.3` して、`export PATH=/opt/homebrew/opt/php@8.3/bin:$PATH` の上で流す（アプリの対応は 7.4〜8.3。本番の Web は 8.3）。8.5 への対応は、別の作業。
-     - 確かめ: 画面テスト `agenda` `insp` は成功。PHP 単体は 成功 866 / 失敗 1: 「画像: 長辺2000pxまで縮める」。この Mac の GD（2.3.3）では `imagescale(…, IMG_BICUBIC)` が `false` を返し、`attach_process`（`src/attachments.php`）が縮めずに通す（PHP 8.3 でも同じ。CI の 7.4/8.1/8.3 では通る）。本番の GD で同じなら、大きな画像が縮まらない。**未対応**（`imagescale` が失敗したら `imagecopyresampled` で縮める、などの直しが考えられる）。
+     - 確かめ: 画面テスト `agenda` `insp` は成功。PHP 単体は、初めは 成功 866 / 失敗 1: 「画像: 長辺2000pxまで縮める」。この Mac の GD（2.3.3）では `imagescale(…, IMG_BICUBIC)` が `false` を返し、`attach_process`（`src/attachments.php`）が縮めずに通す（PHP 8.3 でも同じ。CI の 7.4/8.1/8.3 では通る）。本番の GD で同じなら、大きな画像が縮まらない。**v1.115.1 で直した**（`imagescale` が失敗したら `imagecopyresampled` で縮める。PR #64。取り込んだあとの CI（run 44230009392）は `deploy` まで成功、2026-11-18 03:41 UTC に本番へ反映）。この Mac でも単体テストは 867 件すべて成功。
      - **まだ**: `~/.claude/CLAUDE.md`（共通の約束。claude.ai の個人設定の文が要る）。
    - 会社用 Windows 11・個人用 Windows 11: まだ。
 1. ユーザーの実機確認を待つ:
