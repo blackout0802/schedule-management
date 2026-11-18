@@ -14,7 +14,7 @@ import sys
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 version = re.search(r"APP_VERSION = '([^']+)'", open(os.path.join(root, 'src/version.php'), encoding='utf-8').read()).group(1)
 exclude = {'public/install.php', 'public/app_path.php'}
-allowed_ext = {'.php', '.js', '.css', '.sql', '.png', '.svg', '.ico', '.json', '.txt'}
+allowed_ext = {'.php', '.js', '.css', '.sql', '.png', '.svg', '.ico', '.json', '.txt', '.bcmap'}  # .bcmap: PDF.js の文字の対応表（年間計画の PDF の取り込み）
 
 if len(sys.argv) != 2:
     sys.exit(__doc__)

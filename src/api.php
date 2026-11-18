@@ -129,7 +129,7 @@ const EXAMPLE_SERIES = [
 
 /** GET（画面を開くだけ）でも使ってよい、読むだけの操作。これ以外は、POST（CSRFトークンの確認つき）だけ受け付ける */
 const API_READ_ACTIONS = ['me', 'rev', 'events', 'todo_list', 'todo_comments', 'todo_file', 'share_list', 'slack_status', 'slack_cfg',
-    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list', 'inspect_list', 'inspect_summary', 'inspect_items'];
+    'memo_get', 'memo_history', 'series_list', 'users_list', 'family_list', 'family_log_list', 'audit_list', 'holidays_list', 'usage_get', 'rooms_list', 'inspect_list', 'inspect_summary', 'inspect_items', 'inspect_import_base', 'inspect_doc'];
 
 function handle_api(): void
 {
@@ -1118,6 +1118,65 @@ function handle_api(): void
             }
             q('DELETE FROM inspection_items WHERE id = ?', [$item['id']]);
             audit_log('inspect', 'delete', '点検項目｜' . $item['title'] . '　' . $item['plan']);
+            api_out(['ok' => true]);
+
+        case 'inspect_import_base': // 資料から取り込むときの、いまの点検項目（同じ名前の項目を「変更」として見分ける。やめた項目も含む）
+            api_out(['items' => inspect_items_all($user)]);
+
+        case 'inspect_import': // 資料（PDF）から読んだ点検項目を、まとめて登録・変更する（社員なら誰でも。変更は、登録した人と管理者）。元の資料も残せる
+            if (!isset($in['data']) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) { // サーバーの受け取れる大きさ（post_max_size）を超えると、中身が空で届く
+                api_fail('資料が大きすぎて、サーバーが受け取れませんでした。「元の資料として残す」を外すと、項目だけ登録できます。');
+            }
+            $data = json_decode((string)($in['data'] ?? ''), true);
+            if (!is_array($data) || !is_array($data['rows'] ?? null)) {
+                api_fail('取り込む内容の形が正しくありません。');
+            }
+            $doc = null;
+            $fl = $_FILES['file'] ?? null;
+            if ($fl && ($fl['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                try {
+                    $doc = inspect_doc_check($fl);
+                } catch (InspectDocException $x) {
+                    api_fail($x->getMessage());
+                }
+            }
+            [$res, $err] = inspect_import($data['rows'], $data, $user, $doc);
+            if ($err) {
+                api_fail($err);
+            }
+            audit_log('inspect', 'add', '点検項目の取り込み｜追加 ' . $res['added'] . '件・変更 ' . $res['updated'] . '件', '', $doc ? '資料: ' . $doc['name'] : '');
+            api_out(['ok' => true] + $res + ['summary' => inspect_summary($user)]);
+
+        case 'inspect_doc': // 年間計画の元の資料（社員なら誰でも見られる。年間計画と同じ）
+            $d = row('SELECT * FROM inspection_docs WHERE id = ?', [(int)($_GET['id'] ?? 0)]);
+            $path = $d ? inspect_doc_dir() . '/' . basename((string)$d['stored']) : '';
+            if (!$d || !is_file($path)) {
+                http_response_code(404);
+                header('Content-Type: text/plain; charset=utf-8');
+                exit('資料が見つかりません。');
+            }
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+            header_remove('Content-Security-Policy'); // 画面の CSP（object-src 'none' など）が付くと、ブラウザの PDF の表示が止まることがある。PDF は nosniff で、PDF としてだけ扱わせる
+            header('Content-Type: application/pdf');
+            header('Content-Length: ' . (int)filesize($path));
+            header("Content-Disposition: inline; filename=\"document.pdf\"; filename*=UTF-8''" . rawurlencode((string)$d['name']));
+            header('X-Content-Type-Options: nosniff');
+            header('Cache-Control: private, no-store');
+            readfile($path);
+            exit;
+
+        case 'inspect_doc_delete': // 元の資料を消す（取り込んだ人と管理者）。結びついた項目は残る（資料へのリンクだけ外れる）
+            $d = row('SELECT * FROM inspection_docs WHERE id = ?', [(int)($in['id'] ?? 0)]);
+            if (!$d) {
+                api_fail('資料が見つかりません。', 404);
+            }
+            if (!inspect_doc_can_delete($d, $user)) {
+                api_fail('資料を削除できるのは、取り込んだ人と管理者だけです。', 403);
+            }
+            inspect_doc_delete($d);
+            audit_log('inspect', 'delete', '年間計画の資料｜' . $d['name'] . '　' . (int)$d['fy'] . '年度');
             api_out(['ok' => true]);
 
         case 'inspect_run_mark': // 実施済み・確認済み・取り消し（done / check / uncheck / reopen）

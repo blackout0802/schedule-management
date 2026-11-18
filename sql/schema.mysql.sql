@@ -242,7 +242,23 @@ CREATE TABLE IF NOT EXISTS inspection_items (
   active TINYINT NOT NULL DEFAULT 1,
   sort_order INT NOT NULL DEFAULT 0,
   created_by INT UNSIGNED NULL,
+  doc_id INT UNSIGNED NULL,
+  doc_page INT NULL,
   created_at DATETIME NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 年間計画の元の資料（PDF から取り込んだときに残す。ファイルは data/inspect_docs/。年度ごと）
+CREATE TABLE IF NOT EXISTS inspection_docs (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  fy INT NOT NULL,
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  size INT NOT NULL DEFAULT 0,
+  pages INT NOT NULL DEFAULT 0,
+  items INT NOT NULL DEFAULT 0,
+  stored VARCHAR(64) NOT NULL,
+  created_by INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL,
+  KEY ix_inspection_docs_fy (fy)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS inspection_runs (

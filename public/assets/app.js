@@ -4241,15 +4241,19 @@
         return el('label', { class: 'work' }, el('input', { type: 'radio', name: 'an-flt', checked: an.flt === m[0], onchange: function () { an.flt = m[0]; annualDraw(); } }), m[1]);
       })),
       el('span', { class: 'spacer', style: 'flex:1' }),
+      el('button', { class: 'btn', type: 'button', id: 'insp-import', text: 'PDFから取り込む', title: '年間スケジュールの PDF から、点検項目をまとめて読み取って登録します', onclick: openInspectImport }),
       el('button', { class: 'btn primary', type: 'button', id: 'insp-new', text: '＋ 点検項目を追加', title: '点検項目を登録する（管理者でなくても登録できます。委任されて代わりに登録する場合など）', onclick: function () { openInspectForm(null); } })));
     box.appendChild(el('div', { class: 'annual-sum' },
       el('span', { class: 'insp-pill', text: '項目 ' + items.length }),
       [['done', '確認済み'], ['wait', '確認待ち'], ['now', '今月・未実施'], ['late', '遅れ']].map(function (x) { return el('span', { class: 'insp-pill ' + x[0], text: x[1] + ' ' + cnt[x[0]] }); })));
+    var docs = annualDocs(d);
+    if (docs) box.appendChild(docs);
     if (!items.length) {
       box.appendChild(el('div', { class: 'notice annual-empty' },
         el('b', { text: 'この年度の点検は、まだ登録されていません' }),
         el('p', { text: 'Pマークの年間スケジュールなどの定期点検を登録すると、実施する月の最初の営業日に、担当者の ToDo が自動で作られます。登録は、管理者でなくてもできます（委任されて、代わりに登録する場合など）。' }),
-        el('button', { class: 'btn primary', type: 'button', id: 'insp-new-empty', text: '＋ 点検項目を追加', onclick: function () { openInspectForm(null); } })));
+        el('div', { class: 'row' }, el('button', { class: 'btn primary', type: 'button', id: 'insp-new-empty', text: '＋ 点検項目を追加', onclick: function () { openInspectForm(null); } }),
+          el('button', { class: 'btn', type: 'button', id: 'insp-import-empty', text: 'PDFから取り込む', onclick: openInspectImport }))));
       return;
     }
     // 表
@@ -4260,6 +4264,7 @@
     shown.forEach(function (it) {
       var tr = el('tr', null, el('th', { class: 'nm', scope: 'row' }, el('b', { text: it.title }),
         el('span', { text: it.owner_name + (it.checker_name ? ' → ' + it.checker_name : '') + ' ・ ' + it.due_label + (it.active ? '' : ' ・ やめた項目') }),
+        it.doc_id ? el('a', { class: 'an-doc', href: inspDocUrl(it.doc_id, it.doc_page), target: '_blank', rel: 'noopener', text: '資料' + (it.doc_page ? ' p.' + it.doc_page : ''), title: '取り込んだ元の資料を開く' }) : null,
         it.can_edit ? el('button', { class: 'btn small ghost an-edit', type: 'button', text: '変更', 'aria-label': it.title + 'を変更', title: '登録した人と管理者が、項目を変更・やめる・削除できます', onclick: function () { openInspectForm(it); } }) : null));
       d.months.forEach(function (m) {
         var c = it.cells[m.ym], td = el('td', { class: m.ym === d.cur_ym ? 'cur' : '' });
@@ -4287,6 +4292,340 @@
     var f = buildInspectForm(it, d.plans, function () { ov.close(); annualLoad(true); }, function () { ov.close(); });
     holder.appendChild(f);
     f.querySelector('input[maxlength="60"]').focus();
+  }
+
+  /* ---- 年間計画: 資料（PDF）から点検項目を取り込む（v1.115.0）----
+     ① PDF の文字と位置を、ブラウザの中で読む（PDF.js。資料はサーバーにも社外にも送らない。登録するときに、元の資料として残す場合だけ送る）
+     ② 「7月 8月 … 6月」の見出しの行を探し、その列の下にある ●・○ などの印から、項目 × 月 の表を組み立てる（inspParsePdf）
+     ③ 確認の画面で、いまの項目と見くらべて（新規・変更・変わらない）、直してから、まとめて登録する（API inspect_import）
+     文字の入っていない PDF（スキャン・写真）や、色をぬっただけの表は読めない（そう知らせる） */
+  var PDFJS_DIR = 'assets/vendor/pdfjs-4.10.38/', pdfjsWait = null;
+  function loadPdfjs() {
+    if (window.SchedPdfjs) return Promise.resolve(window.SchedPdfjs);
+    if (pdfjsWait) return pdfjsWait;
+    pdfjsWait = new Promise(function (res, rej) {
+      var settled = false, s = document.createElement('script');
+      function end(ok, msg) { if (settled) return; settled = true; if (ok && window.SchedPdfjs) res(window.SchedPdfjs); else { pdfjsWait = null; rej(new Error(msg)); } }
+      s.type = 'module'; s.src = PDFJS_DIR + 'load.js';
+      s.onload = function () { end(true, 'PDF を読む部品を読み込めませんでした。'); };
+      s.onerror = function () { end(false, 'PDF を読む部品を読み込めませんでした。ページを再読み込みしてから、もう一度お試しください。'); };
+      setTimeout(function () { end(false, 'PDF を読む部品を読み込めませんでした（お使いのブラウザが古い可能性があります）。'); }, 30000);
+      document.head.appendChild(s);
+    });
+    return pdfjsWait;
+  }
+  /* PDF の文字を、ページごとに { s: 文字, x, y（左上）, w, h } の並びにする（最初の20ページまで） */
+  function pdfReadText(buf) {
+    var lib;
+    return loadPdfjs().then(function (l) {
+      lib = l;
+      return lib.getDocument({ data: buf, isEvalSupported: false, cMapUrl: PDFJS_DIR + 'cmaps/', cMapPacked: true, disableFontFace: true, useSystemFonts: false, enableXfa: false, stopAtErrors: false }).promise;
+    }).then(function (doc) {
+      var pages = [], n = Math.min(doc.numPages, 20);
+      function one(i) {
+        if (i > n) { doc.destroy(); return { pages: pages, total: doc.numPages }; }
+        return doc.getPage(i).then(function (pg) {
+          var vp = pg.getViewport({ scale: 1 });
+          return pg.getTextContent().then(function (tc) {
+            var items = [];
+            tc.items.forEach(function (t) {
+              if (!t.str || !/\S/.test(t.str)) return;
+              var m = lib.Util.transform(vp.transform, t.transform), h = Math.sqrt(m[2] * m[2] + m[3] * m[3]) || t.height || 10;
+              items.push({ s: t.str, x: m[4], y: m[5] - h, w: Math.abs(t.width) || h * t.str.length, h: h });
+            });
+            pages.push({ n: i, w: vp.width, h: vp.height, items: items });
+            return one(i + 1);
+          });
+        });
+      }
+      return one(1);
+    });
+  }
+  function inspNorm(s) { s = String(s || ''); try { s = s.normalize('NFKC'); } catch (e) { /* 古いブラウザは、そのまま */ } return s.replace(/[\s　]+/g, ' ').trim(); }
+  function inspKey(s) { return inspNorm(s).replace(/\s+/g, '').toLowerCase(); }
+  var INSP_MARK_RE = /^(?:[●○◎〇◯■□◆◇★☆✓✔▲△◉⬤⚫]+|実施|予定|実施予定|済)$/;
+  function inspMonthOf(s) {
+    var t = inspNorm(s).replace(/\s+/g, ''), m = /^(?:\d{4}年|(?:令和|R)\d{1,2}年?[.\/]?)?(\d{1,2})月(?:度|分)?$/.exec(t);
+    if (m) return { m: +m[1], plain: false, ok: +m[1] >= 1 && +m[1] <= 12 };
+    m = /^(\d{1,2})$/.exec(t);
+    return m ? { m: +m[1], plain: true, ok: +m[1] >= 1 && +m[1] <= 12 } : null;
+  }
+  function inspJoin(a, b) { if (!a) return b; if (!b) return a; return /[\x00-\x7f]$/.test(a) || /^[\x00-\x7f]/.test(b) ? a + ' ' + b : a + b; }
+  /* 1ページの文字を、行（高さのそろったまとまり）に分け、行の中で近い文字をつなげる */
+  function inspLines(items) {
+    var hs = items.map(function (t) { return t.h; }).sort(function (a, b) { return a - b; }), mh = hs.length ? hs[Math.floor(hs.length / 2)] : 10;
+    var list = items.map(function (t) { return { s: t.s, x: t.x, w: t.w, h: t.h, cy: t.y + t.h / 2 }; }).sort(function (a, b) { return a.cy - b.cy; });
+    var lines = [];
+    list.forEach(function (t) {
+      var ln = lines[lines.length - 1];
+      if (ln && Math.abs(t.cy - ln.cy) <= Math.max(2, mh * 0.45)) { ln.items.push(t); ln.cy = (ln.cy * (ln.items.length - 1) + t.cy) / ln.items.length; } else lines.push({ cy: t.cy, items: [t] });
+    });
+    lines.forEach(function (ln) {
+      ln.items.sort(function (a, b) { return a.x - b.x; });
+      var toks = [];
+      ln.items.forEach(function (t) {
+        var p = toks[toks.length - 1], mark = INSP_MARK_RE.test(inspNorm(t.s));
+        if (p && !mark && !p.mark && t.x - (p.x + p.w) < Math.min(t.h, p.h) * 0.3) { p.s = inspJoin(p.s, inspNorm(t.s)); p.w = t.x + t.w - p.x; } else toks.push({ s: inspNorm(t.s), x: t.x, w: t.w, h: t.h, mark: mark });
+      });
+      toks.forEach(function (t) { t.cx = t.x + t.w / 2; t.mark = INSP_MARK_RE.test(t.s); });
+      ln.toks = toks.filter(function (t) { return t.s !== ''; });
+    });
+    return { lines: lines, mh: mh };
+  }
+  /* 月の見出しの行か（6か月以上の見出しが並ぶ）。月の列（m と、横の中心 cx）を返す */
+  function inspHeadCols(ln) {
+    var cols = [], seen = {}, mons = ln.toks.map(function (t) { return { t: t, mo: inspMonthOf(t.s) }; }).filter(function (x) { return x.mo && x.mo.ok; });
+    var explicit = mons.filter(function (x) { return !x.mo.plain; }).length;
+    mons.forEach(function (x) { if ((explicit >= 6 ? !x.mo.plain : true) && !seen[x.mo.m]) { seen[x.mo.m] = 1; cols.push({ m: x.mo.m, cx: x.t.cx }); } });
+    return cols.length >= 6 ? cols.sort(function (a, b) { return a.cx - b.cx; }) : null;
+  }
+  var INSP_TITLE_LABEL = /項目|活動|内容|事項|名称|取組|取り組み|業務|点検|計画|タスク|作業/, INSP_OWNER_LABEL = /担当|責任者|実施者|主管|部署|部門/;
+  /* PDF の文字（pdfReadText の pages）から、点検項目の行を組み立てる。
+     返す値: { rows: [{ title, months, owner, page }], months: 見出しの月, error: 'notext' | 'nohead' | 'nomark' } */
+  function inspParsePdf(pages) {
+    var rows = [], head = null, anyText = false, headMonths = null;
+    pages.forEach(function (pg) {
+      if (pg.items.length) anyText = true;
+      var L = inspLines(pg.items), lines = L.lines, mh = L.mh, secs = [];
+      lines.forEach(function (ln, i) { var c = inspHeadCols(ln); if (c) secs.push({ i: i, cols: c, cy: ln.cy }); });
+      if (!secs.length && head && Math.abs(head.pw - pg.w) < 2) secs.push({ i: -1, cols: head.cols, labels: head.labels, cy: -1 }); // 見出しのない続きのページは、前のページの列で読む
+      secs.forEach(function (sec, si) {
+        var cols = sec.cols, steps = [], k;
+        for (k = 1; k < cols.length; k++) steps.push(cols[k].cx - cols[k - 1].cx);
+        steps.sort(function (a, b) { return a - b; });
+        var step = steps[Math.floor(steps.length / 2)] || mh * 2, left = cols[0].cx - step / 2, right = cols[cols.length - 1].cx + step / 2;
+        // 見出しの行と、その上の行（2段の見出し）から、月以外の列の名前（項目・担当など）を拾う
+        var labels = sec.labels || [];
+        if (sec.i >= 0) {
+          lines.forEach(function (ln) {
+            if (ln.cy > sec.cy + 0.5 || ln.cy < sec.cy - mh * 2.2) return;
+            ln.toks.forEach(function (t) { if ((t.cx < left || t.cx > right) && !inspMonthOf(t.s)) labels.push({ s: t.s, cx: t.cx, title: INSP_TITLE_LABEL.test(t.s), owner: INSP_OWNER_LABEL.test(t.s) && !INSP_TITLE_LABEL.test(t.s) }); });
+          });
+        }
+        head = { cols: cols, labels: labels, pw: pg.w };
+        if (!headMonths) headMonths = cols.map(function (c) { return c.m; });
+        var end = si + 1 < secs.length ? secs[si + 1].i : lines.length, body = [];
+        for (k = sec.i + 1; k < end; k++) {
+          var ln = lines[k], r = { cy: ln.cy, marks: {}, nm: 0, title: '', owner: '' };
+          ln.toks.forEach(function (t) {
+            if (t.cx >= left && t.cx <= right) {
+              if (t.mark || /毎月/.test(t.s)) {
+                if (/毎月/.test(t.s)) cols.forEach(function (c) { r.marks[c.m] = 1; });
+                else { var best = null; cols.forEach(function (c) { if (!best || Math.abs(c.cx - t.cx) < Math.abs(best.cx - t.cx)) best = c; }); if (best && Math.abs(best.cx - t.cx) <= step * 0.65) r.marks[best.m] = 1; }
+              }
+              return;
+            }
+            if (/^(?:No\.?|[0-9０-９]+[.．、)）]?|[(（][0-9]+[)）])$/i.test(t.s)) return; // 番号の列
+            // 月の列の左は、項目名（担当の列の見出しの真下に近いものだけ担当）。右は、見出しがなければ担当、担当の見出しの下なら担当
+            var isL = t.cx < left, labs = labels.filter(function (l) { return isL ? l.cx < left : l.cx > right; });
+            var near = function (f) { var b = null; labs.forEach(function (l) { if (f(l) && (!b || Math.abs(l.cx - t.cx) < Math.abs(b.cx - t.cx))) b = l; }); return b; };
+            var any = near(function () { return true; }), own = near(function (l) { return l.owner; });
+            if (isL) { if (own && any === own) r.owner = inspJoin(r.owner, t.s); else r.title = inspJoin(r.title, t.s); }
+            else if (!labs.length || (any && any.owner)) r.owner = inspJoin(r.owner, t.s);
+            else if (any && any.title) r.title = inspJoin(r.title, t.s);
+          });
+          r.nm = Object.keys(r.marks).length;
+          if (r.nm || r.title || r.owner) body.push(r);
+        }
+        // 印のない行（折り返した項目名など）は、近い印のある行につなげる。遠いもの（区分の見出しなど）は捨てる
+        var anchors = body.filter(function (r) { return r.nm; });
+        body.forEach(function (r) {
+          if (r.nm) return;
+          var near = null;
+          anchors.forEach(function (a) { if (!near || Math.abs(a.cy - r.cy) < Math.abs(near.cy - r.cy)) near = a; });
+          if (!near || Math.abs(near.cy - r.cy) > mh * 1.7) return;
+          (near.more = near.more || []).push(r);
+        });
+        anchors.forEach(function (a) {
+          var parts = [a].concat(a.more || []).sort(function (x, y) { return x.cy - y.cy; }), title = '', owner = '';
+          parts.forEach(function (p) { title = inspJoin(title, p.title); owner = inspJoin(owner, p.owner); });
+          var ms = INSP_FY_ORDER.filter(function (m) { return a.marks[m]; });
+          rows.push({ title: title.slice(0, 60), months: ms, owner: owner.slice(0, 40), page: pg.n });
+        });
+      });
+    });
+    // 同じ名前の行（ページをまたいで見出しがくり返す表など）は、月をまとめる
+    var out = [], byKey = {};
+    rows.forEach(function (r) {
+      var k = inspKey(r.title);
+      if (k && byKey[k]) { r.months.forEach(function (m) { if (byKey[k].months.indexOf(m) < 0) byKey[k].months.push(m); }); byKey[k].months = INSP_FY_ORDER.filter(function (m) { return byKey[k].months.indexOf(m) >= 0; }); if (!byKey[k].owner) byKey[k].owner = r.owner; return; }
+      if (k) byKey[k] = r;
+      out.push(r);
+    });
+    var error = !anyText ? 'notext' : !headMonths ? 'nohead' : !out.length ? 'nomark' : '';
+    return { rows: out, months: headMonths || [], error: error };
+  }
+  /* 資料の担当（「山田」「鈴木 一郎」など）を、社員に結びつける（1人に決まるときだけ） */
+  function inspMatchUser(txt) {
+    var k = inspKey(txt);
+    if (!k) return null;
+    var us = (S.me && S.me.users) || [], pick = function (f) { var h = us.filter(f); return h.length === 1 ? h[0] : null; };
+    var sur = function (u) { return inspKey(String(u.name).split(/[\s　]+/)[0]); };
+    return pick(function (u) { return inspKey(u.name) === k; }) || pick(function (u) { return sur(u) === k; }) ||
+      pick(function (u) { return k.indexOf(inspKey(u.name)) >= 0; }) || pick(function (u) { var s = sur(u); return s.length >= 2 && k.indexOf(s) >= 0; });
+  }
+  var INSP_IMP_ERR = {
+    notext: 'この PDF には、文字が入っていません（スキャンした PDF・写真の PDF は読めません）。Excel や Word から書き出した PDF をお使いいただくか、「＋ 点検項目を追加」で登録してください。',
+    nohead: '「7月 8月 … 6月」のような、月の見出しの行が見つかりませんでした。月が列に並んだ表（年間スケジュール）の PDF か、確かめてください。',
+    nomark: '月の見出しは見つかりましたが、●・○ などの印が見つかりませんでした（色をぬっただけの表は読めません）。'
+  };
+  function openInspectImport() {
+    var d = S.an.data, fy = d.fy, body = el('div', { class: 'form insp-imp' });
+    var ov = openModal('PDF から点検項目を取り込む', body, true);
+    var base = api('inspect_import_base').then(function (j) { return j.items; });
+    base.catch(function () { /* 下の Promise.all で知らせる */ });
+    function step1(msg) {
+      body.textContent = '';
+      var file = el('input', { type: 'file', id: 'inspimp-file', accept: 'application/pdf,.pdf', 'aria-label': 'PDF のファイル' });
+      var drop = el('label', { class: 'insp-imp-drop', for: 'inspimp-file' }, el('b', { text: 'PDF を選ぶ' }), el('span', { text: 'ここに PDF を置いても選べます（10MB まで）' }), file);
+      var st = el('p', { class: msg ? 'error' : 'hint', role: msg ? 'alert' : 'status', id: 'inspimp-status', text: msg || '' });
+      body.appendChild(el('p', { class: 'hint', text: 'Excel や Word から書き出した、文字の入った PDF の年間スケジュール（月が列に並んだ表）から、点検項目の名前・実施する月・担当を読み取ります。スキャンした PDF・写真は読めません。読み取った結果は、登録する前に確認・修正できます。' }));
+      body.appendChild(el('p', { class: 'muted small', text: '資料は、このブラウザの中で読みます（社外には送りません）。「元の資料として残す」を選んだときだけ、このアプリのサーバーに保存します。' }));
+      body.appendChild(drop);
+      body.appendChild(st);
+      body.appendChild(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } })));
+      function take(f) {
+        if (!f) return;
+        if (f.size > 10 * 1024 * 1024) { st.className = 'error'; st.textContent = 'PDF は 10MB 以下にしてください。'; return; }
+        st.className = 'hint'; st.textContent = '読み取っています…';
+        drop.classList.add('busy');
+        var rd = new FileReader();
+        rd.onload = function () {
+          Promise.all([pdfReadText(rd.result), base]).then(function (x) {
+            var res = inspParsePdf(x[0].pages);
+            if (res.error) { step1(INSP_IMP_ERR[res.error]); return; }
+            step2(f, x[0], res, x[1]);
+          }).catch(function (e) {
+            step1(e && /PDF を読む部品/.test(e.message) ? e.message : (e && e.name === 'InvalidPDFException') || (e && /Invalid PDF/i.test(e.message)) ? 'PDF として読めませんでした。ファイルが PDF か、確かめてください。' : e && e.name === 'PasswordException' ? 'パスワードのかかった PDF は読めません。パスワードを外してから、お試しください。' : '読み取れませんでした（' + (e && e.message ? e.message : e) + '）');
+          });
+        };
+        rd.onerror = function () { step1('ファイルを読めませんでした。'); };
+        rd.readAsArrayBuffer(f);
+      }
+      file.addEventListener('change', function () { take(file.files && file.files[0]); });
+      drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+      drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+      drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files && e.dataTransfer.files[0]); });
+    }
+    function step2(f, pdf, res, items) {
+      body.textContent = '';
+      var users = S.me.users, me = S.me.user.id, byKey = {};
+      items.forEach(function (it) { byKey[inspKey(it.title)] = it; });
+      var plans = inspPlans(items), planIn = el('input', { type: 'text', maxlength: '30', list: 'inspimp-plans', value: plans[0] || 'Pマーク', 'aria-label': '計画の名前' });
+      var due = el('select', { 'aria-label': '新しい項目の期限' }, [['last', 'その月の最終営業日'], ['10', 'その月の10日'], ['15', 'その月の15日'], ['20', 'その月の20日'], ['25', 'その月の25日'], ['28', 'その月の28日']].map(function (x) { return el('option', { value: x[0], text: x[1] }); }));
+      var keep = el('input', { type: 'checkbox', id: 'inspimp-keep', checked: true });
+      var err = el('p', { class: 'error', role: 'alert', hidden: true });
+      var go = el('button', { class: 'btn primary', type: 'button', id: 'inspimp-go' });
+      var all = el('input', { type: 'checkbox', 'aria-label': 'すべて選ぶ' });
+      var TAG = { add: ['新規', 'new'], chg: ['変更', 'chg'], same: ['変わらない', 'same'], lock: ['変更できない', 'lock'], bad: ['', 'q'] };
+      var recs = res.rows.map(function (r) {
+        var ex = byKey[inspKey(r.title)] || null, u = inspMatchUser(r.owner);
+        return { title: r.title, months: r.months.slice(), owner: u ? u.id : (ex ? ex.owner_id : me), checker: ex ? (ex.checker_id || 0) : 0, ownerTxt: r.owner, ownerHit: !!u, page: r.page, ex: ex, on: null };
+      });
+      function sameSet(a, b) { return a.length === b.length && a.every(function (m) { return b.indexOf(m) >= 0; }); }
+      function state(rc) {
+        rc.ex = byKey[inspKey(rc.title)] || null;
+        if (!inspNorm(rc.title)) return ['bad', '項目名がありません'];
+        if (!rc.months.length) return ['bad', '月がありません'];
+        if (!rc.ex) return ['add', ''];
+        if (!rc.ex.can_edit) return ['lock', '登録した人（' + (rc.ex.created_by_name || '不明') + '）と管理者だけが変更できます'];
+        var diff = [];
+        if (!sameSet(rc.months, rc.ex.months)) diff.push('月: ' + (rc.ex.months.length ? INSP_FY_ORDER.filter(function (m) { return rc.ex.months.indexOf(m) >= 0; }).join('・') : 'なし') + ' → ' + rc.months.join('・'));
+        if (+rc.owner !== rc.ex.owner_id) diff.push('担当: ' + rc.ex.owner_name + ' → ' + userName(+rc.owner));
+        if (+rc.checker !== (rc.ex.checker_id || 0)) diff.push('確認者: ' + (rc.ex.checker_name || 'なし') + ' → ' + (+rc.checker ? userName(+rc.checker) : 'なし'));
+        return diff.length ? ['chg', diff.join('　')] : ['same', 'いまの項目と同じです'];
+      }
+      function userName(id) { var u = users.filter(function (x) { return x.id === id; })[0]; return u ? u.name : ''; }
+      var tbody = el('tbody');
+      function count() {
+        var n = recs.filter(function (rc) { return rc.on; }).length;
+        go.textContent = n + '件を登録'; go.disabled = !n;
+        all.checked = n > 0 && recs.every(function (rc) { return rc.on || rc.box.disabled; });
+      }
+      function paint(rc, first) {
+        var st = state(rc), t = TAG[st[0]], can = st[0] === 'add' || st[0] === 'chg' || (st[0] === 'same');
+        rc.box.disabled = st[0] === 'lock' || st[0] === 'bad';
+        if (first) rc.on = st[0] === 'add' || st[0] === 'chg';
+        if (rc.box.disabled) rc.on = false;
+        rc.box.checked = !!rc.on && can;
+        rc.tag.className = 'tag ' + t[1]; rc.tag.textContent = t[0] || st[1];
+        rc.note.textContent = st[0] === 'bad' ? '' : st[1];
+        rc.tr.className = rc.on ? 'on' : '';
+        count();
+      }
+      recs.forEach(function (rc, i) {
+        rc.box = el('input', { type: 'checkbox', 'aria-label': (i + 1) + '行目を登録する', onchange: function () { rc.on = this.checked; paint(rc); } });
+        var title = el('input', { type: 'text', maxlength: '60', value: rc.title, 'aria-label': (i + 1) + '行目の項目名', oninput: function () { rc.title = this.value; paint(rc); } });
+        var mons = el('div', { class: 'insp-imp-ms', role: 'group', 'aria-label': (i + 1) + '行目の実施する月' });
+        INSP_FY_ORDER.forEach(function (m) {
+          mons.appendChild(el('button', { type: 'button', 'aria-pressed': rc.months.indexOf(m) >= 0 ? 'true' : 'false', 'aria-label': m + '月', text: String(m), onclick: function () {
+            var on = rc.months.indexOf(m) >= 0;
+            rc.months = INSP_FY_ORDER.filter(function (x) { return x === m ? !on : rc.months.indexOf(x) >= 0; });
+            this.setAttribute('aria-pressed', on ? 'false' : 'true'); paint(rc);
+          } }));
+        });
+        var owner = el('select', { 'aria-label': (i + 1) + '行目の担当者', onchange: function () { rc.owner = +this.value; paint(rc); } }, users.map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: u.id === rc.owner }); }));
+        var checker = el('select', { 'aria-label': (i + 1) + '行目の確認者', onchange: function () { rc.checker = +this.value; paint(rc); } }, el('option', { value: '0', text: 'なし' }), users.map(function (u) { return el('option', { value: String(u.id), text: u.name, selected: u.id === rc.checker }); }));
+        rc.tag = el('span', { class: 'tag' }); rc.note = el('small', { class: 'muted insp-imp-note' });
+        rc.tr = el('tr', null,
+          el('td', { class: 'ck' }, rc.box),
+          el('td', { class: 'nm' }, title, rc.note),
+          el('td', null, mons),
+          el('td', null, owner, rc.ownerTxt && !rc.ownerHit ? el('small', { class: 'muted insp-imp-src', text: '資料: ' + rc.ownerTxt }) : null),
+          el('td', null, checker),
+          el('td', { class: 'pg', text: 'p.' + rc.page }),
+          el('td', null, rc.tag));
+        tbody.appendChild(rc.tr);
+      });
+      all.addEventListener('change', function () { var v = all.checked; recs.forEach(function (rc) { if (!rc.box.disabled) { rc.on = v; paint(rc); } }); });
+      var ms = res.months;
+      body.appendChild(el('p', { class: 'insp-imp-sum', id: 'inspimp-sum' }, el('b', { text: f.name }), '（' + pdf.total + 'ページ）から、' + recs.length + '行を読み取りました。月の見出し: ' + ms[0] + '月〜' + ms[ms.length - 1] + '月' + (pdf.total > pdf.pages.length ? '（' + pdf.pages.length + 'ページ目まで読みました）' : '') + '。'));
+      body.appendChild(el('div', { class: 'row' }, el('label', null, '計画の名前（新しい項目）', planIn), el('label', null, '期限（新しい項目）', due)));
+      body.appendChild(el('datalist', { id: 'inspimp-plans' }, plans.map(function (p) { return el('option', { value: p }); })));
+      body.appendChild(el('div', { class: 'insp-imp-scroll' }, el('table', { class: 'insp-imp-tbl', id: 'inspimp-tbl' },
+        el('thead', null, el('tr', null, el('th', { class: 'ck' }, all), el('th', { text: '項目名' }), el('th', { text: '実施する月（押して入り切り）' }), el('th', { text: '担当' }), el('th', { text: '確認者' }), el('th', { text: '資料' }), el('th', { text: '' }))), tbody)));
+      body.appendChild(el('p', { class: 'muted small', text: '同じ名前の点検項目があるものは「変更」（月・担当・確認者だけ変えます。期限・手順・アラートはそのまま）、同じ中身なら「変わらない」です。担当が社員に結びつかなかった行は、資料の書き方を下に出しています（登録する人が初めの担当になります）。' }));
+      body.appendChild(el('label', { class: 'check' }, keep, '元の資料として残す（' + fy + '年度の年間計画に添付します。取り込んだ人と管理者が削除できます）'));
+      body.appendChild(err);
+      body.appendChild(el('div', { class: 'actions' },
+        el('button', { class: 'btn left', type: 'button', text: '別の PDF を選ぶ', onclick: function () { step1(''); } }),
+        el('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { ov.close(); } }), go));
+      recs.forEach(function (rc) { paint(rc, true); });
+      go.addEventListener('click', function () {
+        err.hidden = true;
+        var sel = recs.filter(function (rc) { return rc.on; });
+        var data = { fy: fy, plan: planIn.value, due_rule: due.value, pages: pdf.total, rows: sel.map(function (rc) {
+          return { id: rc.ex ? rc.ex.id : 0, title: inspNorm(rc.title), months: rc.months, owner_id: +rc.owner, checker_id: +rc.checker, page: rc.page };
+        }) };
+        var fd = new FormData();
+        fd.append('data', JSON.stringify(data));
+        if (keep.checked) fd.append('file', f, f.name);
+        go.disabled = true;
+        api('inspect_import', { form: fd }).then(function (j) {
+          S.insp = j.summary; updateInspUI(); ov.close();
+          toast('点検項目を取り込みました（追加 ' + j.added + '件・変更 ' + j.updated + '件）');
+          S.tdCache = {}; S.cache = {}; annualLoad(true);
+        }).catch(function (x) { err.textContent = x.message; err.hidden = false; go.disabled = false; });
+      });
+    }
+    step1('');
+  }
+  /* 年間計画の上の「元の資料」の帯（その年度に取り込んだ PDF。新しいものを先に。古いものは畳む） */
+  function inspDocUrl(id, page) { return 'api.php?action=inspect_doc&id=' + id + (page ? '#page=' + page : ''); }
+  function annualDocs(d) {
+    if (!d.docs || !d.docs.length) return null;
+    function line(doc) {
+      return el('span', { class: 'an-doc-line' },
+        el('a', { href: inspDocUrl(doc.id), target: '_blank', rel: 'noopener', class: 'an-doc-a', text: doc.name }),
+        el('span', { class: 'muted', text: '（' + inspMd(doc.created_at.slice(0, 10)) + ' ' + (doc.by_name || '') + 'が取り込み・' + doc.items + '項目）' }),
+        doc.can_delete ? el('button', { class: 'btn small ghost an-doc-del', type: 'button', text: '削除', 'aria-label': doc.name + 'を削除', onclick: function () {
+          if (!window.confirm('元の資料「' + doc.name + '」を削除します。点検項目は残ります（資料へのリンクだけ外れます）。よろしいですか？')) return;
+          api('inspect_doc_delete', { body: { id: doc.id } }).then(function () { toast('資料を削除しました'); annualLoad(true); }).catch(fail);
+        } }) : null);
+    }
+    var older = d.docs.slice(1);
+    return el('div', { class: 'annual-docs', id: 'annual-docs' }, el('span', { class: 'an-doc-h', text: '元の資料' }), line(d.docs[0]),
+      older.length ? el('details', { class: 'an-doc-old' }, el('summary', { text: '以前の資料（' + older.length + '）' }), older.map(line)) : null);
   }
 
   /* マスを押したときの画面: 状態・期限・担当・手順と、実施済み／確認済み／取り消し */

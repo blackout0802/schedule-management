@@ -2183,6 +2183,72 @@ ensure_schema();
 check('更新: 古いデータベースに、予定の band の列が足される（入っている予定は標準のまま）', (function () use ($mk, $a) { try { db()->query('SELECT band FROM events LIMIT 1')->fetchAll(); } catch (PDOException $e) { return false; } return $mk($a, ['kind' => 'private', 'title' => '更新後', 'start' => '2031-06-20'])['band'] === ''; })(), true);
 q("DELETE FROM events WHERE start_date = '2031-06-20'");
 
+// ---- 年間計画: 資料（PDF）からの取り込みと、元の資料（v1.115.0）。日付は 2031年8月に固定（年度は 2031）----
+$ipNow = strtotime('2031-08-05 10:00:00');
+$ipPdf = function (string $name = '年間計画.pdf', string $body = "%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n") use ($tmp) {
+    $f = $tmp . '/doc-' . uniqid() . '.pdf'; file_put_contents($f, $body);
+    return ['name' => $name, 'tmp_name' => $f, 'error' => UPLOAD_ERR_OK, 'size' => filesize($f)];
+};
+$thD = function (callable $fn) { try { $fn(); return null; } catch (InspectDocException $x) { return $x->getMessage(); } };
+q('DELETE FROM inspection_runs'); q('DELETE FROM inspection_items'); q('DELETE FROM inspection_docs');
+check('取り込み: 名前の比べ方は、全角・半角と空白の違いを無視する', [inspect_title_key(' 内部　監査 '), inspect_title_key('ＩＳＭＳ点検'), inspect_title_key('isms 点検')], ['内部監査', 'isms点検', 'isms点検']);
+check('資料: PDF でないものは受け付けない／PDF は受け付け、名前の / や " を取り除く',
+    [$thD(function () use ($ipPdf) { inspect_doc_check($ipPdf('x.pdf', 'hello')); }), inspect_doc_check($ipPdf('a/b"c.pdf'))['name'], $thD(function () use ($ipPdf) { inspect_doc_check(['error' => UPLOAD_ERR_PARTIAL] + $ipPdf()); })],
+    ['元の資料として残せるのは、PDF だけです。', 'abc.pdf', '資料の送信が途中で途切れました。もう一度お試しください。']);
+$ipDoc = inspect_doc_check($ipPdf());
+[$ipR, $ipE] = inspect_import([
+    ['title' => '台帳の見直し', 'months' => [8], 'owner_id' => (int)$a['id'], 'checker_id' => (int)$b['id'], 'page' => 1],
+    ['title' => '内部監査', 'months' => [1, 7], 'owner_id' => (int)$b['id'], 'page' => 2],
+], ['fy' => 2031, 'plan' => 'Pマーク', 'due_rule' => '20', 'pages' => 3], $a, $ipDoc, $ipNow);
+$ipItems = rows('SELECT * FROM inspection_items ORDER BY id');
+$ipD = row('SELECT * FROM inspection_docs');
+check('取り込み: 新しい項目を2件登録する（エラーなし・追加 2・変更 0）', [$ipE, $ipR['added'], $ipR['updated'], count($ipItems)], [null, 2, 0, 2]);
+check('取り込み: 月・担当・確認者・期限（新しい項目）・登録した人', [$ipItems[0]['months'], (int)$ipItems[0]['owner_id'], (int)$ipItems[0]['checker_id'], $ipItems[0]['due_rule'], (int)$ipItems[0]['created_by'], $ipItems[1]['months']], ['8', (int)$a['id'], (int)$b['id'], '20', (int)$a['id'], '7,1']);
+check('取り込み: 元の資料が残り、項目は資料とページに結びつく', [(int)$ipD['fy'], $ipD['name'], (int)$ipD['pages'], (int)$ipD['items'], (int)$ipD['created_by'], (int)$ipItems[0]['doc_id'] === (int)$ipD['id'], (int)$ipItems[1]['doc_page']], [2031, '年間計画.pdf', 3, 2, (int)$a['id'], true, 2]);
+check('取り込み: 資料のファイルは data/inspect_docs/ に保存し、外から見えないよう .htaccess を置く', [is_file(inspect_doc_dir() . '/' . $ipD['stored']), is_file(inspect_doc_dir() . '/.htaccess'), file_get_contents(inspect_doc_dir() . '/' . $ipD['stored']) === $ipDoc['data']], [true, true, true]);
+check('取り込み: 今月が実施月の項目は、すぐ起票する（8月の「台帳の見直し」）', (int)row('SELECT COUNT(*) AS c FROM inspection_runs WHERE item_id = ? AND ym = ?', [$ipItems[0]['id'], '2031-08'])['c'], 1);
+// 変更（登録した人）: 月だけ変わり、期限・手順はそのまま
+q('UPDATE inspection_items SET steps = ? WHERE id = ?', ['手順A', $ipItems[0]['id']]);
+[$ipR2, $ipE2] = inspect_import([['id' => (int)$ipItems[0]['id'], 'title' => '台帳の見直し', 'months' => [8, 2], 'owner_id' => (int)$a['id'], 'checker_id' => 0, 'page' => 4]], ['fy' => 2031, 'plan' => '別の計画', 'due_rule' => 'last'], $a, null, $ipNow);
+$ipI0 = row('SELECT * FROM inspection_items WHERE id = ?', [$ipItems[0]['id']]);
+check('取り込み: いまの項目の変更は、月・担当・確認者だけ（期限・手順・計画はそのまま。資料を残さなければ、資料のリンクもそのまま）', [$ipE2, $ipR2['updated'], $ipI0['months'], $ipI0['checker_id'], $ipI0['due_rule'], $ipI0['steps'], $ipI0['plan'], (int)$ipI0['doc_id'] === (int)$ipD['id'], (int)$ipI0['doc_page']], [null, 1, '8,2', null, '20', '手順A', 'Pマーク', true, 1]);
+// 1行でもだめなら、何も登録しない（資料も残さない）
+$ipFiles = count(glob(inspect_doc_dir() . '/*.pdf'));
+$ipCnt = (int)row('SELECT COUNT(*) AS c FROM inspection_items')['c'];
+$ipBad = function (array $rows, array $user) use ($ipNow, $ipPdf) { return inspect_import($rows, ['fy' => 2031], $user, inspect_doc_check($ipPdf()), $ipNow)[1]; };
+$ipOkRow = ['title' => '新しい点検', 'months' => [9], 'owner_id' => (int)$b['id']];
+check('取り込み: ほかの人が登録した項目は、変更できない（1行でもだめなら、ほかの行も登録しない）', $ipBad([$ipOkRow, ['id' => (int)$ipItems[0]['id'], 'title' => '台帳の見直し', 'months' => [9], 'owner_id' => (int)$b['id']]], $b), '2行目（台帳の見直し）: 点検項目を変更できるのは、登録した人と管理者だけです。');
+check('取り込み: 管理者は、ほかの人が登録した項目も変更できる', inspect_import([['id' => (int)$ipItems[1]['id'], 'title' => '内部監査', 'months' => [1], 'owner_id' => (int)$b['id']]], ['fy' => 2031], $admin, null, $ipNow)[1], null);
+check('取り込み: 同じ名前の行が2つ（全角・空白の違いも同じ）／いまの項目と同じ名前の新しい行／月のない行／担当のいない行／空、は登録しない',
+    [$ipBad([$ipOkRow, ['title' => '新しい　点検', 'months' => [3], 'owner_id' => (int)$b['id']]], $a), $ipBad([['title' => '台帳の 見直し', 'months' => [3], 'owner_id' => (int)$b['id']]], $a),
+     $ipBad([$ipOkRow, ['title' => '月なし', 'months' => [], 'owner_id' => (int)$b['id']]], $a), $ipBad([['title' => '担当なし', 'months' => [3], 'owner_id' => 999999]], $a), $ipBad([], $a)],
+    ['2行目（新しい　点検）: 同じ名前の行が2つあります。どちらかの名前を変えるか、選ぶのを外してください。', '1行目（台帳の 見直し）: 同じ名前の点検項目が、もうあります。画面を開き直してください。',
+     '2行目（月なし）: 実施する月を1つ以上選んでください。', '1行目（担当なし）: 担当者を選んでください。', '登録する行を選んでください。']);
+check('取り込み: だめなときは、項目も資料（記録・ファイル）も増えない', [(int)row('SELECT COUNT(*) AS c FROM inspection_items')['c'], (int)row('SELECT COUNT(*) AS c FROM inspection_docs')['c'], count(glob(inspect_doc_dir() . '/*.pdf'))], [$ipCnt, 1, $ipFiles]);
+check('取り込み: 1回に60行まで', inspect_import(array_fill(0, 61, $ipOkRow), ['fy' => 2031], $a, null, $ipNow)[1], '1回で取り込めるのは、60行までです。');
+check('取り込み: 年度がおかしいときは、今年度の資料にする', (function () use ($a, $ipNow, $ipPdf) { [$r] = inspect_import([['title' => '年度の確かめ', 'months' => [10], 'owner_id' => (int)$a['id']]], ['fy' => 1999], $a, inspect_doc_check($ipPdf('fy.pdf')), $ipNow); return (int)row('SELECT fy FROM inspection_docs WHERE id = ?', [$r['doc_id']])['fy']; })(), 2031);
+// 年間計画の表・資料の一覧・削除
+$ipO = inspect_overview(2031, $a, $ipNow);
+$ipRowA = array_values(array_filter($ipO['items'], function ($i) { return $i['title'] === '台帳の見直し'; }))[0];
+check('年間計画の表: 年度の資料（新しい順）と、項目の資料・ページ', [count($ipO['docs']), $ipO['docs'][0]['name'], $ipO['docs'][1]['name'], $ipO['docs'][1]['by_name'], $ipRowA['doc_id'] === (int)$ipD['id'], $ipRowA['doc_page']], [2, 'fy.pdf', '年間計画.pdf', '山田', true, 1]);
+check('資料: 削除できるのは、取り込んだ人と管理者', [$ipO['docs'][1]['can_delete'], inspect_overview(2031, $b, $ipNow)['docs'][1]['can_delete'], inspect_overview(2031, $admin, $ipNow)['docs'][1]['can_delete']], [true, false, true]);
+check('資料: ほかの年度の表には出ない', count(inspect_overview(2030, $a, $ipNow)['docs']), 0);
+inspect_doc_delete($ipD);
+$ipO = inspect_overview(2031, $a, $ipNow);
+$ipRowA = array_values(array_filter($ipO['items'], function ($i) { return $i['title'] === '台帳の見直し'; }))[0];
+check('資料の削除: 記録とファイルが消え、項目は残ってリンクだけ外れる', [row('SELECT id FROM inspection_docs WHERE id = ?', [$ipD['id']]) === null, is_file(inspect_doc_dir() . '/' . $ipD['stored']), $ipRowA['doc_id'], (int)row('SELECT COUNT(*) AS c FROM inspection_items WHERE doc_id = ?', [$ipD['id']])['c'], count($ipO['docs'])], [true, false, null, 0, 1]);
+check('資料: バックアップ（暗号化したファイル）には入らない（コメントの画像と同じ）', isset(backup_collect()['tables']['inspection_docs']), false);
+foreach (rows('SELECT * FROM inspection_docs') as $ipX) { inspect_doc_delete($ipX); }
+// 古い版（SCHEMA_VERSION 34。inspection_items に doc_id・doc_page が無く、inspection_docs も無い）からの更新
+db()->exec('ALTER TABLE inspection_items DROP COLUMN doc_page');
+db()->exec('ALTER TABLE inspection_items DROP COLUMN doc_id');
+db()->exec('DROP TABLE inspection_docs');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '34']);
+ensure_schema();
+check('更新: 古いデータベースに、資料の表と、項目の doc_id・doc_page の列が足される（入っている項目は、資料なし）', (function () { try { return [(int)row('SELECT COUNT(*) AS c FROM inspection_items WHERE doc_id IS NULL')['c'] > 0, (int)row('SELECT COUNT(*) AS c FROM inspection_docs')['c']]; } catch (PDOException $e) { return $e->getMessage(); } })(), [true, 0]);
+q('DELETE FROM inspection_runs'); q('DELETE FROM inspection_items');
+
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
 exec('python3 ' . escapeshellarg(__DIR__ . '/../tools/stage_deploy.py') . ' ' . escapeshellarg($stageDir) . ' 2>&1', $stageOut, $stageRc);
@@ -2190,6 +2256,7 @@ check('反映: そろえられる', $stageRc, 0);
 check('反映: 一番上の .htaccess が入り、中身は全部を断る', [is_file("$stageDir/.htaccess"), strpos((string)@file_get_contents("$stageDir/.htaccess"), 'Require all denied') !== false], [true, true]);
 check('反映: SSL の更新の経路だけを通す', strpos((string)@file_get_contents("$stageDir/.htaccess"), '/\\.well-known/acme-challenge/[A-Za-z0-9_-]+$') !== false, true);
 check('反映: config.php と install.php を入れない', [is_file("$stageDir/config.php"), is_file("$stageDir/public/install.php")], [false, false]);
+check('反映: PDF を読む部品（PDF.js）と、日本語の文字の対応表（.bcmap）も入れる', [is_file("$stageDir/public/assets/vendor/pdfjs-4.10.38/pdf.min.js"), is_file("$stageDir/public/assets/vendor/pdfjs-4.10.38/pdf.worker.min.js"), is_file("$stageDir/public/assets/vendor/pdfjs-4.10.38/load.js"), is_file("$stageDir/public/assets/vendor/pdfjs-4.10.38/cmaps/UniJIS-UCS2-H.bcmap")], [true, true, true, true]);
 exec('rm -rf ' . escapeshellarg($stageDir));
 
 echo "\n結果: 成功 $pass / 失敗 $fail\n";

@@ -89,7 +89,7 @@ function q(string $sql, array $params = []): PDOStatement
     $st->execute($params);
     // 画面に出るデータ（予定・ToDo・繰り返し・休業日・社員）を書き換えたら、更新番号を進める。
     // 開いている画面は、この番号が変わったときだけ、自動で表示を更新する。書き込み処理を足しても入れ忘れが出ないよう、ここで一括して行う
-    if (preg_match('/^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:events|todos|todo_comments|series|series_skips|company_holidays|users|rooms|room_bookings|inspection_items|inspection_runs)\b/i', $sql)) {
+    if (preg_match('/^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:events|todos|todo_comments|series|series_skips|company_holidays|users|rooms|room_bookings|inspection_items|inspection_runs|inspection_docs)\b/i', $sql)) {
         rev_mark_dirty();
     }
     return $st;
@@ -326,6 +326,13 @@ function migrate_schema(): void
         db()->query('SELECT created_by FROM inspection_items LIMIT 1')->fetchAll();
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE inspection_items ADD COLUMN created_by ' . (db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'INT UNSIGNED' : 'INTEGER') . ' NULL');
+    }
+    foreach (['doc_id', 'doc_page'] as $col) { // 点検項目を取り込んだ元の資料（inspection_docs）と、そのページ。SCHEMA_VERSION 35
+        try {
+            db()->query("SELECT $col FROM inspection_items LIMIT 1")->fetchAll();
+        } catch (PDOException $e) {
+            db()->exec("ALTER TABLE inspection_items ADD COLUMN $col " . ($col === 'doc_id' && db()->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? 'INT UNSIGNED' : 'INTEGER') . ' NULL');
+        }
     }
     try { // プライベートの予定の帯の色（'' = 標準。EVENT_BANDS のどれか）。SCHEMA_VERSION 34
         db()->query('SELECT band FROM events LIMIT 1')->fetchAll();
