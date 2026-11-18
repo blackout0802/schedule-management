@@ -4,3 +4,4 @@ data/*
 *.log
 dist/
 tests/e2e/.work/
+.claude/settings.local.json
