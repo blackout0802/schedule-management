@@ -102,7 +102,7 @@ PC は3台: **個人用の Mac**・**会社用の Windows 11**・**個人用の 
 
 ### 6-1. Mac（個人用）
 
-1. ターミナルで、道具を入れる（Homebrew がなければ、https://brew.sh の1行で先に入れる）。
+1. ターミナルで、道具を入れる。Homebrew がなければ、先に https://brew.sh の1行で入れ、終わりに表示される「Next steps」の2行（`brew shellenv` を `~/.zprofile` に足す行）も実行する。
 
 ```bash
 xcode-select --install
@@ -121,7 +121,7 @@ echo 'export PATH="$(brew --prefix)/opt/coreutils/libexec/gnubin:$PATH"' >> ~/.z
 3. Playwright（CI と同じ版）と Chromium。
 
 ```bash
-npm install -g playwright@1.56.1 && npx playwright install chromium
+npm install -g playwright@1.56.1 && playwright install chromium
 ```
 
 4. Claude Code: **Claude デスクトップアプリ**（Code のタブ）を入れて、ログインする。ターミナルで使うなら、公式の手順（https://code.claude.com/docs/en/setup）で `claude` も入れる。コンピューター操作は、デスクトップアプリの設定で入れる（macOS 14 以上。アクセシビリティと画面収録の許可がいる）。
@@ -166,7 +166,11 @@ gh auth login
 gh auth setup-git
 ```
 
-2. git の設定。
+2. git の設定（名前とメールは、コミットに付く。メールは GitHub の設定 › Emails にある `…@users.noreply.github.com` を使うと、本当のアドレスが公開されない）。
+
+```bash
+git config --global user.name "<名前>" && git config --global user.email "<メール>"
+```
 
 ```bash
 git config --global pull.ff only && git config --global fetch.prune true && git config --global push.autoSetupRemote true && git config --global init.defaultBranch main
