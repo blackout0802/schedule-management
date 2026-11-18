@@ -232,8 +232,24 @@ CREATE TABLE IF NOT EXISTS inspection_items (
   active INTEGER NOT NULL DEFAULT 1,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_by INTEGER NULL,
+  doc_id INTEGER NULL,
+  doc_page INTEGER NULL,
   created_at TEXT NOT NULL
 );
+
+-- 年間計画の元の資料（PDF から取り込んだときに残す。ファイルは data/inspect_docs/。年度ごと）
+CREATE TABLE IF NOT EXISTS inspection_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fy INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  size INTEGER NOT NULL DEFAULT 0,
+  pages INTEGER NOT NULL DEFAULT 0,
+  items INTEGER NOT NULL DEFAULT 0,
+  stored TEXT NOT NULL,
+  created_by INTEGER NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_inspection_docs_fy ON inspection_docs (fy);
 
 CREATE TABLE IF NOT EXISTS inspection_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

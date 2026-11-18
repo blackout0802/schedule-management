@@ -308,6 +308,7 @@ function inspect_item_for_client(array $item, array $user): array
         'steps' => (string)$item['steps'], 'need_attach' => (int)$item['need_attach'] === 1, 'active' => (int)$item['active'] === 1,
         'mine' => (int)$item['owner_id'] === (int)$user['id'] || ($item['checker_id'] !== null && (int)$item['checker_id'] === (int)$user['id']),
         'can_edit' => inspect_can_edit($item, $user), 'created_by_name' => (string)($item['created_by_name'] ?? ''),
+        'doc_id' => !empty($item['doc_alive']) ? (int)$item['doc_id'] : null, 'doc_page' => !empty($item['doc_alive']) && $item['doc_page'] !== null ? (int)$item['doc_page'] : null,
     ];
 }
 
@@ -339,8 +340,8 @@ function inspect_overview(int $fy, array $user, ?int $now = null): array
         $runs[$r['item_id'] . '|' . $r['ym']] = $r;
     }
     $items = [];
-    foreach (rows('SELECT i.*, o.name AS owner_name, c.name AS checker_name, b.name AS created_by_name FROM inspection_items i
-        LEFT JOIN users o ON o.id = i.owner_id LEFT JOIN users c ON c.id = i.checker_id LEFT JOIN users b ON b.id = i.created_by ORDER BY i.sort_order, i.id') as $item) {
+    foreach (rows('SELECT i.*, o.name AS owner_name, c.name AS checker_name, b.name AS created_by_name, dd.id AS doc_alive FROM inspection_items i
+        LEFT JOIN users o ON o.id = i.owner_id LEFT JOIN users c ON c.id = i.checker_id LEFT JOIN users b ON b.id = i.created_by LEFT JOIN inspection_docs dd ON dd.id = i.doc_id ORDER BY i.sort_order, i.id') as $item) {
         $cells = [];
         $itemMonths = inspect_item_months($item);
         foreach ($months as $ym) {
@@ -361,7 +362,7 @@ function inspect_overview(int $fy, array $user, ?int $now = null): array
     $plans = array_values(array_unique(array_map(function ($i) { return $i['plan']; }, $items)));
     $curFy = inspect_fy_of($curYm);
     return ['fy' => $fy, 'fy_start' => INSPECT_FY_START, 'months' => array_map(function ($ym) { return ['ym' => $ym, 'm' => (int)substr($ym, 5, 2)]; }, $months),
-        'cur_ym' => $curYm, 'cur_fy' => $curFy, 'today' => $today, 'items' => $items, 'plans' => $plans, 'summary' => inspect_summary($user, $now)];
+        'cur_ym' => $curYm, 'cur_fy' => $curFy, 'today' => $today, 'items' => $items, 'plans' => $plans, 'summary' => inspect_summary($user, $now), 'docs' => inspect_docs_for_fy($fy, $user)];
 }
 
 /** 画面の上のボタンの件数・帯のための集計（全部の年度の、未実施・確認待ち） */
@@ -608,4 +609,217 @@ function inspect_notify_due(?int $now = null): array
         $msg[] = '年間点検の通知でエラー: ' . $e->getMessage();
     }
     return $msg;
+}
+
+// =====================================================================
+// 資料（PDF）からの取り込み（v1.115.0〜）
+//   PDF の文字は、ブラウザ（PDF.js）で読み、項目 × 月 の表にする。読んだ結果は、確認の画面で直してから、まとめて登録する（inspect_import）。
+//   元の資料は、その年度の計画に添付して残す（inspection_docs。ファイルは data/inspect_docs/。Web からは直接見えない）。
+//   資料はバックアップ（暗号化したファイル）に入らない（コメントの画像と同じ。サーバーの data/inspect_docs/ にだけある）。
+
+const INSPECT_DOC_MAX = 10 * 1024 * 1024; // 資料の上限（10MB）
+const INSPECT_IMPORT_MAX = 60;            // 1回で取り込める行
+
+class InspectDocException extends RuntimeException
+{
+}
+
+function inspect_doc_dir(): string
+{
+    return dirname(__DIR__) . '/data/inspect_docs';
+}
+
+function inspect_doc_prepare_dir(): string
+{
+    $dir = inspect_doc_dir();
+    if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
+        throw new InspectDocException('資料の保存先（data/inspect_docs）を作れません。');
+    }
+    if (!is_file($dir . '/.htaccess')) {
+        @file_put_contents($dir . '/.htaccess', "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n  Order deny,allow\n  Deny from all\n</IfModule>\n");
+    }
+    return $dir;
+}
+
+/** アップロードされた資料を調べる（PDF だけ。中身の先頭で見分ける。拡張子は信用しない） */
+function inspect_doc_check(array $f): array
+{
+    $codes = [UPLOAD_ERR_INI_SIZE => '資料が大きすぎます（サーバーの上限を超えています）。「元の資料として残す」を外すと、項目だけ登録できます。', UPLOAD_ERR_FORM_SIZE => '資料が大きすぎます。', UPLOAD_ERR_PARTIAL => '資料の送信が途中で途切れました。もう一度お試しください。'];
+    if (($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        throw new InspectDocException($codes[$f['error'] ?? UPLOAD_ERR_NO_FILE] ?? '資料を受け取れませんでした。');
+    }
+    if (!is_uploaded_file($f['tmp_name']) && !(defined('ATTACH_TEST') && is_file($f['tmp_name']))) {
+        throw new InspectDocException('資料を受け取れませんでした。');
+    }
+    $size = (int)filesize($f['tmp_name']);
+    if ($size <= 0 || $size > INSPECT_DOC_MAX) {
+        throw new InspectDocException('資料は ' . (int)(INSPECT_DOC_MAX / 1048576) . 'MB 以下にしてください。');
+    }
+    $raw = (string)file_get_contents($f['tmp_name']);
+    $head = substr($raw, 0, 1024);
+    if (strpos($head, '%PDF-') === false) {
+        throw new InspectDocException('元の資料として残せるのは、PDF だけです。');
+    }
+    $name = trim(preg_replace('/[\x00-\x1f\/\\\\"]/u', '', (string)($f['name'] ?? '')));
+    $name = mb_substr($name !== '' ? $name : '資料.pdf', 0, 120);
+    return ['data' => $raw, 'name' => $name, 'size' => $size];
+}
+
+/** 年度の資料の一覧（新しい順） */
+function inspect_docs_for_fy(int $fy, array $user): array
+{
+    $out = [];
+    foreach (rows('SELECT d.*, u.name AS by_name, (SELECT COUNT(*) FROM inspection_items i WHERE i.doc_id = d.id) AS linked FROM inspection_docs d LEFT JOIN users u ON u.id = d.created_by WHERE d.fy = ? ORDER BY d.id DESC', [$fy]) as $d) {
+        $out[] = ['id' => (int)$d['id'], 'name' => $d['name'], 'size' => (int)$d['size'], 'pages' => (int)$d['pages'], 'items' => (int)$d['items'], 'linked' => (int)$d['linked'],
+            'by_name' => (string)($d['by_name'] ?? ''), 'created_at' => $d['created_at'], 'can_delete' => inspect_doc_can_delete($d, $user)];
+    }
+    return $out;
+}
+
+function inspect_doc_can_delete(array $doc, array $user): bool
+{
+    return is_admin($user) || ($doc['created_by'] !== null && (int)$doc['created_by'] === (int)$user['id']);
+}
+
+/** 資料を消す（結びついた項目からも外す）。ファイルも消す */
+function inspect_doc_delete(array $doc): void
+{
+    q('UPDATE inspection_items SET doc_id = NULL, doc_page = NULL WHERE doc_id = ?', [$doc['id']]);
+    q('DELETE FROM inspection_docs WHERE id = ?', [$doc['id']]);
+    $p = inspect_doc_dir() . '/' . basename((string)$doc['stored']);
+    if (is_file($p)) {
+        @unlink($p);
+    }
+}
+
+/** 取り込む1行の、名前の比べ方（前後と途中の空白、全角・半角の違いを無視する） */
+function inspect_title_key(string $t): string
+{
+    if (function_exists('normalizer_normalize')) {
+        $n = normalizer_normalize($t, Normalizer::FORM_KC);
+        if (is_string($n)) {
+            $t = $n;
+        }
+    } else {
+        $t = mb_convert_kana($t, 'asKV', 'UTF-8');
+    }
+    return mb_strtolower(preg_replace('/\s+/u', '', $t), 'UTF-8');
+}
+
+/**
+ * 確認の画面で選んだ行を、まとめて登録する。1行でもだめなら、何も登録しない。
+ *   $rows … [{id（いまの項目を変えるとき）, title, months, owner_id, checker_id, page}]
+ *   $opt  … plan（新しい項目の計画の名前）・due_rule（新しい項目の期限）・fy（資料を残す年度）
+ *   $doc  … inspect_doc_check() の結果（元の資料として残すとき）。null なら残さない
+ * @return array{0:?array,1:?string} [結果, エラーの文]
+ */
+function inspect_import(array $rows, array $opt, array $user, ?array $doc = null, ?int $now = null): array
+{
+    if (!$rows) {
+        return [null, '登録する行を選んでください。'];
+    }
+    if (count($rows) > INSPECT_IMPORT_MAX) {
+        return [null, '1回で取り込めるのは、' . INSPECT_IMPORT_MAX . '行までです。'];
+    }
+    $fy = (int)($opt['fy'] ?? 0);
+    $curFy = inspect_fy_of(date('Y-m', $now ?? time()));
+    if ($fy < $curFy - 5 || $fy > $curFy + 2) {
+        $fy = $curFy;
+    }
+    $plan = trim((string)($opt['plan'] ?? ''));
+    $due = (string)($opt['due_rule'] ?? 'last');
+    $todo = [];
+    $keys = [];
+    $adds = 0;
+    foreach ($rows as $i => $r) {
+        if (!is_array($r)) {
+            return [null, '取り込む内容の形が正しくありません。'];
+        }
+        $no = ($i + 1) . '行目';
+        $existing = null;
+        if (!empty($r['id'])) {
+            $existing = row('SELECT * FROM inspection_items WHERE id = ?', [(int)$r['id']]);
+            if (!$existing) {
+                return [null, $no . ': 変える点検項目が見つかりません（ほかの人が削除した可能性があります）。画面を開き直してください。'];
+            }
+            if (!inspect_can_edit($existing, $user)) {
+                return [null, $no . '（' . $existing['title'] . '）: 点検項目を変更できるのは、登録した人と管理者だけです。'];
+            }
+            $in = [
+                'plan' => $existing['plan'], 'title' => (string)($r['title'] ?? $existing['title']), 'months' => $r['months'] ?? [], 'due_rule' => $existing['due_rule'], 'alert_days' => $existing['alert_days'],
+                'owner_id' => (int)($r['owner_id'] ?? $existing['owner_id']), 'checker_id' => array_key_exists('checker_id', $r) ? (int)$r['checker_id'] : (int)$existing['checker_id'], 'steps' => $existing['steps'],
+            ];
+        } else {
+            $adds++;
+            $in = ['plan' => $plan, 'title' => (string)($r['title'] ?? ''), 'months' => $r['months'] ?? [], 'due_rule' => $due, 'alert_days' => 7,
+                'owner_id' => (int)($r['owner_id'] ?? 0), 'checker_id' => (int)($r['checker_id'] ?? 0), 'steps' => ''];
+        }
+        [$data, $err] = inspect_validate_item($in, $existing);
+        if ($err) {
+            return [null, $no . (trim((string)($r['title'] ?? '')) !== '' ? '（' . trim((string)$r['title']) . '）' : '') . ': ' . $err];
+        }
+        $k = inspect_title_key($data['title']);
+        if (isset($keys[$k])) {
+            return [null, $no . '（' . $data['title'] . '）: 同じ名前の行が2つあります。どちらかの名前を変えるか、選ぶのを外してください。'];
+        }
+        $keys[$k] = true;
+        if (!$existing) {
+            $same = null;
+            foreach (rows('SELECT id, title FROM inspection_items') as $it) {
+                if (inspect_title_key($it['title']) === $k) {
+                    $same = $it;
+                    break;
+                }
+            }
+            if ($same) {
+                return [null, $no . '（' . $data['title'] . '）: 同じ名前の点検項目が、もうあります。画面を開き直してください。'];
+            }
+        }
+        $page = (int)($r['page'] ?? 0);
+        $todo[] = [$data, $existing, $page >= 1 && $page <= 9999 ? $page : null];
+    }
+    if ($adds && (int)row('SELECT COUNT(*) AS c FROM inspection_items')['c'] + $adds > INSPECT_MAX_ITEMS) {
+        return [null, '点検項目は、' . INSPECT_MAX_ITEMS . '件までです（いま ' . (int)row('SELECT COUNT(*) AS c FROM inspection_items')['c'] . '件）。'];
+    }
+    $stored = null;
+    $docId = null;
+    $pdo = db();
+    try {
+        if ($doc) {
+            $dir = inspect_doc_prepare_dir();
+            $stored = bin2hex(random_bytes(16)) . '.pdf';
+            if (@file_put_contents($dir . '/' . $stored, $doc['data'], LOCK_EX) === false) {
+                throw new InspectDocException('資料を保存できません（保存先の空き容量・権限を確認してください）。');
+            }
+            @chmod($dir . '/' . $stored, 0600);
+        }
+        $pdo->beginTransaction();
+        if ($doc) {
+            q('INSERT INTO inspection_docs (fy, name, size, pages, items, stored, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)',
+                [$fy, $doc['name'], $doc['size'], max(0, min(9999, (int)($opt['pages'] ?? 0))), count($todo), $stored, (int)$user['id'], now_str()]);
+            $docId = (int)$pdo->lastInsertId();
+        }
+        $saved = [];
+        foreach ($todo as [$data, $existing, $page]) {
+            $s = inspect_item_save($data, $existing, $now, (int)$user['id']);
+            if ($docId) {
+                q('UPDATE inspection_items SET doc_id = ?, doc_page = ? WHERE id = ?', [$docId, $page, $s['id']]);
+            }
+            $saved[] = ['id' => (int)$s['id'], 'title' => $s['title'], 'add' => $existing === null];
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($stored && is_file(inspect_doc_dir() . '/' . $stored)) {
+            @unlink(inspect_doc_dir() . '/' . $stored);
+        }
+        if ($e instanceof InspectDocException) {
+            return [null, $e->getMessage()];
+        }
+        throw $e;
+    }
+    $added = count(array_filter($saved, function ($s) { return $s['add']; }));
+    return [['items' => $saved, 'added' => $added, 'updated' => count($saved) - $added, 'doc_id' => $docId, 'fy' => $fy], null];
 }

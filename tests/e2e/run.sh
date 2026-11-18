@@ -45,7 +45,7 @@ for i in $(seq 1 30); do curl -s -o /dev/null "http://127.0.0.1:$PORT/login.php"
 
 reset_db() {
   [ "${DSN#sqlite:}" != "$DSN" ] && rm -f "${DSN#sqlite:}"
-  rm -rf "$WORK/app/data/attachments" "$WORK/app/data/backups"; : > "$WORK/slack.log"; : > "$WORK/mail.log"
+  rm -rf "$WORK/app/data/attachments" "$WORK/app/data/backups" "$WORK/app/data/inspect_docs"; : > "$WORK/slack.log"; : > "$WORK/mail.log"
   php "$HERE/lib/seed.php" || return 1
   [ "$1" = "seg" ] && php "$HERE/lib/seed-demo.php"   # 業務の予定を、あらかじめ入れておく必要があるテスト
   return 0
