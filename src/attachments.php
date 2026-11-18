@@ -92,6 +92,17 @@ function attach_process(array $f): array
         $nw = (int)max(1, round($w * ATTACH_MAX_SIDE / $m));
         $nh = (int)max(1, round($h * ATTACH_MAX_SIDE / $m));
         $s = imagescale($img, $nw, $nh, IMG_BICUBIC);
+        if (!$s) { // GD の版によっては IMG_BICUBIC が失敗する（Homebrew の GD 2.3.3 など）。縮めずに通さないよう、別の方法で縮める
+            $s = imagecreatetruecolor($nw, $nh);
+            if ($s) {
+                imagealphablending($s, false);
+                imagesavealpha($s, true);
+                imagefill($s, 0, 0, imagecolorallocatealpha($s, 0, 0, 0, 127));
+                if (!imagecopyresampled($s, $img, 0, 0, 0, 0, $nw, $nh, $w, $h)) {
+                    $s = false;
+                }
+            }
+        }
         if ($s) {
             $img = $s;
             $w = $nw;
