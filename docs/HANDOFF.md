@@ -1,6 +1,6 @@
 # 引き継ぎメモ（スケジュール管理アプリ）
 
-新しいセッションの最初に、これを読んでください。最終更新: 2026-11-18（作業の進め方の基本方針 `docs/WORKFLOW.md` を足した）/ 現在の版: **v1.115.0**（v1.115.0（年間計画の PDF からの取り込み・元の資料）は、作業ブランチ `claude/adoring-hawking-khhqhu` から PR #59 で自動マージし、本番に反映ずみ（2026-11-18 01:07 UTC、run 44210765581）。ユーザーの実機確認待ち。v1.114.0（スマホの名前のメニューの重なりの直し・Slack の複数の送り先に同時に送る）は PR #57 で本番に反映ずみ（2026-11-16 14:02 UTC、run 43879428499）で、ユーザーの確認待ち。v1.112.0・v1.113.0 は、ユーザーがスマホで確認ずみ（2026-11-15「問題なし」）。v1.102.0 まではユーザー確認ずみ。v1.103.0〜v1.111.0 は、ユーザーの確認待ち）
+新しいセッションの最初に、これを読んでください。最終更新: 2026-11-18（作業の進め方の基本方針 `docs/WORKFLOW.md` を足した。個人用 Mac の準備がすんだ）/ 現在の版: **v1.115.0**（v1.115.0（年間計画の PDF からの取り込み・元の資料）は、作業ブランチ `claude/adoring-hawking-khhqhu` から PR #59 で自動マージし、本番に反映ずみ（2026-11-18 01:07 UTC、run 44210765581）。ユーザーの実機確認待ち。v1.114.0（スマホの名前のメニューの重なりの直し・Slack の複数の送り先に同時に送る）は PR #57 で本番に反映ずみ（2026-11-16 14:02 UTC、run 43879428499）で、ユーザーの確認待ち。v1.112.0・v1.113.0 は、ユーザーがスマホで確認ずみ（2026-11-15「問題なし」）。v1.102.0 まではユーザー確認ずみ。v1.103.0〜v1.111.0 は、ユーザーの確認待ち）
 
 ## 1. アプリと作業場所
 
@@ -359,7 +359,14 @@
 ## 6. 今の状態（2026-11-18）
 
 **次のセッションでやること**
-0. （2026-11-18〜）3台の PC の準備（`docs/WORKFLOW.md` の 6）。終わった PC から、ローカルで作業する。準備がすんだ PC は、ここに書き足す（まだ、どの PC も終わっていない）。
+0. （2026-11-18〜）3台の PC の準備（`docs/WORKFLOW.md` の 6）。終わった PC から、ローカルで作業する。準備がすんだ PC は、ここに書き足す。
+   - **個人用 Mac: 準備ずみ（2026-11-18）**。作業の場所は `~/dev/schedule-management`（以前の `~/Documents/schedule-management` は、iCloud の「書類」同期の下にあるので、もう使わない。消すのはユーザー）。
+     - 道具（git・gh・php・node・coreutils の `timeout`・playwright 1.56.1）は入っていた。gh はログインずみ。git の設定4つ（`pull.ff only`・`fetch.prune`・`push.autoSetupRemote`・`init.defaultBranch`）を足した。
+     - **Chromium**: 最新の Node 26 では `playwright install chromium` が止まる。`brew install node@22` で入れて、取得のときだけ `PATH=/opt/homebrew/opt/node@22/bin:$PATH playwright install chromium`（既定の node は 26 のまま。画面テストの実行は 26 で通る）。
+     - **PHP は 8.3 を使う**: 最新の `php`（8.5）だと、画面テストが落ちる（`src/slack.php` 324 行の `$http_response_header` の非推奨警告が API の返事に混ざり、JSON として読めない）。`brew install php@8.3` して、`export PATH=/opt/homebrew/opt/php@8.3/bin:$PATH` の上で流す（アプリの対応は 7.4〜8.3。本番の Web は 8.3）。8.5 への対応は、別の作業。
+     - 確かめ: 画面テスト `agenda` `insp` は成功。PHP 単体は 成功 866 / 失敗 1: 「画像: 長辺2000pxまで縮める」。この Mac の GD（2.3.3）では `imagescale(…, IMG_BICUBIC)` が `false` を返し、`attach_process`（`src/attachments.php`）が縮めずに通す（PHP 8.3 でも同じ。CI の 7.4/8.1/8.3 では通る）。本番の GD で同じなら、大きな画像が縮まらない。**未対応**（`imagescale` が失敗したら `imagecopyresampled` で縮める、などの直しが考えられる）。
+     - **まだ**: `~/.claude/CLAUDE.md`（共通の約束。claude.ai の個人設定の文が要る）。
+   - 会社用 Windows 11・個人用 Windows 11: まだ。
 1. ユーザーの実機確認を待つ:
    - v1.115.0（年間計画の PDF からの取り込み）: 年間計画 →「PDFから取り込む」で、実物の年間スケジュールの PDF が読めるか。確認の画面・登録・「元の資料」の帯・「資料 p.N」のリンク（PDF が開くか）。読めなければ、PDF（個人名などは消したもの）をもらって直す。
    - v1.114.0: スマホで名前のメニューが「カレンダー／リスト」のボタンの手前に出る。Slack: #太田連絡チャンネル の「送る」にチェック → 次の定時（朝・夕方）に #スケジュール-テスト と両方に届く。
@@ -387,7 +394,7 @@
 - 自動 PR のため、リポジトリの Actions の「GitHub Actions に pull request の作成・承認を許可する」を有効にした（`can_approve_pull_request_reviews: true`）。ブランチ保護はしていない。
 - `auto-pr` が作った PR は、PR 側のテスト実行が「承認待ち（`action_required`）」になり、ジョブが動かないことがある（2026-11-10 に確認）。そのため `auto-merge` は、同じコミットの **push 側**の `tests` が成功したときだけ動く。下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない。
 - `GITHUB_TOKEN` でのマージでは、本番ブランチへの push でワークフローが動かない（2026-11-10 に確認。PR #43 のマージ後、`deploy` が走らなかった）。そのため、マージ後に `gh workflow run tests --ref <本番ブランチ>` で、本番ブランチのテストと反映を明示的に始めるようにした。
-- 手動の `gh workflow run tests --ref <本番ブランチ>` は run 42736828788 で成功（unit・mariadb・compat・e2e・deploy）。自動マージのあとに自動で始まることは、この記録を取り込む PR で確認する。
+- 手動の `gh workflow run tests --ref <本番ブランチ>` は run 42736828788 で成功（unit・mariadb・compat・e2e・deploy）。自動マージのあとに自動で始まることは、2026-11-18 に確認ずみ（`auto-merge` のあと、`workflow_dispatch` の `tests` が自動で始まり成功: run 44219507066）。
 
 **2026-11-09（v1.102.0 の反映の確認）**
 - PR #29（e2e のジョブを `ubuntu-24.04` に固定）を取り込んだあとの CI（run 177、`536f62c`）は、unit（7.4/8.1/8.3）・mariadb・compat・e2e がすべて成功し、`deploy`（FTPS の反映と、反映のあとの確認）も成功（02:44 UTC）。**本番は v1.102.0**。「Playwright と Chromium」は 24.04 で入った。

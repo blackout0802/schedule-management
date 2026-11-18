@@ -193,4 +193,7 @@ cd ~/dev/schedule-management && php tests/run.php
 bash tests/e2e/run.sh agenda insp
 ```
 
+- **Mac の注意（2026-11-18、個人用 Mac で確かめた）**: Homebrew の `php` は最新（8.5）で、画面テストが落ちる。`brew install php@8.3` を足し、確かめの前に `export PATH=/opt/homebrew/opt/php@8.3/bin:$PATH`（`~/.zshrc` に書いてもよい）。また、この GD では単体テスト「画像: 長辺2000pxまで縮める」が1件落ちる（アプリ側の話。`docs/HANDOFF.md` の 6）。
+- clone は iCloud・OneDrive など、クラウド同期されるフォルダの外（`~/dev`）に置く（Mac の「書類」「デスクトップ」は、iCloud の同期をオンにしていると対象になる）。
+
 6. Claude Code でフォルダを開き、初めの知らせ（【Git の同期の確認】）が出ることを見る。
