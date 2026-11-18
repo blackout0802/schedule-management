@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/git-sync-check.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
