@@ -109,8 +109,10 @@ xcode-select --install
 ```
 
 ```bash
-brew install git gh php node coreutils
+brew install git gh php node@22 coreutils && brew link --overwrite --force node@22
 ```
+
+- Node は **22** にする（`node` だけだと最新の版（2026-11 は 26）が入り、Playwright 1.56.1 の `playwright install chromium` が 100% のあと止まって終わらなかった。2026-11-18、個人用 Mac で）。CI は Node 20。
 
 2. `coreutils` の `timeout` を使えるようにする（画面テストの `run.sh` が使う。Mac には標準で無い）。
 
@@ -143,7 +145,7 @@ sudo apt-get update && sudo apt-get install -y git gh php-cli php-sqlite3 php-gd
 ```
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs
 ```
 
 ```bash
