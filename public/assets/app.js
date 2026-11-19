@@ -2691,6 +2691,16 @@
   function mHead(kind) { return memoEd ? memoEd.querySelector(':scope > div[data-md="' + kind + '"]') : null; }
   function mStruck(d) { var ss = d.querySelectorAll('s,strike,del'); for (var i = 0; i < ss.length; i++) if (ss[i].textContent.trim()) return true; return false; }
   function mKey(d) { return d.textContent.trim() + '|' + (d.getAttribute('data-todo') || ''); }
+  /* 予定の行（data-ev）の先頭の時刻（「10:00〜11:00 」「10:00〜 」「〜17:00 」）。転記するときは外す（次回出勤日の時刻は、memoCalSync が付ける） */
+  var MEMO_TIME_RE = /^(\d{1,2}:\d{2}(〜(\d{1,2}:\d{2})?)?|〜\d{1,2}:\d{2})[ 　]/;
+  function mTrText(d) {
+    var t = d.textContent.trim(), id = +d.getAttribute('data-ev');
+    if (!id) return t;
+    var e = memoCal && memoCal.events.filter(function (x) { return x.id === id; })[0];
+    if (e && t.indexOf(e.title) === 0) return t; // 予定の名前が時刻で始まる（「9:30 朝礼」）
+    return t.replace(MEMO_TIME_RE, '').trim() || t;
+  }
+  function mTrKey(d) { return mTrText(d) + '|' + (d.getAttribute('data-todo') || ''); }
   /* 見出しの下の項目: 見出しの次の行（空行が1つあれば、その次の行）から始まり、次の空行・見出しで終わる。
      items = 項目の行、ref = 項目がないときに新しい項目を入れる位置（この要素の前。なければ末尾）、after = 末尾に足すときの位置 */
   function mBlock(h) {
@@ -2726,16 +2736,16 @@
     var ch = mHead('cur'), nh = mHead('next');
     if (!ch || !nh) return false;
     var seenT = {};
-    var want = mBlock(ch).items.filter(function (d) { var t = d.textContent.trim(); if (mStruck(d) || seenT[t]) return false; seenT[t] = 1; return true; }); // 同じ文の行が当日に2つあっても、転記は1つ
+    var want = mBlock(ch).items.filter(function (d) { var t = mTrText(d); if (mStruck(d) || seenT[t]) return false; seenT[t] = 1; return true; }); // 同じ文の行が当日に2つあっても、転記は1つ
     var manual = mBlock(nh).items.filter(function (d) { return !d.hasAttribute('data-tr'); }).map(function (d) { return d.textContent.trim(); });
-    want = want.filter(function (d) { return manual.indexOf(d.textContent.trim()) < 0; }); // 次回出勤日に、同じ項目を自分で書いてあれば、足さない
+    want = want.filter(function (d) { return manual.indexOf(d.textContent.trim()) < 0 && manual.indexOf(mTrText(d)) < 0; }); // 次回出勤日に、同じ項目を自分で書いてあれば、足さない
     var have = Array.prototype.slice.call(memoEd.querySelectorAll(':scope > div[data-tr]'));
-    if (want.map(mKey).join('\n') === have.map(mKey).join('\n')) return false;
+    if (want.map(mTrKey).join('\n') === have.map(mTrKey).join('\n')) return false; // 予定の行の時刻は比べない（写しは、次回出勤日の時刻にするため）
     have.forEach(function (d) { d.remove(); });
     var blk = mBlock(nh);
     want.forEach(function (d) {
       var c = document.createElement('div');
-      c.textContent = d.textContent.trim();
+      c.textContent = mTrText(d); // 予定の行は、当日の時刻を外す（次回出勤日にもある予定なら、memoCalSync がその日の時刻を付ける）
       if (d.getAttribute('data-todo')) { c.setAttribute('data-todo', d.getAttribute('data-todo')); c.setAttribute('data-st', d.getAttribute('data-st') || 'todo'); }
       if (d.getAttribute('data-ev')) c.setAttribute('data-ev', d.getAttribute('data-ev'));
       if (d.getAttribute('data-man')) c.setAttribute('data-man', '1');
@@ -2927,7 +2937,21 @@
     d.textContent = '';
     if (done) { var sEl = document.createElement('s'); sEl.textContent = text; d.appendChild(sEl); } else d.appendChild(document.createTextNode(text));
   }
-  function memoCalBlock(h, want) {
+  /* 予定の行の先頭に付ける時刻（その日の分）。1日の予定は「10:00〜11:00 」、終了だけなら「〜11:00 」。
+     期間のある予定は、初日に「10:00〜 」、最終日に「〜17:00 」、あいだの日は付けない */
+  function memoTimeOf(e, date) {
+    var st = e.start === date ? (e.start_time || '') : '', et = e.end === date ? (e.end_time || '') : '';
+    if (!st && !et) return '';
+    return st + (et ? '〜' + et : (e.start !== e.end ? '〜' : '')) + ' ';
+  }
+  function memoTimeFix(d, e, date) { // 行の時刻を、予定の時刻に合わせる（変えたら true）。本文・取り消し線はそのまま
+    var want = memoTimeOf(e, date), t = d.textContent, m = t.match(MEMO_TIME_RE), have = m && t.indexOf(e.title) !== 0 ? m[0] : ''; // 予定の名前が時刻で始まる（「9:30 朝礼」）ときは、名前のまま
+    if (have === want) return false;
+    var body = t.slice(have.length).trim() || e.title;
+    memoLineSet(d, want + body, mStruck(d));
+    return true;
+  }
+  function memoCalBlock(h, want, date) {
     var changed = false, byId = {}, have = {}, active = document.activeElement === memoEd ? window.getSelection().anchorNode : null;
     want.forEach(function (e) { byId[e.id] = e; });
     mBlock(h).items.forEach(function (d) {
@@ -2942,6 +2966,7 @@
       if (!ev) { d.setAttribute('data-ev', String(e.id)); changed = true; }
       var st = e.done ? 'done' : 'todo';
       if ((d.getAttribute('data-st') === 'done') !== !!e.done) { memoLineSet(d, d.textContent.trim() || e.title, e.done); d.setAttribute('data-st', st); changed = true; } // 完了が変わったときだけ、取り消し線を合わせる（自分で付けた線は、そのまま）
+      if (memoTimeFix(d, e, date)) changed = true; // 予定の時刻が変われば、行の時刻も変わる
     });
     var blk = mBlock(h), at = blk.items.length ? blk.after : blk.ref;
     want.forEach(function (e) {
@@ -2950,7 +2975,7 @@
       d.setAttribute('data-ev', String(e.id));
       if (e.todo_id) d.setAttribute('data-todo', String(e.todo_id));
       d.setAttribute('data-st', e.done ? 'done' : 'todo');
-      memoLineSet(d, e.title, e.done);
+      memoLineSet(d, memoTimeOf(e, date) + e.title, e.done);
       memoEd.insertBefore(d, at);
       changed = true;
     });
@@ -2962,9 +2987,15 @@
     if (!ch || !nh || ch.getAttribute('data-date') !== memoCal.cur || nh.getAttribute('data-date') !== memoCal.next) return false; // 読んだ予定の日付と、日報の日付が違う（読み直しを待つ）
     var cur = memoCalOn(memoCal.cur), onCur = {};
     cur.forEach(function (e) { onCur[e.id] = true; });
-    var a = memoCalBlock(ch, cur);
-    var b = memoCalBlock(nh, memoCalOn(memoCal.next).filter(function (e) { return !onCur[e.id]; }));
-    return a || b;
+    var a = memoCalBlock(ch, cur, memoCal.cur);
+    var b = memoCalBlock(nh, memoCalOn(memoCal.next).filter(function (e) { return !onCur[e.id]; }), memoCal.next);
+    var c = false, onNext = {};
+    memoCalOn(memoCal.next).forEach(function (e) { onNext[e.id] = e; });
+    mBlock(nh).items.forEach(function (d) { // 当日から転記された予定の行が、次回出勤日にもある予定（期間のある予定）なら、次回出勤日の時刻にする（「〜17:00」など）
+      var e = d.hasAttribute('data-tr') && onNext[d.getAttribute('data-ev')];
+      if (e && memoTimeFix(d, e, memoCal.next)) c = true;
+    });
+    return a || b || c;
   }
   /* 日報の当日・次回出勤日の項目のうち、カレンダーに無い行を、その日の業務の予定として、まとめて入れる（分類は「個人作業」）。
      取り消し線の行は、完了の予定として入れる（ToDo を完了で作るので、カレンダーでも取り消し線）。「日報へ」で入れた ToDo の行は、その ToDo をその日に置く。
