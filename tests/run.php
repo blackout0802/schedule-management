@@ -2249,6 +2249,65 @@ ensure_schema();
 check('更新: 古いデータベースに、資料の表と、項目の doc_id・doc_page の列が足される（入っている項目は、資料なし）', (function () { try { return [(int)row('SELECT COUNT(*) AS c FROM inspection_items WHERE doc_id IS NULL')['c'] > 0, (int)row('SELECT COUNT(*) AS c FROM inspection_docs')['c']]; } catch (PDOException $e) { return $e->getMessage(); } })(), [true, 0]);
 q('DELETE FROM inspection_runs'); q('DELETE FROM inspection_items');
 
+// ---- ポータルから自動で入る（チケット。src/sso.php） ----
+require_once __DIR__ . '/../src/sso.php';
+$kp = sodium_crypto_sign_keypair();
+/** ポータルと同じ形のチケットを作る（テスト用） */
+function sso_test_ticket(string $kp, array $over = []): string
+{
+    $d = $over + ['v' => 1, 'iss' => 'portal', 'aud' => 'schedule', 'sub' => 9, 'email' => 'a@example.com', 'name' => '山田', 'admin' => false, 'accounting' => false,
+        'iat' => time(), 'exp' => time() + 60, 'jti' => 'j' . bin2hex(random_bytes(8)), 'state' => 'x'];
+    $body = rtrim(strtr(base64_encode(json_encode($d, JSON_UNESCAPED_UNICODE)), '+/', '-_'), '=');
+    return 'v1.' . $body . '.' . rtrim(strtr(base64_encode(sodium_crypto_sign_detached('portal-ticket-v1.' . $body, sodium_crypto_sign_secretkey($kp))), '+/', '-_'), '=');
+}
+/** 受け取り口の GET（ポータルへ行く）を、まねる。state を返す */
+function sso_test_start(): string
+{
+    parse_str((string)parse_url(sso_start(), PHP_URL_QUERY), $qs);
+    return $qs['state'];
+}
+check('ポータル: 初期値に、ポータルの確かめる鍵（32バイト）がある', strlen((string)base64_decode((string)cfg('portal_pubkey'), true)), 32);
+$GLOBALS['SSO_CFG']['portal_pubkey'] = '';
+check('ポータル: 鍵が無ければ使わない', [sso_on(), sso_receive(sso_test_ticket($kp))], [false, 'off']);
+$GLOBALS['SSO_CFG']['portal_pubkey'] = base64_encode(sodium_crypto_sign_publickey($kp));
+check('ポータル: 鍵があれば使う', sso_on(), true);
+logout();
+$stt = sso_test_start();
+check('ポータル: ポータルへ移る URL', sso_start() !== '' && strpos(sso_start(), 'https://portal.skym.ink/public/sso.php?app=schedule&state=') === 0, true);
+$stt = sso_test_start();
+check('ポータル: ほかの端末（state が違う）では入れない', [sso_receive(sso_test_ticket($kp, ['state' => 'other-state-0123456789'])), $_SESSION['uid'] ?? null], ['expired', null]);
+check('ポータル: state は1回だけ（まちがえたら、もう使えない）', [sso_receive(sso_test_ticket($kp, ['state' => $stt])), $_SESSION['uid'] ?? null], ['expired', null]);
+$stt = sso_test_start();
+check('ポータル: ほかのアプリ向けは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'aud' => 'password'])), 'invalid');
+$stt = sso_test_start();
+check('ポータル: ほかの鍵の署名は使えない', sso_receive(sso_test_ticket(sodium_crypto_sign_keypair(), ['state' => $stt])), 'invalid');
+$stt = sso_test_start();
+check('ポータル: 期限切れは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'iat' => time() - 120, 'exp' => time() - 60])), 'expired');
+$stt = sso_test_start();
+check('ポータル: 期限が長すぎるものは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'exp' => time() + 3600])), 'expired');
+$stt = sso_test_start();
+check('ポータル: 形の違うもの', [sso_receive(''), sso_receive('v1.a.b'), sso_receive(str_repeat('a', 5000))], ['invalid', 'invalid', 'invalid']);
+$stt = sso_test_start();
+check('ポータル: このアプリにいない人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'nobody@example.com'])), 'nouser');
+$stt = sso_test_start();
+$_SESSION['sso_state']['at'] = time() - SSO_STATE_SECONDS - 1;
+check('ポータル: state は10分で切れる', sso_receive(sso_test_ticket($kp, ['state' => $stt])), 'expired');
+$stt = sso_test_start();
+$tk = sso_test_ticket($kp, ['state' => $stt, 'email' => 'A@Example.com']);
+check('ポータル: 正しいチケットなら、パスワードを聞かずにログインする（メールの大文字小文字は問わない）', [sso_receive($tk), $_SESSION['uid'] ?? null, isset($_SESSION['csrf'])], ['', (int)$a['id'], true]);
+logout();
+check('ポータル: 同じチケットは2回使えない', [sso_receive($tk), $_SESSION['uid'] ?? null], ['expired', null]);
+q('UPDATE users SET active = 0 WHERE id = ?', [$b['id']]);
+$stt = sso_test_start();
+check('ポータル: 止めた人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'b@example.com'])), 'nouser');
+q('UPDATE users SET active = 1 WHERE id = ?', [$b['id']]);
+$GLOBALS['SSO_CFG']['portal_url'] = 'http://portal.example.test/public/';
+check('ポータル: ポータルの URL が https でなければ使わない', sso_on(), false);
+$GLOBALS['SSO_CFG']['portal_url'] = 'https://portal.skym.ink/public/';
+$GLOBALS['SSO_CFG']['portal_pubkey'] = '';
+logout();
+unset($GLOBALS['SSO_CFG']);
+
 // ---- サーバーへ反映するファイル（一番上の .htaccess が外れると、サーバーからも消えて config.php が見えてしまう）
 $stageDir = sys_get_temp_dir() . '/sched_stage_' . getmypid();
 exec('python3 ' . escapeshellarg(__DIR__ . '/../tools/stage_deploy.py') . ' ' . escapeshellarg($stageDir) . ' 2>&1', $stageOut, $stageRc);

@@ -5,4 +5,4 @@ require_once SCHEDULE_APP_DIR . '/src/auth.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && csrf_valid($_POST['csrf'] ?? null)) {
     logout();
 }
-header('Location: login.php');
+header('Location: login.php?sso=out'); // ログアウトしたあとは、ポータルから自動で入り直さない

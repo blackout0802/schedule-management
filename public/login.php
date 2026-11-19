@@ -2,11 +2,30 @@
 require_once __DIR__ . '/app_path.php';
 require_once SCHEDULE_APP_DIR . '/src/bootstrap.php';
 require_once SCHEDULE_APP_DIR . '/src/auth.php';
+require_once SCHEDULE_APP_DIR . '/src/sso.php';
 
 if (current_user()) {
     header('Location: index.php');
     exit;
 }
+// ポータルから自動で入る: ログインしていなければ、受け取り口（sso.php）からポータルへ行き、チケットを持って戻る。
+// 戻ってきても入れなかったとき（?sso=理由）・ログアウトしたとき（?sso=out）・1分以内に行ったばかりのときは、行かずにこの画面を出す
+$ssoWhy = (string)($_GET['sso'] ?? '');
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $ssoWhy === '' && sso_on()) {
+    session_boot();
+    if (time() - (int)($_SESSION['sso_tried'] ?? 0) > 60) {
+        $_SESSION['sso_tried'] = time();
+        header('Location: sso.php');
+        exit;
+    }
+}
+$ssoMsg = [
+    'nouser' => 'ポータルのメールアドレスが、このアプリに登録されていません。管理者に確かめるか、下からログインしてください。',
+    'expired' => 'ポータルから入るのに時間がかかりすぎました。下からログインするか、ポータルからもう一度開いてください。',
+    'invalid' => 'ポータルから正しく入れませんでした。下からログインしてください。',
+    'off' => 'ポータルから入る仕組みが、このアプリで使えません。下からログインしてください。',
+    'error' => 'ポータルから入る途中で、問題が起きました。下からログインしてください。',
+][$ssoWhy] ?? '';
 $error = '';
 $email = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -45,6 +64,7 @@ $app = cfg('app_name');
 <main class="login-card">
   <h1><?= h($app) ?></h1>
   <p class="muted">会社から案内されたメールアドレスでログインしてください。</p>
+  <?php if ($ssoMsg && !$error): ?><p class="error" role="alert"><?= h($ssoMsg) ?></p><?php endif; ?>
   <?php if ($error): ?><p class="error" role="alert"><?= h($error) ?></p><?php endif; ?>
   <form method="post" autocomplete="on">
     <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
@@ -56,6 +76,7 @@ $app = cfg('app_name');
     </label>
     <button type="submit" class="btn primary">ログイン</button>
   </form>
+  <?php if (sso_on()): ?><p class="muted"><a href="sso.php">ポータルからログインする</a></p><?php endif; ?>
 </main>
 </body>
 </html>
