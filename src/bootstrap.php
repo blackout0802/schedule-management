@@ -30,6 +30,10 @@ function app_config(): array
             'poll_seconds' => 20,
             'work_tags' => ['全体会議', '打ち合わせ', '定例業務', '個人作業', 'その他'],
             'off_tags' => ['有給', '調整休', '欠勤', '午前半休', '午後半休'],
+            // ポータルから自動で入る（src/sso.php）。portal_pubkey が空なら使わない（ふつうのログインだけ）
+            'portal_url' => 'https://portal.skym.ink/public/',
+            'portal_app_id' => 'schedule',  // ポータルのアプリの一覧の id（チケットの aud）
+            'portal_pubkey' => '',          // ポータルの「確かめる鍵」（公開鍵。ポータルの status の sso_key）。秘密ではないので、ここに書いてよい
         ];
         $cfg = array_merge($defaults, require $file);
         // 古い版の config.sample.php からコピーした設定に残っている、昔の初期値のままの分類は、新しい初期値に置き換える

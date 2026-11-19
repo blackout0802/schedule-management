@@ -123,6 +123,13 @@ function login_attempt(string $email, string $password, ?bool &$locked = null): 
     } catch (Throwable $t) {
         // 何もしない
     }
+    login_start($u);
+    return $u;
+}
+
+/** ログインした状態にする（パスワードのログインと、ポータルから入るとき（src/sso.php）の両方で使う） */
+function login_start(array $u): void
+{
     try { // 管理者の「利用状況」に出す、最後にログインした日時
         q('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?', [now_str(), now_str(), $u['id']]);
     } catch (Throwable $t) {
@@ -133,7 +140,6 @@ function login_attempt(string $email, string $password, ?bool &$locked = null): 
     $_SESSION['uid'] = (int)$u['id'];
     $_SESSION['pwv'] = substr((string)$u['password_hash'], 7, 22);
     $_SESSION['csrf'] = bin2hex(random_bytes(24));
-    return $u;
 }
 
 function logout(): void
