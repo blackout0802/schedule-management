@@ -33,7 +33,7 @@ function app_config(): array
             // ポータルから自動で入る（src/sso.php）。portal_pubkey が空なら使わない（ふつうのログインだけ）
             'portal_url' => 'https://portal.skym.ink/public/',
             'portal_app_id' => 'schedule',  // ポータルのアプリの一覧の id（チケットの aud）
-            'portal_pubkey' => '',          // ポータルの「確かめる鍵」（公開鍵。ポータルの status の sso_key）。秘密ではないので、ここに書いてよい
+            'portal_pubkey' => 'laBBM9qZRu4Qa2ZefnZYpHzHJShKKEk6N/VSqDkdA9s=', // ポータルの「確かめる鍵」（公開鍵。ポータルの status の sso_key。2026-11-19 の本番のもの）。秘密ではないので、ここに書いてよい。空にすると使わない
         ];
         $cfg = array_merge($defaults, require $file);
         // 古い版の config.sample.php からコピーした設定に残っている、昔の初期値のままの分類は、新しい初期値に置き換える

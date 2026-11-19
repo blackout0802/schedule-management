@@ -2266,7 +2266,9 @@ function sso_test_start(): string
     parse_str((string)parse_url(sso_start(), PHP_URL_QUERY), $qs);
     return $qs['state'];
 }
-check('ポータル: 鍵が無ければ使わない（初期値）', [sso_on(), sso_receive(sso_test_ticket($kp))], [false, 'off']);
+check('ポータル: 初期値に、ポータルの確かめる鍵（32バイト）がある', strlen((string)base64_decode((string)cfg('portal_pubkey'), true)), 32);
+$GLOBALS['SSO_CFG']['portal_pubkey'] = '';
+check('ポータル: 鍵が無ければ使わない', [sso_on(), sso_receive(sso_test_ticket($kp))], [false, 'off']);
 $GLOBALS['SSO_CFG']['portal_pubkey'] = base64_encode(sodium_crypto_sign_publickey($kp));
 check('ポータル: 鍵があれば使う', sso_on(), true);
 logout();
