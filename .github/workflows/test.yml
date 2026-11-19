@@ -163,9 +163,13 @@ jobs:
         run: |
           code() { curl -sS -o /dev/null -m 30 -w '%{http_code}' "$SITE_URL$1"; }
           status=0
-          c="$(code /public/login.php)"
-          echo "/public/login.php → $c"
+          # ログインの画面は、ログインしていなければポータルへ移る（v1.116.0）。画面そのものは ?sso=out（ポータルへ行かない形）で確かめる
+          c="$(code '/public/login.php?sso=out')"
+          echo "/public/login.php?sso=out → $c"
           if [ "$c" != 200 ]; then echo "::error::ログインの画面が開きません（$c）。"; status=1; fi
+          c="$(curl -sS -o /dev/null -m 30 -w '%{http_code} %{redirect_url}' "$SITE_URL/public/login.php")"
+          echo "/public/login.php → $c"
+          case "$c" in "302 $SITE_URL/public/sso.php") ;; *) echo "::warning::ログインの画面が、ポータルの受け取り口（sso.php）へ移りません（$c）。ポータルから自動で入る仕組みが止まっています（portal_pubkey・sodium を確かめる）。" ;; esac
           c="$(code /.well-known/acme-challenge/pm-check)"
           echo "/.well-known/acme-challenge/pm-check → $c"
           if [ "$c" != 404 ]; then echo "::error::SSL 証明書の更新の経路が開いていません（$c）。"; status=1; fi
