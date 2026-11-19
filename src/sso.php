@@ -16,7 +16,7 @@ function sso_cfg(string $key): string
 function sso_on(): bool
 {
     return function_exists('sodium_crypto_sign_verify_detached')
-        && preg_match('~^https://[^\s"\'<>?#]+/$~', sso_cfg('portal_url'))
+        && preg_match(cfg('portal_allow_http', false) ? '~^https?://[^\s"\'<>?#]+/$~' : '~^https://[^\s"\'<>?#]+/$~', sso_cfg('portal_url')) // http は手元の確かめ用（portal_allow_http）だけ
         && strlen((string)base64_decode(sso_cfg('portal_pubkey'), true)) === 32;
 }
 
