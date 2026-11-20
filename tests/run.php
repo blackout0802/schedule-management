@@ -2166,14 +2166,26 @@ check('帯の色: 別の色に変えられる', $bn1['band'], 'teal');
 $bn1 = $bnU($bn1, ['kind' => 'private', 'title' => '帯の色', 'start' => '2031-06-10', 'band' => ''], $a);
 check('帯の色: 空にすると、標準に戻る', $bn1['band'], '');
 check('帯の色: 決められた色以外（おかしな名前・紫・色コード）は、標準になる', array_map(function ($v) use ($mk, $a) { return $mk($a, ['kind' => 'private', 'title' => '色の検査', 'start' => '2031-06-11', 'band' => $v])['band']; }, ['zzz', 'purple', '#ff0000', 'ROSE']), ['', '', '', '']);
-check('帯の色: 業務・休みの予定には、色が付かない', [$mk($a, ['kind' => 'work', 'title' => '業務の色', 'tag' => '打ち合わせ', 'start' => '2031-06-12', 'band' => 'rose'])['band'], $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-06-13', 'band' => 'rose'])['band']], ['', '']);
+check('帯の色: 休みの予定には、色が付かない（画面に返す予定も空）', (function () use ($mk, $a) { $o = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2031-06-13', 'band' => 'rose']); q('UPDATE events SET band = ? WHERE id = ?', ['rose', $o['id']]); return [$o['band'], event_for_client(array_merge(row('SELECT * FROM events WHERE id = ?', [$o['id']]), ['owner_name' => '山田']), $a)['band']]; })(), ['', '']);
+// v1.118.0: 業務の予定にも、帯の色を選べる（標準は青。青を送ると標準、紫は選べる）
+$bw1 = $mk($a, ['kind' => 'work', 'title' => '業務の色', 'tag' => '打ち合わせ', 'start' => '2031-06-12', 'band' => 'rose']);
+check('帯の色（業務）: 業務の予定にも、選んだ色が付く。画面に返す予定にも入る', [$bw1['band'], event_for_client(array_merge($bw1, ['owner_name' => '山田']), $a)['band']], ['rose', 'rose']);
+$bw1 = $bnU($bw1, ['kind' => 'work', 'title' => '業務の色（直した）', 'tag' => '打ち合わせ', 'start' => '2031-06-12'], $a);
+check('帯の色（業務）: 色を送らずに保存し直しても、いまの色のまま', $bw1['band'], 'rose');
+check('帯の色（業務）: 紫は選べる。青（業務の標準）・おかしな名前は、標準になる', array_map(function ($v) use ($mk, $a) { return $mk($a, ['kind' => 'work', 'title' => '業務の色の検査', 'tag' => '打ち合わせ', 'start' => '2031-06-11', 'band' => $v])['band']; }, ['purple', 'blue', 'zzz', '']), ['purple', '', '', '']);
+$bw1 = $bnU($bw1, ['kind' => 'private', 'title' => '業務の色', 'start' => '2031-06-12'], $a);
+check('帯の色（業務）: 色を送らずに、業務からプライベートに変えると、標準に戻る', $bw1['band'], '');
+$bw1 = $bnU($bw1, ['kind' => 'work', 'title' => '業務の色', 'tag' => '打ち合わせ', 'start' => '2031-06-12', 'band' => 'teal'], $a);
+check('帯の色（業務）: 種類を変えるときに色を送れば、その色になる', $bw1['band'], 'teal');
+[$bwDup] = duplicate_event($bw1, ['2031-06-17'], $a);
+check('帯の色（業務）: 業務の予定を複製しても、色を引き継ぐ', $bwDup[0]['band'], 'teal');
 $bn2 = $mk($a, ['kind' => 'private', 'title' => '種類を変える', 'start' => '2031-06-14', 'band' => 'lime']);
 $bn2 = $bnU($bn2, ['kind' => 'work', 'title' => '種類を変える', 'tag' => '打ち合わせ', 'start' => '2031-06-14'], $a);
 check('帯の色: プライベートから業務に変えると、色は消える（業務の予定は、会社の全員に見える）', $bn2['band'], '');
 $bn3 = $mk($a, ['kind' => 'private', 'title' => '複製の元', 'start' => '2031-06-16', 'band' => 'brown']);
 [$bnDup] = duplicate_event($bn3, ['2031-06-17'], $a);
 check('帯の色: 予定を複製すると、色も引き継ぐ', $bnDup[0]['band'], 'brown');
-check('帯の色: 色は、プライベートの予定だけ（EVENT_BANDS は8色。紫は標準）', [EVENT_BANDS, count(EVENT_BANDS)], [['blue', 'green', 'orange', 'rose', 'mustard', 'lime', 'teal', 'brown'], 8]);
+check('帯の色: 色は9色（業務・プライベートで、それぞれの標準の色を除いて選ぶ）', [EVENT_BANDS, EVENT_BAND_KINDS], [['purple', 'blue', 'green', 'orange', 'rose', 'mustard', 'lime', 'teal', 'brown'], ['private' => 'purple', 'work' => 'blue']]);
 q("DELETE FROM events WHERE start_date BETWEEN '2031-06-10' AND '2031-06-17'");
 // 古い版（SCHEMA_VERSION 33。events に band が無い）のデータベースからの更新: 列が足される（入っている予定は標準のまま）
 db()->exec('ALTER TABLE events DROP COLUMN band');

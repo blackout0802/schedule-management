@@ -4,8 +4,8 @@
   --private: #8e35bd; --private-soft: #f3e8fb; --danger: #e0281e; --danger-soft: #fdeceb;
   --overlay: rgba(10, 18, 32, .5);
   --insp: #00788a; --insp-soft: #dcf1f5; --warn: #9a5a00; --warn-soft: #fdf0d9; /* 年間計画（点検）の色と、注意の色 */
-  /* プライベートの予定の帯の色（予定ごとに選ぶ。背景 -bg と文字 -fg。ライト／ダークで別の値） */
-  --bc-blue-bg: var(--work-soft); --bc-blue-fg: var(--work); --bc-green-bg: var(--off-soft); --bc-green-fg: var(--off);
+  /* 予定の帯の色（業務・プライベートの予定ごとに選ぶ。背景 -bg と文字 -fg。ライト／ダークで別の値） */
+  --bc-purple-bg: var(--private-soft); --bc-purple-fg: var(--private); --bc-blue-bg: var(--work-soft); --bc-blue-fg: var(--work); --bc-green-bg: var(--off-soft); --bc-green-fg: var(--off);
   --bc-orange-bg: #fbe9d6; --bc-orange-fg: #b25000; --bc-rose-bg: #fde7ef; --bc-rose-fg: #b0124f; --bc-mustard-bg: #fdf3cc; --bc-mustard-fg: #7a5a00;
   --bc-lime-bg: #eef5d0; --bc-lime-fg: #4f6a00; --bc-teal-bg: #dcf1f5; --bc-teal-fg: #006b7b; --bc-brown-bg: #efe6df; --bc-brown-fg: #7a4a2b;
   --fw: 400; /* 文字の基本の太さ（Apple風に細め）。太く戻したいときは、ここを 500〜600 にする */
@@ -1164,11 +1164,12 @@ table.insp-imp-tbl { border-collapse: collapse; width: 100%; min-width: 900px; f
 }
 
 /* ---- プライベートの予定の帯の色（予定の入力画面の色の選択）---- */
-.band-row { display: grid; gap: 4px; }
+.band-row { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; } /* 1行に（業務の予定の入力画面も、保存ボタンまで1画面に収める） */
 .band-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .band-sw { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; display: grid; place-items: center; background: var(--bw-bg); box-shadow: inset 0 0 0 2px var(--bw-fg); }
 .band-sw[aria-pressed="true"] { border-color: var(--ink); }
 .band-sw[aria-pressed="true"]::after { content: "✓"; color: var(--bw-fg); font-weight: 700; font-size: 14px; line-height: 1; }
+@media (min-width: 641px) { .band-sw { width: 24px; height: 24px; } .band-sw[aria-pressed="true"]::after { font-size: 12px; } } /* パソコンでは小さく（予定の入力画面を、保存ボタンまで1画面に収める）。スマホは押しやすい大きさのまま */
 .band-name { font-size: 12px; color: var(--muted); }
 
 /* スマホ: カレンダーの下の、予定の一覧（v1.112.0。app.js の agendaSection）。1件1行「日付 時刻 誰｜予定」。色の点は、帯と同じ色 */

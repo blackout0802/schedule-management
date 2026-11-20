@@ -1,5 +1,6 @@
-// プライベートの予定の帯の色（v1.111.0）: 予定の入力画面で、9色（標準の紫・青・緑・オレンジ・ローズ・マスタード・ライム・ティール・ブラウン）から選べる。
-// 選んだ色は、カレンダーの帯・ダークモード・家族用リンクで同じ色になる。業務・休みの予定には出ない。決められた色以外は、標準になる
+// 予定の帯の色（v1.111.0 はプライベートの予定。v1.118.0 から業務の予定も）: 予定の入力画面で、9色から選べる
+// （プライベート: 標準の紫・青・緑・オレンジ・ローズ・マスタード・ライム・ティール・ブラウン／業務: 標準の青・紫・緑・…）。
+// 選んだ色は、カレンダーの帯・ダークモード・家族用リンク・ほかの社員の画面・会社用リンクで同じ色になる。休みの予定には出ない。決められた色以外は、標準になる
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
 const BASE = 'http://127.0.0.1:8099/';
 let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n + (!c && x !== undefined ? '  → ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) fails++; };
@@ -18,7 +19,7 @@ const bg = (p, sel) => p.locator(sel).first().evaluate(e => getComputedStyle(e).
   // プライベート版で、新しい予定を、ローズの帯で作る
   await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches');
-  ok('入力画面に、帯の色が9色（標準の紫・青・緑・オレンジ・ローズ・マスタード・ライム・ティール・ブラウン）出る。初めは標準', await y.locator('.modal .band-sw').count() === 9 && (await y.locator('.modal .band-sw[aria-pressed=true]').getAttribute('data-band')) === 'standard');
+  ok('入力画面に、帯の色が9色（標準の紫・青・緑・オレンジ・ローズ・マスタード・ライム・ティール・ブラウン）出る。初めは標準', await y.locator('.modal .band-sw:visible').count() === 9 && await y.locator('.modal .band-sw[data-band=purple]').isHidden() && (await y.locator('.modal .band-sw[aria-pressed=true]').getAttribute('data-band')) === 'standard');
   await y.fill('.modal input[name=title]', '色つきの予定'); await y.click('.modal .band-sw[data-band=rose]');
   ok('色を押すと、選んだ色の名前が出る', (await y.locator('.modal .band-name').innerText()) === 'ローズ');
   await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForSelector('.cal .bar:has-text("色つきの予定")');
@@ -45,15 +46,44 @@ const bg = (p, sel) => p.locator(sel).first().evaluate(e => getComputedStyle(e).
   await y.waitForFunction(() => getComputedStyle(document.querySelector('.cal .bar.private')).backgroundColor === 'rgb(61, 26, 42)').catch(() => { });
   ok('ダークモードでは、ローズの帯が暗い色（背景 #3d1a2a）になる', (await bg(y, '.cal .bar:has-text("色つきの予定")')) === 'rgb(61, 26, 42)', await bg(y, '.cal .bar:has-text("色つきの予定")'));
   await y.emulateMedia({ colorScheme: 'light' });
-  // 業務・休みの予定には出ない
-  await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches'); await y.click('.modal label:has-text("業務")');
-  ok('種類を「業務」にすると、帯の色の欄は消える', await y.locator('.modal .band-row').isHidden());
+  // 休みの予定には出ない。業務の予定は、標準が青（青の代わりに紫が選べる）
+  await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches'); await y.click('.modal .band-sw[data-band=blue]'); await y.click('.modal label:has-text("業務")');
+  ok('種類を「業務」にしても、帯の色の欄は出る。標準は「青（標準）」で、青の丸の代わりに紫の丸が出る。プライベートで選んだ青は、業務では標準になる',
+    await y.locator('.modal .band-row').isVisible() && await y.locator('.modal .band-sw:visible').count() === 9 && await y.locator('.modal .band-sw[data-band=blue]').isHidden() && await y.locator('.modal .band-sw[data-band=purple]').isVisible()
+    && (await y.locator('.modal .band-sw[aria-pressed=true]').getAttribute('data-band')) === 'standard' && (await y.locator('.modal .band-name').innerText()) === '青（標準）');
+  await y.click('.modal .seg label:has-text("休み")');
+  ok('種類を「休み」にすると、帯の色の欄は消える', await y.locator('.modal .band-row').isHidden());
   await y.click('.modal label:has-text("プライベート")');
-  ok('「プライベート」に戻すと、また出る', await y.locator('.modal .band-row').isVisible());
+  ok('「プライベート」に戻すと、また出る（標準は「紫（標準）」）', await y.locator('.modal .band-row').isVisible() && (await y.locator('.modal .band-name').innerText()) === '紫（標準）');
   await y.click('.modal button:has-text("キャンセル")');
-  const wk = await api('event_save', { kind: 'work', title: '業務に色', tag: '打ち合わせ', start: today, band: 'rose' });
+  const wk = await api('event_save', { kind: 'off', title: '', tag: '有給', start: today, band: 'rose' });
   const bad = await api('event_save', { kind: 'private', title: 'おかしな色', start: today, band: 'zzz' });
-  ok('業務の予定に色を送っても、付かない。決められた色以外は、標準になる', (await events('team')).filter(e => e.title === '業務に色')[0].band === '' && (await events('me')).filter(e => e.title === 'おかしな色')[0].band === '', [wk, bad]);
+  ok('休みの予定に色を送っても、付かない。決められた色以外は、標準になる', (await events('team')).filter(e => e.kind === 'off')[0].band === '' && (await events('me')).filter(e => e.title === 'おかしな色')[0].band === '', [wk, bad]);
+  // 業務の予定: 入力画面で色を選ぶと、業務版の帯がその色になる。繰り返しでない業務も、全社の表示（人ごとの色）でも、選んだ色
+  await y.click('.tab[data-view=team]'); await y.waitForSelector('.view-banner:not(.me)').catch(() => { }); await y.waitForSelector('.cal');
+  await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches'); await y.click('.modal label:has-text("業務")');
+  await y.fill('.modal input[name=title]', '業務の色つき'); await y.click('.modal .band-sw[data-band=teal]');
+  ok('業務の予定でも、色を押すと、選んだ色の名前が出る', (await y.locator('.modal .band-name').innerText()) === 'ティール');
+  await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForSelector('.cal .bar:has-text("業務の色つき")');
+  await y.waitForFunction(() => { const x = [...document.querySelectorAll('.cal .bar')].find(e => e.textContent.includes('業務の色つき')); return x && getComputedStyle(x).backgroundColor === 'rgb(220, 241, 245)'; }).catch(() => { });
+  ok('業務版のカレンダーの帯が、ティールの色になる（背景 #dcf1f5）', (await bg(y, '.cal .bar:has-text("業務の色つき")')) === 'rgb(220, 241, 245)', await bg(y, '.cal .bar:has-text("業務の色つき")'));
+  ok('保存した色が、データに入る（band = teal）', (await events('team')).filter(e => e.title === '業務の色つき')[0].band === 'teal');
+  await y.click('.cal .bar:has-text("業務の色つき")'); await y.waitForSelector('.modal .band-swatches');
+  ok('業務の予定の編集画面を開くと、選んだ色（ティール）が選ばれている', (await y.locator('.modal .band-sw[aria-pressed=true]').getAttribute('data-band')) === 'teal');
+  await y.click('.modal button:has-text("キャンセル")').catch(() => y.keyboard.press('Escape'));
+  // ほかの社員（鈴木）の画面でも、同じ色
+  const s2 = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage(); s2.on('pageerror', e => console.log('PAGEERR', e.message));
+  await s2.goto(BASE + 'login.php'); await s2.fill('input[name=email]', 'suzuki@example.com'); await s2.fill('input[name=password]', 'suzukipass1');
+  await Promise.all([s2.waitForURL('**/index.php'), s2.click('button[type=submit]')]); await s2.waitForSelector('.cal');
+  await s2.selectOption('#who-sel', 'all'); await s2.waitForSelector('.cal .bar:has-text("業務の色つき")');
+  ok('ほかの社員の画面（全社の表示）でも、業務の予定は選んだ色（ティール）の帯で見える', (await bg(s2, '.cal .bar:has-text("業務の色つき")')) === 'rgb(220, 241, 245)', await bg(s2, '.cal .bar:has-text("業務の色つき")'));
+  // 業務の入力画面も、1366×650 で保存ボタンまで見える
+  await y.setViewportSize({ width: 1366, height: 650 });
+  await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches'); await y.click('.modal label:has-text("業務")');
+  const sw = await y.locator('.modal button[type=submit]').boundingBox();
+  ok('1366×650 の画面でも、業務の予定の入力画面で、保存ボタンまで見える（色の欄を足したあと）', sw && sw.y + sw.height <= 650, sw);
+  await y.click('.modal button:has-text("キャンセル")'); await y.setViewportSize({ width: 1280, height: 1000 });
+  await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   // 小さな画面（1366×650）でも、色の欄を足したあと、保存ボタンまでスクロールせずに見える
   await y.setViewportSize({ width: 1366, height: 650 });
   await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches');
