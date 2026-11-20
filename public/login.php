@@ -77,6 +77,7 @@ $app = cfg('app_name');
     <button type="submit" class="btn primary">ログイン</button>
   </form>
   <?php if (sso_on()): ?><p class="muted"><a href="sso.php">ポータルからログインする</a></p><?php endif; ?>
+  <?php if (portal_url_ok()): ?><p class="muted login-portal"><a href="<?= h(sso_cfg('portal_url')) ?>" id="login-portal">← ポータルへ戻る</a></p><?php endif; ?>
 </main>
 </body>
 </html>

@@ -11,6 +11,7 @@ require_once __DIR__ . '/share.php';
 require_once __DIR__ . '/usage.php';
 require_once __DIR__ . '/undo.php';
 require_once __DIR__ . '/ical.php';
+require_once __DIR__ . '/sso.php'; // 上の帯の「アプリ」（portal_nav）
 
 function api_out($data, int $code = 200): void
 {
@@ -181,7 +182,9 @@ function handle_api(): void
         case 'me':
             ensure_schema(); // アプリのファイルを更新したあと、足りないテーブルを自動で作る
             migrate_data(); // 画面を開くたびに、名称変更の反映漏れがないようにする（軽い1文）
-            $user['private_name'] = (string)(row('SELECT private_name FROM users WHERE id = ?', [$user['id']])['private_name'] ?? ''); // 列を足した直後でも読めるよう、ensure_schema のあとで読む
+            $extra = row('SELECT private_name, portal_acc FROM users WHERE id = ?', [$user['id']]) ?: []; // 列を足した直後でも読めるよう、ensure_schema のあとで読む
+            $user['private_name'] = (string)($extra['private_name'] ?? '');
+            $user['portal_acc'] = (int)($extra['portal_acc'] ?? 0);
             api_out([
                 'user' => ['id' => (int)$user['id'], 'name' => $user['name'], 'email' => $user['email'], 'role' => $user['role'],
                     'must_change_password' => (int)$user['must_change_password'] === 1,
@@ -189,6 +192,7 @@ function handle_api(): void
                 'csrf' => csrf_token(),
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
+                'nav' => portal_nav($user), // 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る）。開くたびに作る（ポータルから入った直後にも出るように）
                 'family_share' => get_family_share($user),
                 'family_owner_name' => is_family($user) ? (string)(row('SELECT name FROM users WHERE id = ?', [family_owner_id($user)])['name'] ?? '') : null, // 家族のアカウントのとき、持ち主の名前
                 'family_owner_pname' => is_family($user) ? private_name_of(row('SELECT name, private_name FROM users WHERE id = ?', [family_owner_id($user)]) ?: []) : null, // 家族のアカウントのとき、持ち主のプライベート版の名前

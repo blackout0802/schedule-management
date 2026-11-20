@@ -2313,6 +2313,42 @@ q('UPDATE users SET active = 0 WHERE id = ?', [$b['id']]);
 $stt = sso_test_start();
 check('ポータル: 止めた人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'b@example.com'])), 'nouser');
 q('UPDATE users SET active = 1 WHERE id = ?', [$b['id']]);
+
+// ---- 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る。portal_nav） ----
+q('UPDATE users SET portal_acc = 0 WHERE id = ?', [$a['id']]);
+$navOf = function () use ($a) { return portal_nav(row('SELECT * FROM users WHERE id = ?', [$a['id']])); };
+$nv = $navOf();
+check('上の帯のアプリ: ポータルへ戻る URL と、このアプリ自身（schedule）を除いたアプリ。受け取り口があれば、そこへ', [$nv['portal'], array_column($nv['apps'], 'id'), $nv['apps'][0]['href'], $nv['apps'][0]['accounting']],
+    ['https://portal.skym.ink/public/', ['password'], 'https://password-manager.skym.ink/public/sso.php', false]);
+check('上の帯のアプリ: 初期値の一覧は、ポータルの default_apps と同じ4つ', array_column(cfg('portal_apps'), 'id'), ['schedule', 'password', 'payroll', 'invoice']);
+q('UPDATE users SET portal_acc = 1 WHERE id = ?', [$a['id']]);
+$nv = $navOf();
+check('上の帯のアプリ: 経理のアプリは、portal_acc が 1 の人だけ（受け取り口がなければ url。経理の印）', [array_column($nv['apps'], 'id'), array_column($nv['apps'], 'accounting'), $nv['apps'][1]['href']],
+    [['password', 'payroll', 'invoice'], [false, true, true], 'https://payroll.skym.ink/']);
+$GLOBALS['SSO_CFG']['portal_apps'] = [['id' => 'h', 'name' => 'http', 'url' => 'http://x.example/'], ['id' => 'j', 'name' => 'js', 'url' => 'javascript:alert(1)'], ['id' => 's', 'name' => 'ok', 'url' => 'https://ok.example/a', 'sso' => 'http://ok.example/sso.php'], ['name' => 'id なし', 'url' => 'https://x.example/'], 'x', ['id' => 'k', 'name' => 'よい', 'url' => 'https://k.example/']];
+check('上の帯のアプリ: https でない URL・形の違うものは出さない', array_column($navOf()['apps'], 'id'), ['k']);
+unset($GLOBALS['SSO_CFG']['portal_apps']);
+check('上の帯のアプリ: 家族のアカウントには出さない', portal_nav(['id' => 1, 'role' => 'family', 'portal_acc' => 1]), null);
+$GLOBALS['SSO_CFG']['portal_url'] = '';
+check('上の帯のアプリ: ポータルの URL がなければ、メニューごと出さない', $navOf(), null);
+$GLOBALS['SSO_CFG']['portal_url'] = 'http://portal.example.test/public/';
+check('上の帯のアプリ: ポータルの URL が https でなければ出さない', $navOf(), null);
+$GLOBALS['SSO_CFG']['portal_url'] = 'https://portal.skym.ink/public/';
+$accAfter = function (array $over) use ($kp, $a) {
+    logout();
+    $stt = sso_test_start();
+    $r = sso_receive(sso_test_ticket($kp, $over + ['state' => $stt]));
+    return [$r, (int)row('SELECT portal_acc FROM users WHERE id = ?', [$a['id']])['portal_acc']];
+};
+check('上の帯のアプリ: 受け取り口で、ポータルの経理・管理者を覚える（入るたびに、今の値にそろえる）', [$accAfter(['accounting' => false, 'admin' => false]), $accAfter(['accounting' => true]), $accAfter([]), $accAfter(['admin' => true])],
+    [['', 0], ['', 1], ['', 0], ['', 1]]);
+logout();
+db()->exec('ALTER TABLE users DROP COLUMN portal_acc');
+q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
+q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '35']);
+ensure_schema();
+check('更新: 古いデータベースに users.portal_acc が足される（すでにいる人は 0 から）', (function () { try { return [(int)row('SELECT COUNT(*) AS c FROM users WHERE portal_acc = 0')['c'] === (int)row('SELECT COUNT(*) AS c FROM users')['c'], (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v']]; } catch (PDOException $e) { return $e->getMessage(); } })(), [true, SCHEMA_VERSION]);
+
 $GLOBALS['SSO_CFG']['portal_url'] = 'http://portal.example.test/public/';
 check('ポータル: ポータルの URL が https でなければ使わない', sso_on(), false);
 $GLOBALS['SSO_CFG']['portal_url'] = 'https://portal.skym.ink/public/';

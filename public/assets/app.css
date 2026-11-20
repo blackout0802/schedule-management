@@ -1208,3 +1208,15 @@ table.insp-imp-tbl { border-collapse: collapse; width: 100%; min-width: 900px; f
   .cell.today .num .d { padding: 1px 3px; }
   .num .offmark { padding: 0 2px; font-size: 10px; letter-spacing: -.02em; }
 }
+/* 上の帯の「アプリ ▾」（ポータルへ戻る・ほかのアプリへ移る。v1.119.0。パスワード管理アプリと同じ作り） */
+.menu-list a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.menu-list a:hover, .menu-list a:focus-visible { background: var(--surface-2); }
+.menu-list .menu-sep { height: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.menu-list .menu-acc { font-size: 11px; color: var(--muted); margin-left: 6px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.menu-list.left { left: 0; right: auto; }
+.only-sm { display: none; }
+.login-portal { text-align: center; }
+@media (max-width: 640px) {
+  .topbar-in:not(.settings-bar) > .apps-menu { display: none; } /* スマホのカレンダー・年間計画・会議室のページでは、名前のメニューの中に出す */
+  .only-sm { display: block; }
+}

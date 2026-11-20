@@ -34,6 +34,14 @@ function app_config(): array
             'portal_url' => 'https://portal.skym.ink/public/',
             'portal_app_id' => 'schedule',  // ポータルのアプリの一覧の id（チケットの aud）
             'portal_pubkey' => 'laBBM9qZRu4Qa2ZefnZYpHzHJShKKEk6N/VSqDkdA9s=', // ポータルの「確かめる鍵」（公開鍵。ポータルの status の sso_key。2026-11-19 の本番のもの）。秘密ではないので、ここに書いてよい。空にすると使わない
+            // 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る。src/sso.php の portal_nav）。ポータルの default_apps と同じものにする。
+            // リンク先は sso（受け取り口）があればそれ、なければ url。for = accounting は、ポータルで経理か管理者の人だけに出す
+            'portal_apps' => [
+                ['id' => 'schedule', 'name' => 'スケジュール管理', 'url' => 'https://schedule-management.skym.ink/public/index.php', 'for' => 'all', 'sso' => 'https://schedule-management.skym.ink/public/sso.php'],
+                ['id' => 'password', 'name' => 'パスワード管理', 'url' => 'https://password-manager.skym.ink/public/', 'for' => 'all', 'sso' => 'https://password-manager.skym.ink/public/sso.php'],
+                ['id' => 'payroll', 'name' => '給与計算', 'url' => 'https://payroll.skym.ink/', 'for' => 'accounting'],
+                ['id' => 'invoice', 'name' => '請求書', 'url' => 'https://skym.ink/invoice/', 'for' => 'accounting'],
+            ],
         ];
         $cfg = array_merge($defaults, require $file);
         // 古い版の config.sample.php からコピーした設定に残っている、昔の初期値のままの分類は、新しい初期値に置き換える
@@ -264,7 +272,7 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
     }
-    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''", 'prefs' => "VARCHAR(500) NOT NULL DEFAULT ''", 'last_login_at' => 'DATETIME NULL', 'last_seen_at' => 'DATETIME NULL', 'family_of' => 'INTEGER NULL', 'private_name' => "VARCHAR(60) NOT NULL DEFAULT ''"] as $col => $def) { // family_of: 家族のアカウントの持ち主（family.php）／private_name: プライベート版・家族用の画面で使う、自分の名前
+    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''", 'prefs' => "VARCHAR(500) NOT NULL DEFAULT ''", 'last_login_at' => 'DATETIME NULL', 'last_seen_at' => 'DATETIME NULL', 'family_of' => 'INTEGER NULL', 'private_name' => "VARCHAR(60) NOT NULL DEFAULT ''", 'portal_acc' => 'INTEGER NOT NULL DEFAULT 0'] as $col => $def) { // family_of: 家族のアカウントの持ち主（family.php）／private_name: プライベート版・家族用の画面で使う、自分の名前／portal_acc: ポータルで経理か管理者か（上の帯の「アプリ」で経理のアプリを出す。src/sso.php）
         try {
             db()->query("SELECT $col FROM users LIMIT 1")->fetchAll();
         } catch (PDOException $e) {
