@@ -195,7 +195,7 @@
     ov.addEventListener('mousedown', function (e) { if (e.target === ov && !ov.locked && ov.outsideClose) close(); });
     document.body.appendChild(ov);
     modals.push(ov);
-    var f = box.querySelector('input:not([type=radio]):not([disabled]), select, textarea');
+    var f = box.querySelector('input:not([type=radio]):not([type=hidden]):not([disabled]), select, textarea'); // 隠れた欄（帯の色の値など）は飛ばす
     if (f) f.focus();
     ov.close = close;
     return ov;
