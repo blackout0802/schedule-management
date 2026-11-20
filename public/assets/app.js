@@ -195,7 +195,7 @@
     ov.addEventListener('mousedown', function (e) { if (e.target === ov && !ov.locked && ov.outsideClose) close(); });
     document.body.appendChild(ov);
     modals.push(ov);
-    var f = box.querySelector('input:not([type=radio]):not([disabled]), select, textarea');
+    var f = box.querySelector('input:not([type=radio]):not([type=hidden]):not([disabled]), select, textarea'); // 隠れた欄（帯の色の値など）は飛ばす
     if (f) f.focus();
     ov.close = close;
     return ov;
@@ -278,9 +278,12 @@
     if (colors && colors.work && !colors.rec) { v['--ub-rec'] = v['--ub-work']; v['--uc-rec'] = v['--uc-work']; v['--ur-rec'] = v['--ur-work']; }
     return v;
   }
-  /* プライベートの予定の帯の色（予定ごとに選ぶ。'' は標準 = 紫。設定の「プライベートの色」を決めていれば、その色）。色の値は、CSS の --bc-*（ライト／ダークで別） */
-  var BAND_COLORS = [['', '紫（標準）'], ['blue', '青'], ['green', '緑'], ['orange', 'オレンジ'], ['rose', 'ローズ'], ['mustard', 'マスタード'], ['lime', 'ライム'], ['teal', 'ティール'], ['brown', 'ブラウン']];
+  /* 予定の帯の色（プライベートと業務の予定。予定ごとに選ぶ）。'' は標準（業務 = 青・プライベート = 紫。設定の「予定の色」を決めていれば、その色）。
+     その種類の標準と同じ色（業務の青・プライベートの紫）は、選ぶ色の中に出さない。色の値は、CSS の --bc-*（ライト／ダークで別） */
+  var BAND_COLORS = [['', '標準'], ['purple', '紫'], ['blue', '青'], ['green', '緑'], ['orange', 'オレンジ'], ['rose', 'ローズ'], ['mustard', 'マスタード'], ['lime', 'ライム'], ['teal', 'ティール'], ['brown', 'ブラウン']];
+  var BAND_KINDS = { 'private': 'purple', work: 'blue' }; // 帯の色を選べる種類 → その種類の標準の色
   function bandKnown(k) { return BAND_COLORS.some(function (b) { return b[0] === k && k !== ''; }); }
+  function bandOf(e) { return e && BAND_KINDS[e.kind] && e.band !== BAND_KINDS[e.kind] && bandKnown(e.band) ? e.band : ''; }
   /* 予定の持ち主が決めた色を、その予定の帯だけに当てる（全員の画面で、その人の予定が、その人の色になる） */
   function eventColorStyle(e) {
     var c = e.colors || {};
@@ -290,8 +293,11 @@
       var badge = c.off === pc.off ? pc.badge : inkFor(c.off); // 「休」バッジの色（本人が休みの色を決めていれば、その文字色）
     }
     var v = colorVars(c);
-    if (e.kind === 'private' && e.band && bandKnown(e.band)) { // 予定ごとに選んだ帯の色（設定の色より優先）。重要な予定の縁取りも、同じ色
-      v['--ub-private'] = 'var(--bc-' + e.band + '-bg)'; v['--uc-private'] = 'var(--bc-' + e.band + '-fg)'; v['--ur-private'] = '0 0 0 2px var(--bc-' + e.band + '-fg) inset';
+    var bd = bandOf(e);
+    if (bd) { // 予定ごとに選んだ帯の色（設定の色・全社の人ごとの色より優先）。重要な予定の縁取りも、同じ色。繰り返しの業務の回も、同じ色
+      (e.kind === 'work' ? ['work', 'rec'] : ['private']).forEach(function (k) {
+        v['--ub-' + k] = 'var(--bc-' + bd + '-bg)'; v['--uc-' + k] = 'var(--bc-' + bd + '-fg)'; v['--ur-' + k] = '0 0 0 2px var(--bc-' + bd + '-fg) inset';
+      });
     }
     if (badge && e.kind === 'off') { v['--pc-badge'] = badge; v['--pc-on'] = onColor(badge); }
     return Object.keys(v).map(function (k) { return ';' + k + ':' + v[k]; }).join('');
@@ -1836,22 +1842,31 @@
       repeatHint.hidden = !repeatHint.firstChild;
     }
 
-    /* プライベートの予定だけ、帯の色を選べる（9色）。選んだ色は、家族の画面でも同じ色で出る */
-    var bandVal = ev && bandKnown(ev.band) ? ev.band : '';
+    /* 業務とプライベートの予定は、帯の色を選べる（標準＋8色）。選んだ色は、ほかの人の画面・共有リンク・家族の画面でも同じ色で出る。休みには付かない */
+    var bandVal = bandOf(ev);
     var bandIn = el('input', { type: 'hidden', name: 'band', value: bandVal });
     var bandName = el('span', { class: 'band-name' });
-    var userPriv = (S.me.prefs && S.me.prefs.colors && S.me.prefs.colors.private) || '';
+    var userCol = (S.me.prefs && S.me.prefs.colors) || {};
     var bandBtns = BAND_COLORS.map(function (b) {
-      var bg = b[0] === '' ? (userPriv || 'var(--private-soft)') : 'var(--bc-' + b[0] + '-bg)', fg = b[0] === '' ? (userPriv ? inkFor(userPriv) : 'var(--private)') : 'var(--bc-' + b[0] + '-fg)';
-      return el('button', { type: 'button', class: 'band-sw', 'data-band': b[0] || 'standard', 'aria-label': '帯の色: ' + b[1], title: b[1], 'aria-pressed': b[0] === bandVal ? 'true' : 'false', style: '--bw-bg:' + bg + ';--bw-fg:' + fg,
+      return el('button', { type: 'button', class: 'band-sw', 'data-band': b[0] || 'standard', 'aria-pressed': b[0] === bandVal ? 'true' : 'false',
+        style: b[0] ? '--bw-bg:var(--bc-' + b[0] + '-bg);--bw-fg:var(--bc-' + b[0] + '-fg)' : null,
         onclick: function () { bandIn.value = b[0]; showBand(); } });
     });
     function showBand() {
-      bandBtns.forEach(function (btn, i) { btn.setAttribute('aria-pressed', BAND_COLORS[i][0] === bandIn.value ? 'true' : 'false'); });
-      bandName.textContent = BAND_COLORS.filter(function (b) { return b[0] === bandIn.value; })[0][1];
+      var k = curKind(), std = BAND_KINDS[k] || 'purple', mine = userCol[k] || '';
+      if (bandIn.value === std) bandIn.value = ''; // その種類の標準と同じ色は、標準（種類を変えたとき）
+      bandBtns.forEach(function (btn, i) {
+        var b = BAND_COLORS[i], nm = b[0] ? b[1] : BAND_COLORS.filter(function (x) { return x[0] === std; })[0][1] + '（標準）';
+        btn.hidden = b[0] === std;
+        btn.setAttribute('aria-pressed', b[0] === bandIn.value ? 'true' : 'false');
+        btn.setAttribute('aria-label', '帯の色: ' + nm); btn.title = nm;
+        if (!b[0]) { // 標準の丸は、その種類の標準の色（設定で色を決めていれば、その色）
+          btn.style.setProperty('--bw-bg', mine || 'var(--bc-' + std + '-bg)'); btn.style.setProperty('--bw-fg', mine ? inkFor(mine) : 'var(--bc-' + std + '-fg)');
+        }
+        if (b[0] === bandIn.value) bandName.textContent = nm;
+      });
     }
     var bandRow = el('div', { class: 'band-row' }, el('span', { class: 'muted small', text: '帯の色' }), el('div', { class: 'band-swatches', role: 'group', 'aria-label': '帯の色' }, bandBtns), bandName, bandIn);
-    showBand();
     function curKind() { var c = form.querySelector('input[name=kind]:checked'); return c ? c.value : kind; }
     // 休み（件名が空だと「休み」で保存される）を、業務・プライベートに変えるときは、自動の件名「休み」を空にして、入力を促す
     function onKindChange() {
@@ -1870,7 +1885,8 @@
       syncRepeat();
       ownerLabel.hidden = !(isNew && k === 'off' && S.me.user.role === 'admin');
       partLabel.hidden = k !== 'work' || FA || S.me.users.length < 2;
-      bandRow.hidden = k !== 'private'; // 帯の色は、プライベートの予定だけ
+      bandRow.hidden = !BAND_KINDS[k]; // 帯の色は、業務とプライベートの予定（休みには付かない）
+      showBand();
       todoLabel.hidden = k === 'off' || !!(ev && (ev.todo_id || ev.owner_id !== S.me.user.id)); // 休み・ToDoと結びついた予定・他の人の予定には出さない
       hint.textContent = k === 'private' ? 'プライベートの予定は、本人以外の誰にも（管理者にも）表示されません。' :
         k === 'off' ? '休みは全員に表示されます。' : '業務の予定は全員に表示されます。';
@@ -1937,13 +1953,12 @@
     }
     var tagRow = el('div', { class: 'row' }, tagLabel, ownerLabel);
     var form = el('form', { class: 'form ev-form', onsubmit: save }, // 予定の入力は、スクロールせずに全部が見えるように詰める（日付と時刻を1行に、★と ToDo を1行に）
-      FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
+      el('div', { class: 'ev-kind' }, FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), bandRow), // 帯の色は、種類と同じ行に（収まらなければ下の行へ）
       !(isNew || isOwner) ? el('p', { class: 'hint', style: 'margin:-6px 0 0', text: '種類を変えられるのは、予定の持ち主だけです。' }) : null,
       el('label', null, '件名', title),
       tagRow,
       el('div', { class: 'row ev-when' }, el('label', null, '開始日', start), el('label', null, '終了日', end), el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
       el('div', { class: 'ev-opts' }, el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする'), todoLabel),
-      bandRow,
       partLabel,
       el('label', null, 'メモ（任意）', note),
       famLabel,
