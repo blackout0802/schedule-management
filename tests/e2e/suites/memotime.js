@@ -33,7 +33,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   const waitLine = (t) => p.waitForFunction((t) => { // 見つかるまで、2秒ごとに読み直す（focus で日報とカレンダーを読み直す）
     if (Array.from(document.querySelectorAll('.memo-single div[data-ev]')).some(d => d.textContent === t)) return true;
     window.dispatchEvent(new Event('focus')); return false;
-  }, t, { timeout: 20000, polling: 2000 }).catch(() => {});
+  }, t, { timeout: 20000, polling: 2000 }).catch(() => {}); // 日報は、1分ごとにも読み直す。それより前（20秒まで）に合うこと
   await waitLine('10:00〜11:00 時刻のある業務'); await p.waitForTimeout(500);
   let c = await items('cur'), n = await items('next');
   ok('1日の予定は、開始〜終了の時刻つきで入る', c.includes('10:00〜11:00 時刻のある業務'), c);
