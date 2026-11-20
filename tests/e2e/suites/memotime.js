@@ -58,12 +58,16 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   c = await items('cur');
   ok('予定の時刻を変えると、行の時刻も変わる', c.includes('14:00〜15:30 時刻のある業務') && c.filter(x => x.includes('時刻のある業務')).length === 1, c);
   // 日報で名前を書き足していても、時刻だけが変わる
+  const net = [], t0 = Date.now();
+  p.on('request', r => { const u = r.url(); if (/action=(memo_get|events|memo_save|rev)/.test(u)) net.push((Date.now() - t0) + ' > ' + u.replace(/^.*action=/, '').slice(0, 40)); });
+  p.on('response', async r => { const u = r.url(); if (!/action=events.*who=/.test(u)) return; try { const j = await r.json(); const e = (j.events || []).find(e => e.id === A.id); net.push((Date.now() - t0) + ' < events ' + (e ? e.start_time + '-' + e.end_time : 'none')); } catch (x) { net.push('err ' + x); } });
+  p.on('console', m => net.push((Date.now() - t0) + ' log ' + m.text().slice(0, 80)));
   await p.evaluate(() => { const d = Array.from(document.querySelectorAll('.memo-single div[data-ev]')).find(d => d.textContent === '14:00〜15:30 時刻のある業務'); d.textContent = '14:00〜15:30 時刻のある業務（資料あり）'; document.querySelector('.memo-single').dispatchEvent(new Event('input', { bubbles: true })); document.activeElement.blur(); });
   await api('event_save', { id: A.id, kind: 'work', title: '時刻のある業務', tag: '個人作業', start: cur, end: cur, start_time: '', end_time: '' });
   await p.evaluate(() => window.dispatchEvent(new Event('focus'))); await waitLine('時刻のある業務（資料あり）');
   c = await items('cur');
   const srv = await p.evaluate(async ([id, cur]) => (await (await fetch('api.php?action=events&view=team&from=' + cur + '&to=' + cur)).json()).events.filter(e => e.id === id).map(e => [e.start_time, e.end_time, e.title]), [A.id, cur]);
-  const dbg = await p.evaluate(() => { const ed = document.querySelector('.memo-single'), sel = getSelection(), a = sel.anchorNode; const line = Array.from(ed.querySelectorAll('div[data-ev]')).find(d => d.textContent.includes('資料あり')); return { focus: document.activeElement === ed, anchor: a ? (a.nodeType === 3 ? 'T:' + a.textContent : a.nodeName + '.' + (a.className || '') + ':' + (a.textContent || '').slice(0, 30)) : null, inLine: !!(line && a && line.contains(a)), html: line ? line.outerHTML : null, cur: ed.querySelector('div[data-md=cur]').getAttribute('data-date'), all: ed.innerHTML.slice(0, 1600) }; });
-  ok('予定の時刻を消すと、行の時刻も消える（書き足した文は残る）', c.includes('時刻のある業務（資料あり）') && !c.some(x => /^\d.*時刻のある業務/.test(x)), [dbg, srv, c]);
+  const dbg = await p.evaluate(() => { const ed = document.querySelector('.memo-single'), sel = getSelection(), a = sel.anchorNode; const line = Array.from(ed.querySelectorAll('div[data-ev]')).find(d => d.textContent.includes('資料あり')); return { focus: document.activeElement === ed, anchor: a ? (a.nodeType === 3 ? 'T:' + a.textContent : a.nodeName + '.' + (a.className || '') + ':' + (a.textContent || '').slice(0, 30)) : null, inLine: !!(line && a && line.contains(a)), html: line ? line.outerHTML : null, cur: ed.querySelector('div[data-md=cur]').getAttribute('data-date'), }; });
+  ok('予定の時刻を消すと、行の時刻も消える（書き足した文は残る）', c.includes('時刻のある業務（資料あり）') && !c.some(x => /^\d.*時刻のある業務/.test(x)), [net.slice(0, 60), c]);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
