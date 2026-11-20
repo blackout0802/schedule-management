@@ -52,6 +52,7 @@
     monitor: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>',
     moon: '<path d="M20 14.2A8 8 0 0 1 9.8 4 8 8 0 1 0 20 14.2z"/>',
     checkcal: '<rect x="3.5" y="4.5" width="17" height="16" rx="2"/><path d="M8 2.5v4M16 2.5v4M3.5 10h17M9 15.2l2 2 4-4"/>',
+    apps: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
     building: '<path d="M4 21V4.5h10V21M14 9h6v12M2.5 21h19"/><path d="M7.5 8h3M7.5 11.5h3M7.5 15h3M17 12.5h0.01M17 16h0.01"/>'
   };
   function svgIcon(name) { var s = el('span', { class: 'ic-wrap', 'aria-hidden': 'true' }); s.innerHTML = '<svg class="ic" viewBox="0 0 24 24" focusable="false">' + ICON_PATHS[name] + '</svg>'; return s; }
@@ -590,6 +591,43 @@
     return el('details', { class: 'help-sm' }, el('summary', { text: 'ⓘ 使い方' }), p);
   }
 
+  /* 上の帯の「アプリ ▾」: ポータルへ戻る・ほかのアプリへ移る（me の nav。ポータルのアプリの一覧と同じもの。サーバーの portal_nav）。同じタブで移る。
+     ほかのアプリは、その受け取り口（sso.php）を開くので、ポータルを通って自動で入る。nav がない（ポータルの URL がない・家族のアカウント）ときは出さない */
+  function appLinks() {
+    var nav = S.me && S.me.nav;
+    if (!nav || !nav.portal) return null;
+    var apps = nav.apps || [];
+    return [el('a', { href: nav.portal, 'data-app': 'portal', text: '← ポータルへ戻る' }),
+      apps.length ? el('div', { class: 'menu-sep', 'aria-hidden': 'true' }) : null,
+      apps.map(function (a) { return el('a', { href: a.href, 'data-app': a.id }, a.name, a.accounting ? el('span', { class: 'menu-acc', text: '経理' }) : null); })];
+  }
+  /* menus: 上の帯のほかのメニューと、同時に開かないための受け渡し（{ closeAll, add, remove }。なくてもよい） */
+  function appMenu(menus) {
+    if (!appLinks()) return null;
+    var list = null; // 開いたときに作り、閉じたら消す（ほかのメニューと同じ）
+    var btn = el('button', { class: 'btn small', type: 'button', id: 'btn-apps', 'aria-haspopup': 'true', 'aria-expanded': 'false', title: 'ポータルへ戻る・ほかのアプリへ移る', 'aria-label': 'アプリ（ポータルへ戻る・ほかのアプリへ移る）' },
+      svgIcon('apps'), el('span', { class: 'lbl', text: ' アプリ' }), ' ▾');
+    function close() {
+      if (!list) return;
+      list.remove(); list = null;
+      btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', close);
+      if (menus) menus.remove(close);
+    }
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (list) return close();
+      if (menus) menus.closeAll();
+      list = el('div', { class: 'menu-list left', id: 'app-list' }, appLinks());
+      list.addEventListener('click', function (ev) { if (!ev.target.closest('a')) ev.stopPropagation(); }); // 区切りの線などを押しても閉じない
+      btn.parentNode.appendChild(list);
+      btn.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', close);
+      if (menus) menus.add(close);
+    });
+    return el('div', { class: 'menu apps-menu' }, btn);
+  }
+
   /* 上の帯（アプリ名・業務版/プライベート版・会議室・設定・ユーザー）。カレンダーと会議室のページで、同じものを使う */
   function buildTopbar(onMain, teamOnly) { // teamOnly: 会議室のページは業務版だけなので、プライベート版のタブは出さない
     /* 右上のメニュー: 「設定」ボタン（設定の項目）と、ユーザー名のボタン（パスワード・ログアウト）。同時に開くのは1つだけ */
@@ -611,13 +649,16 @@
       return el('div', { class: 'menu' + (extraClass ? ' ' + extraClass : '') }, btn);
     }
     var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
+    var menus = { closeAll: closeAllMenus, add: function (f) { openMenus.push(f); }, remove: function (f) { openMenus = openMenus.filter(function (x) { return x !== f; }); } };
+    /* スマホの幅では、上の帯に「アプリ」を置く場所がないので、名前のメニューの中に同じリンクを出す（CSS の .only-sm） */
+    var smApps = function () { var links = appLinks(); return links ? el('div', { class: 'only-sm', id: 'user-apps' }, links, el('div', { class: 'menu-sep', 'aria-hidden': 'true' })) : null; };
     var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
     var adminBtn = !FAMACCT && S.me.user.role === 'admin' ? el('div', { class: 'menu admin-btn' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '会社の管理', title: '会社の管理のページを開く（社員・休業日・会議室・Slack・バックアップなど）', onclick: function (e) { e.stopPropagation(); openAdminPage(); } }, svgIcon('building'), el('span', { class: 'lbl', text: ' 会社の管理' }))) : null;
     var annualBtn = FAMACCT ? null : el('div', { class: 'menu annual-btn' }, el('button', { class: 'btn small insp-btn' + (S.page === 'annual' ? ' on' : ''), id: 'insp-btn', type: 'button', 'aria-label': '年間計画', 'aria-current': S.page === 'annual' ? 'page' : null, title: '年間計画（Pマークなどの定期点検）を開く', onclick: function (e) { e.stopPropagation(); openAnnualPage(); } },
       svgIcon('checkcal'), el('span', { class: 'lbl', text: ' 年間計画' }), el('span', { class: 'insp-bd', id: 'insp-btn-bd', hidden: true })));
     var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
-      if (FAMACCT) return [item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [item('年間計画' + (S.insp && S.insp.mine ? '（' + S.insp.mine + '）' : ''), openAnnualPage, close, 'Pマークなどの定期点検の年間計画'), S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
+      if (FAMACCT) return [smApps(), item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
+      return [smApps(), item('年間計画' + (S.insp && S.insp.mine ? '（' + S.insp.mine + '）' : ''), openAnnualPage, close, 'Pマークなどの定期点検の年間計画'), S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
     }, FAMACCT ? 'fam-menu' : '');
     document.addEventListener('click', closeAllMenus);
 
@@ -630,6 +671,7 @@
 
     return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
       el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })),
+      appMenu(menus),
       FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : tabs,
       el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), annualBtn, FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
     // （ボタンの件数は、読み込みずみなら、すぐ出す。まだなら、inspRefresh のあとに出る）
@@ -975,6 +1017,7 @@
       el('button', { type: 'button', class: 'btn small', 'aria-pressed': isAdminPage ? 'true' : 'false', text: '会社の管理', onclick: openAdminPage })) : null;
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in settings-bar' },
       el('span', { class: 'brand', text: S.me.app_name }),
+      appMenu(),
       el('button', { class: 'btn small', type: 'button', title: 'カレンダー（c）', 'aria-label': 'カレンダーに戻る', onclick: leaveSettings }, '← ', el('span', { class: 'lbl', text: 'カレンダーに' }), '戻る'),
       phone ? null : sw,
       el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), el('span', { class: 'muted', text: S.me.user.name }),

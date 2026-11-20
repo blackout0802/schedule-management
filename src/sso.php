@@ -16,8 +16,44 @@ function sso_cfg(string $key): string
 function sso_on(): bool
 {
     return function_exists('sodium_crypto_sign_verify_detached')
-        && preg_match(cfg('portal_allow_http', false) ? '~^https?://[^\s"\'<>?#]+/$~' : '~^https://[^\s"\'<>?#]+/$~', sso_cfg('portal_url')) // http は手元の確かめ用（portal_allow_http）だけ
+        && portal_url_ok()
         && strlen((string)base64_decode(sso_cfg('portal_pubkey'), true)) === 32;
+}
+
+/** ポータルの URL が正しい形か（http は手元の確かめ用 portal_allow_http のときだけ） */
+function portal_url_ok(): bool
+{
+    return (bool)preg_match(cfg('portal_allow_http', false) ? '~^https?://[^\s"\'<>?#]+/$~' : '~^https://[^\s"\'<>?#]+/$~', sso_cfg('portal_url'));
+}
+
+/**
+ * 上の帯の「アプリ」: ポータルへ戻るリンクと、ほかのアプリへ移るリンク（設定 portal_apps）。このアプリ自身（portal_app_id）は除く。
+ * 経理のアプリ（for = accounting）は、ポータルで経理か管理者の人（users.portal_acc。ポータルから入るたびに覚える）だけ。
+ * リンクを出すだけで、開いた先では、それぞれのアプリとポータルが確かめる。ポータルの URL が正しくなければ null（メニューごと出さない）。
+ * 家族のアカウントは、ポータルを使わないので null。（パスワード管理アプリの portal_nav と同じ決まり。直すときは両方とも）
+ */
+function portal_nav(array $u): ?array
+{
+    if (!portal_url_ok() || ($u['role'] ?? '') === 'family') {
+        return null;
+    }
+    $re = cfg('portal_allow_http', false) ? '~^https?://[^\s"\'<>]+$~' : '~^https://[^\s"\'<>]+$~';
+    $apps = [];
+    foreach ((array)($GLOBALS['SSO_CFG']['portal_apps'] ?? cfg('portal_apps', [])) as $a) {
+        if (!is_array($a) || !is_string($a['id'] ?? null) || !is_string($a['name'] ?? null) || $a['id'] === sso_cfg('portal_app_id')) {
+            continue;
+        }
+        $acc = ($a['for'] ?? 'all') === 'accounting';
+        if ($acc && (int)($u['portal_acc'] ?? 0) !== 1) {
+            continue;
+        }
+        $href = (string)($a['sso'] ?? ($a['url'] ?? ''));
+        if (!preg_match($re, $href)) {
+            continue;
+        }
+        $apps[] = ['id' => $a['id'], 'name' => $a['name'], 'href' => $href, 'accounting' => $acc];
+    }
+    return ['portal' => sso_cfg('portal_url'), 'apps' => $apps];
 }
 
 /**
@@ -89,6 +125,8 @@ function sso_receive(string $ticket): string
     if (!$u || (int)$u['active'] !== 1) {
         return 'nouser';
     }
+    // 上の帯の「アプリ」で、経理のアプリを出すか（ポータルの一覧と同じく、経理か管理者）。入るたびに、ポータルの今の値にそろえる
+    q('UPDATE users SET portal_acc = ? WHERE id = ?', [(($d['accounting'] ?? false) === true || ($d['admin'] ?? false) === true) ? 1 : 0, $u['id']]);
     login_start($u);
     return '';
 }
