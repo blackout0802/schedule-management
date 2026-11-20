@@ -1953,13 +1953,12 @@
     }
     var tagRow = el('div', { class: 'row' }, tagLabel, ownerLabel);
     var form = el('form', { class: 'form ev-form', onsubmit: save }, // 予定の入力は、スクロールせずに全部が見えるように詰める（日付と時刻を1行に、★と ToDo を1行に）
-      FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios),
+      el('div', { class: 'ev-kind' }, FA ? null : el('div', { class: 'seg', role: 'radiogroup', 'aria-label': '種類' }, radios), bandRow), // 帯の色は、種類と同じ行に（収まらなければ下の行へ）
       !(isNew || isOwner) ? el('p', { class: 'hint', style: 'margin:-6px 0 0', text: '種類を変えられるのは、予定の持ち主だけです。' }) : null,
       el('label', null, '件名', title),
       tagRow,
       el('div', { class: 'row ev-when' }, el('label', null, '開始日', start), el('label', null, '終了日', end), el('label', null, '開始時刻（任意）', st), el('label', null, '終了時刻（任意）', et)),
       el('div', { class: 'ev-opts' }, el('label', { class: 'check imp-opt' }, impCb, '★ 重要な予定にする'), todoLabel),
-      bandRow,
       partLabel,
       el('label', null, 'メモ（任意）', note),
       famLabel,

@@ -965,6 +965,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .ev-form textarea { min-height: 44px; }
 .ev-form .row.ev-when { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .ev-form .ev-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.ev-form .ev-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; } /* 種類と帯の色を1行に（業務の入力画面も、1366×650 で保存ボタンまで見える） */
 .ev-form .ev-opts .todo-opt { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .ev-form .ev-opts .todo-opt select { width: auto; }
 .ev-form .ev-opts .todo-opt .hint { flex-basis: 100%; }
