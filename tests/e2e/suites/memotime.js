@@ -4,7 +4,7 @@
 const { chromium } = require(process.env.NODE_PATH + '/playwright');
 const BASE = 'http://127.0.0.1:8099/';
 let fails = 0;
-const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.stringify(x === undefined ? '' : x).slice(0, 400)); if (!c) fails++; };
+const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.stringify(x === undefined ? '' : x).slice(0, 900)); if (!c) fails++; };
 (async () => {
   const b = await chromium.launch();
   const p = await (await b.newContext({ viewport: { width: 1280, height: 1100 } })).newPage();
@@ -63,6 +63,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.evaluate(() => window.dispatchEvent(new Event('focus'))); await waitLine('時刻のある業務（資料あり）');
   c = await items('cur');
   const srv = await p.evaluate(async ([id, cur]) => (await (await fetch('api.php?action=events&view=team&from=' + cur + '&to=' + cur)).json()).events.filter(e => e.id === id).map(e => [e.start_time, e.end_time, e.title]), [A.id, cur]);
-  ok('予定の時刻を消すと、行の時刻も消える（書き足した文は残る）', c.includes('時刻のある業務（資料あり）') && !c.some(x => /^\d.*時刻のある業務/.test(x)), [c, srv]);
+  const dbg = await p.evaluate(() => { const ed = document.querySelector('.memo-single'), sel = getSelection(), a = sel.anchorNode; const line = Array.from(ed.querySelectorAll('div[data-ev]')).find(d => d.textContent.includes('資料あり')); return { focus: document.activeElement === ed, anchor: a ? (a.nodeType === 3 ? 'T:' + a.textContent : a.nodeName + '.' + (a.className || '') + ':' + (a.textContent || '').slice(0, 30)) : null, inLine: !!(line && a && line.contains(a)), html: line ? line.outerHTML : null, cur: ed.querySelector('div[data-md=cur]').getAttribute('data-date') }; });
+  ok('予定の時刻を消すと、行の時刻も消える（書き足した文は残る）', c.includes('時刻のある業務（資料あり）') && !c.some(x => /^\d.*時刻のある業務/.test(x)), [dbg, srv, c]);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
