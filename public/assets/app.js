@@ -3030,21 +3030,16 @@
   }
 
   /* 当日〜次回出勤日の、自分の業務の予定を読んで、日報に合わせる */
-  /* 読んでいる途中に、また呼ばれたら、読み終わってから1回だけ読み直す（新しく呼ばれるたびに前の答えを捨てると、続けて呼ばれている間、いつまでも合わない） */
-  var memoCalBusy = false, memoCalAgain = null;
+  var memoCalSeq = 0;
   function memoFetchCal(info) {
     if (!info || !info.cur || !info.next || !S.me || FAMACCT) return;
-    if (memoCalBusy) { memoCalAgain = info; return; }
-    memoCalBusy = true;
+    var seq = ++memoCalSeq;
     api('events', { params: { from: info.cur, to: info.next, view: 'team', who: String(S.me.user.id) }, quiet: true }).then(function (j) {
+      if (seq !== memoCalSeq) return; // 古い答え
       var me = S.me.user.id;
       memoCal = { cur: info.cur, next: info.next, events: (j.events || []).filter(function (e) { return e.kind === 'work' && !e.deleted && (e.owner_id === me || (e.participants || []).some(function (u) { return u.id === me; })); }) }; // 一緒にやる人に入っている予定も、自分の日報に入る
       if (memoCalSync()) memoChanged();
-    }).catch(function () { /* 読めなかったときは、次の機会に */ }).then(function () {
-      memoCalBusy = false;
-      var again = memoCalAgain; memoCalAgain = null;
-      if (again) memoFetchCal(again);
-    });
+    }).catch(function () { /* 読めなかったときは、次の機会に */ });
   }
 
   /* ToDoを、日報に1行入れる。which = 'cur'（当日・初期値）か 'next'（次回出勤日）。完了なら取り消し線つき */
