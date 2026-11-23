@@ -120,7 +120,7 @@ $names = ['users' => '社員', 'events' => '予定', 'series' => '繰り返し�
 <title>バックアップ｜<?= h(cfg('app_name')) ?></title>
 <script nonce="<?= csp_nonce() ?>">try{var t=localStorage.getItem('sched.theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <link rel="stylesheet" href="assets/app.css">
-<style>.upd{max-width:720px;margin:32px auto;padding:0 16px;display:grid;gap:16px}.upd .card{background:var(--surface)}.upd ul{margin:6px 0;padding-left:1.3em}.upd code{font-size:.9em}</style>
+<style>.upd{max-width:720px;margin:32px auto;padding:0 16px;display:grid;gap:16px}.upd .card{background:var(--surface)}.upd ul{margin:6px 0;padding-left:1.3em}.upd code{font-size:.9em}.bk-list{table-layout:fixed}.bk-old summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 8px 4px}</style>
 </head>
 <body>
 <main class="upd">
@@ -161,12 +161,25 @@ $names = ['users' => '社員', 'events' => '予定', 'series' => '繰り返し�
       <form method="post" class="form"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="auto_run"><div class="actions"><button class="btn small" type="submit">いま作成する</button></div></form>
     <?php endif; ?>
     <?php if ($auto['files']): ?>
-      <table class="t"><thead><tr><th>保存済みのバックアップ</th><th>大きさ</th><th></th></tr></thead><tbody>
-      <?php foreach ($auto['files'] as $f): ?>
+      <?php // 直近の BACKUP_LIST_SHOW 件だけ表に出し、残りは「以前のバックアップ」に畳む
+        $bkRow = function ($f) use ($csrf, $fmtSize) { ?>
         <tr><td><?= h($f['at']) ?></td><td><?= h($fmtSize($f['size'])) ?></td><td>
           <form method="post" style="margin:0"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="auto_download"><input type="hidden" name="name" value="<?= h($f['name']) ?>"><button class="btn small" type="submit">ダウンロード</button></form></td></tr>
-      <?php endforeach; ?>
+      <?php };
+        $bkCols = '<colgroup><col><col style="width:90px"><col style="width:130px"></colgroup>';
+        $bkNew = array_slice($auto['files'], 0, BACKUP_LIST_SHOW);
+        $bkOld = array_slice($auto['files'], BACKUP_LIST_SHOW); ?>
+      <table class="t bk-list"><?= $bkCols ?><thead><tr><th>保存済みのバックアップ</th><th>大きさ</th><th></th></tr></thead><tbody>
+      <?php foreach ($bkNew as $f) $bkRow($f); ?>
       </tbody></table>
+      <?php if ($bkOld): ?>
+        <details class="bk-old">
+          <summary>以前のバックアップ（<?= count($bkOld) ?>件）</summary>
+          <table class="t bk-list"><?= $bkCols ?><tbody>
+          <?php foreach ($bkOld as $f) $bkRow($f); ?>
+          </tbody></table>
+        </details>
+      <?php endif; ?>
     <?php endif; ?>
     <p class="hint">サーバーそのものが壊れると、この自動バックアップも一緒に失われます。<b>月に1回は、下の手動バックアップをダウンロードして、別の場所に保管してください。</b></p>
   </section>

@@ -62,6 +62,18 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   // 自動バックアップを止める
   await a.goto(BASE + 'backup.php'); await a.click('#auto button:has-text("自動バックアップを止める")'); await a.waitForSelector('.notice');
   ok('止めると、無効に戻る（保存済みのファイルは残る）', (await a.locator('#auto').innerText()).includes('無効') && await a.locator('#auto table.t tbody tr').count() >= 2);
+  // 保存済みの一覧は、直近3件だけ。残りは「以前のバックアップ」に畳む
+  execSync(`cd ${ROOT}/data/backups && f=$(ls auto-*.enc | head -1) && for d in 20200101 20200102 20200103 20200104; do cp -p "$f" auto-$d-030000.enc; done`);
+  const total = execSync(`ls ${ROOT}/data/backups/auto-*.enc | wc -l`).toString().trim() * 1;
+  await a.goto(BASE + 'backup.php'); await a.waitForSelector('#auto');
+  ok('一覧には、直近の3件だけが見える', await a.locator('#auto table.t tbody tr:visible').count() === 3, await a.locator('#auto table.t tbody tr:visible').count());
+  const vis = await a.locator('#auto table.t tbody tr:visible td:first-child').allInnerTexts();
+  ok('見えるのは新しいもの（2020年の古いものは見えない）', vis.every(t => !t.startsWith('2020-')), vis);
+  ok('残りは「以前のバックアップ（N件）」に畳まれている', (await a.locator('#auto details.bk-old summary').innerText()) === '以前のバックアップ（' + (total - 3) + '件）' && !(await a.locator('#auto details.bk-old').evaluate(d => d.open)), total);
+  await a.click('#auto details.bk-old summary');
+  ok('開くと、全部が見える', await a.locator('#auto table.t tbody tr:visible').count() === total);
+  const [dlOld] = await Promise.all([a.waitForEvent("download"), a.locator('#auto details.bk-old tr:has-text("2020-01-01") button:has-text("ダウンロード")').click()]);
+  ok('畳んだ中の古いものも、ダウンロードできる', dlOld.suggestedFilename() === 'auto-20200101-030000.enc', dlOld.suggestedFilename());
   await a.screenshot({ path: 'bk2-page.png', fullPage: true });
   execSync(`rm -f ${ROOT}/data/backups/*.enc`);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
