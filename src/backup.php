@@ -228,6 +228,7 @@ function backup_restore_data(array $d): array
 // =====================================================================
 const BACKUP_AUTO_HOUR = 3;
 const BACKUP_ALERT_DAYS = 30;
+const BACKUP_LIST_SHOW = 3; // バックアップの画面で、保存済みの一覧を開いて出す件数（残りは「以前のバックアップ」に畳む）
 
 function backup_meta(string $key): string
 {
