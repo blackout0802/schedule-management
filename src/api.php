@@ -192,7 +192,7 @@ function handle_api(): void
                 'csrf' => csrf_token(),
                 'app_name' => cfg('app_name'),
                 'app_version' => APP_VERSION,
-                'nav' => portal_nav($user), // 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る）。開くたびに作る（ポータルから入った直後にも出るように）
+                'nav' => portal_nav($user), // 上の帯の「アプリ」（Hub へ戻る・ほかのアプリへ移る）。開くたびに作る（Hub から入った直後にも出るように）
                 'family_share' => get_family_share($user),
                 'family_owner_name' => is_family($user) ? (string)(row('SELECT name FROM users WHERE id = ?', [family_owner_id($user)])['name'] ?? '') : null, // 家族のアカウントのとき、持ち主の名前
                 'family_owner_pname' => is_family($user) ? private_name_of(row('SELECT name, private_name FROM users WHERE id = ?', [family_owner_id($user)]) ?: []) : null, // 家族のアカウントのとき、持ち主のプライベート版の名前

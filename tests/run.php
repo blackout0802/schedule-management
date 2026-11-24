@@ -2261,10 +2261,10 @@ ensure_schema();
 check('更新: 古いデータベースに、資料の表と、項目の doc_id・doc_page の列が足される（入っている項目は、資料なし）', (function () { try { return [(int)row('SELECT COUNT(*) AS c FROM inspection_items WHERE doc_id IS NULL')['c'] > 0, (int)row('SELECT COUNT(*) AS c FROM inspection_docs')['c']]; } catch (PDOException $e) { return $e->getMessage(); } })(), [true, 0]);
 q('DELETE FROM inspection_runs'); q('DELETE FROM inspection_items');
 
-// ---- ポータルから自動で入る（チケット。src/sso.php） ----
+// ---- Hub から自動で入る（チケット。src/sso.php） ----
 require_once __DIR__ . '/../src/sso.php';
 $kp = sodium_crypto_sign_keypair();
-/** ポータルと同じ形のチケットを作る（テスト用） */
+/** Hub と同じ形のチケットを作る（テスト用） */
 function sso_test_ticket(string $kp, array $over = []): string
 {
     $d = $over + ['v' => 1, 'iss' => 'portal', 'aud' => 'schedule', 'sub' => 9, 'email' => 'a@example.com', 'name' => '山田', 'admin' => false, 'accounting' => false,
@@ -2272,84 +2272,84 @@ function sso_test_ticket(string $kp, array $over = []): string
     $body = rtrim(strtr(base64_encode(json_encode($d, JSON_UNESCAPED_UNICODE)), '+/', '-_'), '=');
     return 'v1.' . $body . '.' . rtrim(strtr(base64_encode(sodium_crypto_sign_detached('portal-ticket-v1.' . $body, sodium_crypto_sign_secretkey($kp))), '+/', '-_'), '=');
 }
-/** 受け取り口の GET（ポータルへ行く）を、まねる。state を返す */
+/** 受け取り口の GET（Hub へ行く）を、まねる。state を返す */
 function sso_test_start(): string
 {
     parse_str((string)parse_url(sso_start(), PHP_URL_QUERY), $qs);
     return $qs['state'];
 }
-check('ポータル: 初期値に、ポータルの確かめる鍵（32バイト）がある', strlen((string)base64_decode((string)cfg('portal_pubkey'), true)), 32);
+check('Hub: 初期値に、Hub の確かめる鍵（32バイト）がある', strlen((string)base64_decode((string)cfg('portal_pubkey'), true)), 32);
 $GLOBALS['SSO_CFG']['portal_pubkey'] = '';
-check('ポータル: 鍵が無ければ使わない', [sso_on(), sso_receive(sso_test_ticket($kp))], [false, 'off']);
+check('Hub: 鍵が無ければ使わない', [sso_on(), sso_receive(sso_test_ticket($kp))], [false, 'off']);
 $GLOBALS['SSO_CFG']['portal_pubkey'] = base64_encode(sodium_crypto_sign_publickey($kp));
-check('ポータル: 鍵があれば使う', sso_on(), true);
+check('Hub: 鍵があれば使う', sso_on(), true);
 logout();
 $stt = sso_test_start();
-check('ポータル: ポータルへ移る URL', sso_start() !== '' && strpos(sso_start(), 'https://portal.skym.ink/public/sso.php?app=schedule&state=') === 0, true);
+check('Hub: Hub へ移る URL', sso_start() !== '' && strpos(sso_start(), 'https://portal.skym.ink/public/sso.php?app=schedule&state=') === 0, true);
 $stt = sso_test_start();
-check('ポータル: ほかの端末（state が違う）では入れない', [sso_receive(sso_test_ticket($kp, ['state' => 'other-state-0123456789'])), $_SESSION['uid'] ?? null], ['expired', null]);
-check('ポータル: state は1回だけ（まちがえたら、もう使えない）', [sso_receive(sso_test_ticket($kp, ['state' => $stt])), $_SESSION['uid'] ?? null], ['expired', null]);
+check('Hub: ほかの端末（state が違う）では入れない', [sso_receive(sso_test_ticket($kp, ['state' => 'other-state-0123456789'])), $_SESSION['uid'] ?? null], ['expired', null]);
+check('Hub: state は1回だけ（まちがえたら、もう使えない）', [sso_receive(sso_test_ticket($kp, ['state' => $stt])), $_SESSION['uid'] ?? null], ['expired', null]);
 $stt = sso_test_start();
-check('ポータル: ほかのアプリ向けは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'aud' => 'password'])), 'invalid');
+check('Hub: ほかのアプリ向けは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'aud' => 'password'])), 'invalid');
 $stt = sso_test_start();
-check('ポータル: ほかの鍵の署名は使えない', sso_receive(sso_test_ticket(sodium_crypto_sign_keypair(), ['state' => $stt])), 'invalid');
+check('Hub: ほかの鍵の署名は使えない', sso_receive(sso_test_ticket(sodium_crypto_sign_keypair(), ['state' => $stt])), 'invalid');
 $stt = sso_test_start();
-check('ポータル: 期限切れは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'iat' => time() - 120, 'exp' => time() - 60])), 'expired');
+check('Hub: 期限切れは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'iat' => time() - 120, 'exp' => time() - 60])), 'expired');
 $stt = sso_test_start();
-check('ポータル: 期限が長すぎるものは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'exp' => time() + 3600])), 'expired');
+check('Hub: 期限が長すぎるものは使えない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'exp' => time() + 3600])), 'expired');
 $stt = sso_test_start();
-check('ポータル: 形の違うもの', [sso_receive(''), sso_receive('v1.a.b'), sso_receive(str_repeat('a', 5000))], ['invalid', 'invalid', 'invalid']);
+check('Hub: 形の違うもの', [sso_receive(''), sso_receive('v1.a.b'), sso_receive(str_repeat('a', 5000))], ['invalid', 'invalid', 'invalid']);
 $stt = sso_test_start();
-check('ポータル: このアプリにいない人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'nobody@example.com'])), 'nouser');
+check('Hub: このアプリにいない人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'nobody@example.com'])), 'nouser');
 $stt = sso_test_start();
 $_SESSION['sso_state']['at'] = time() - SSO_STATE_SECONDS - 1;
-check('ポータル: state は10分で切れる', sso_receive(sso_test_ticket($kp, ['state' => $stt])), 'expired');
+check('Hub: state は10分で切れる', sso_receive(sso_test_ticket($kp, ['state' => $stt])), 'expired');
 $stt = sso_test_start();
 $tk = sso_test_ticket($kp, ['state' => $stt, 'email' => 'A@Example.com']);
-check('ポータル: 正しいチケットなら、パスワードを聞かずにログインする（メールの大文字小文字は問わない）', [sso_receive($tk), $_SESSION['uid'] ?? null, isset($_SESSION['csrf'])], ['', (int)$a['id'], true]);
+check('Hub: 正しいチケットなら、パスワードを聞かずにログインする（メールの大文字小文字は問わない）', [sso_receive($tk), $_SESSION['uid'] ?? null, isset($_SESSION['csrf'])], ['', (int)$a['id'], true]);
 logout();
-check('ポータル: 同じチケットは2回使えない', [sso_receive($tk), $_SESSION['uid'] ?? null], ['expired', null]);
+check('Hub: 同じチケットは2回使えない', [sso_receive($tk), $_SESSION['uid'] ?? null], ['expired', null]);
 q('UPDATE users SET active = 0 WHERE id = ?', [$b['id']]);
 $stt = sso_test_start();
-check('ポータル: 止めた人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'b@example.com'])), 'nouser');
+check('Hub: 止めた人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'b@example.com'])), 'nouser');
 q('UPDATE users SET active = 1 WHERE id = ?', [$b['id']]);
 
-// ---- ポータルの段階6: ポータルから一度でも入った人は、ふつうのログインを使えない（管理者は使える） ----
+// ---- Hub の段階6: Hub から一度でも入った人は、ふつうのログインを使えない（管理者は使える） ----
 logout();
 $linked = function (int $id) { return (string)(row('SELECT portal_linked_at FROM users WHERE id = ?', [$id])['portal_linked_at'] ?? ''); };
-check('段階6: ポータルから入った人には、初めて入った日時が付く（まだの人は空）', [$linked((int)$a['id']) !== '', $linked((int)$b['id'])], [true, '']);
+check('段階6: Hub から入った人には、初めて入った日時が付く（まだの人は空）', [$linked((int)$a['id']) !== '', $linked((int)$b['id'])], [true, '']);
 $first = $linked((int)$a['id']);
 $stt = sso_test_start();
 sso_receive(sso_test_ticket($kp, ['state' => $stt]));
 logout();
 check('段階6: 2回目からは、初めの日時のまま', $linked((int)$a['id']), $first);
 $pl = null; $lk = null;
-check('段階6: ポータルから入った社員は、正しいパスワードでもふつうのログインを使えない', [login_attempt('a@example.com', 'password1', $lk, $pl) === null, $pl, $lk, $_SESSION['uid'] ?? null], [true, true, false, null]);
-check('段階6: パスワードが違うときは、ポータルの人かどうかを知らせない', [login_attempt('a@example.com', 'wrong', $lk, $pl) === null, $pl], [true, false]);
-check('段階6: ポータルから入ったことのない社員は、今までどおりふつうのログインを使える', [login_attempt('b@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+check('段階6: Hub から入った社員は、正しいパスワードでもふつうのログインを使えない', [login_attempt('a@example.com', 'password1', $lk, $pl) === null, $pl, $lk, $_SESSION['uid'] ?? null], [true, true, false, null]);
+check('段階6: パスワードが違うときは、Hub の人かどうかを知らせない', [login_attempt('a@example.com', 'wrong', $lk, $pl) === null, $pl], [true, false]);
+check('段階6: Hub から入ったことのない社員は、今までどおりふつうのログインを使える', [login_attempt('b@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
 logout();
 q("UPDATE users SET role = 'admin' WHERE id = ?", [$a['id']]);
-check('段階6: 管理者は、ポータルから入ったあとも、ふつうのログインを使える（ポータルが止まったとき）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+check('段階6: 管理者は、Hub から入ったあとも、ふつうのログインを使える（Hub が止まったとき）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
 logout();
 q("UPDATE users SET role = 'member' WHERE id = ?", [$a['id']]);
 $GLOBALS['SSO_CFG']['portal_pubkey'] = '';
-check('段階6: ポータルの仕組みが使えないときは、止めない（だれも入れなくならない）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+check('段階6: Hub の仕組みが使えないときは、止めない（だれも入れなくならない）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
 logout();
 $GLOBALS['SSO_CFG']['portal_pubkey'] = base64_encode(sodium_crypto_sign_publickey($kp));
-check('段階6: 止める判定（portal_only）: 社員で、ポータルから入ったことがある人だけ', [portal_only(['role' => 'member', 'portal_linked_at' => '2026-11-24 10:00:00']), portal_only(['role' => 'member', 'portal_linked_at' => null]), portal_only(['role' => 'admin', 'portal_linked_at' => '2026-11-24 10:00:00']), portal_only(['role' => 'family', 'portal_linked_at' => '2026-11-24 10:00:00'])], [true, false, false, false]);
+check('段階6: 止める判定（portal_only）: 社員で、Hub から入ったことがある人だけ', [portal_only(['role' => 'member', 'portal_linked_at' => '2026-11-24 10:00:00']), portal_only(['role' => 'member', 'portal_linked_at' => null]), portal_only(['role' => 'admin', 'portal_linked_at' => '2026-11-24 10:00:00']), portal_only(['role' => 'family', 'portal_linked_at' => '2026-11-24 10:00:00'])], [true, false, false, false]);
 check('段階6: 初期値は「止める」（portal_only）', cfg('portal_only'), true);
 $GLOBALS['SSO_CFG']['portal_only'] = false;
 check('段階6: 設定 portal_only を false にすれば、全員ふつうのログインを使える（今までどおり）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
 logout();
 unset($GLOBALS['SSO_CFG']['portal_only']);
 
-// ---- 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る。portal_nav） ----
+// ---- 上の帯の「アプリ」（Hub へ戻る・ほかのアプリへ移る。portal_nav） ----
 q('UPDATE users SET portal_acc = 0 WHERE id = ?', [$a['id']]);
 $navOf = function () use ($a) { return portal_nav(row('SELECT * FROM users WHERE id = ?', [$a['id']])); };
 $nv = $navOf();
-check('上の帯のアプリ: ポータルへ戻る URL と、このアプリ自身（schedule）を除いたアプリ。受け取り口があれば、そこへ', [$nv['portal'], array_column($nv['apps'], 'id'), $nv['apps'][0]['href'], $nv['apps'][0]['accounting']],
+check('上の帯のアプリ: Hub へ戻る URL と、このアプリ自身（schedule）を除いたアプリ。受け取り口があれば、そこへ', [$nv['portal'], array_column($nv['apps'], 'id'), $nv['apps'][0]['href'], $nv['apps'][0]['accounting']],
     ['https://portal.skym.ink/public/', ['password', 'kinmuhyo'], 'https://password-manager.skym.ink/public/sso.php', false]);
-check('上の帯のアプリ: 初期値の一覧は、ポータルの default_apps と同じ5つ', array_column(cfg('portal_apps'), 'id'), ['schedule', 'password', 'payroll', 'invoice', 'kinmuhyo']);
+check('上の帯のアプリ: 初期値の一覧は、Hub の default_apps と同じ5つ', array_column(cfg('portal_apps'), 'id'), ['schedule', 'password', 'payroll', 'invoice', 'kinmuhyo']);
 check('上の帯のアプリ: 勤務表ツクールは、受け取り口へ（全員）', [$nv['apps'][1]['href'], $nv['apps'][1]['accounting']], ['https://kinmuhyo-auto.skym.ink/sso.php', false]);
 q('UPDATE users SET portal_acc = 1 WHERE id = ?', [$a['id']]);
 $nv = $navOf();
@@ -2360,9 +2360,9 @@ check('上の帯のアプリ: https でない URL・形の違うものは出さ�
 unset($GLOBALS['SSO_CFG']['portal_apps']);
 check('上の帯のアプリ: 家族のアカウントには出さない', portal_nav(['id' => 1, 'role' => 'family', 'portal_acc' => 1]), null);
 $GLOBALS['SSO_CFG']['portal_url'] = '';
-check('上の帯のアプリ: ポータルの URL がなければ、メニューごと出さない', $navOf(), null);
+check('上の帯のアプリ: Hub の URL がなければ、メニューごと出さない', $navOf(), null);
 $GLOBALS['SSO_CFG']['portal_url'] = 'http://portal.example.test/public/';
-check('上の帯のアプリ: ポータルの URL が https でなければ出さない', $navOf(), null);
+check('上の帯のアプリ: Hub の URL が https でなければ出さない', $navOf(), null);
 $GLOBALS['SSO_CFG']['portal_url'] = 'https://portal.skym.ink/public/';
 $accAfter = function (array $over) use ($kp, $a) {
     logout();
@@ -2370,7 +2370,7 @@ $accAfter = function (array $over) use ($kp, $a) {
     $r = sso_receive(sso_test_ticket($kp, $over + ['state' => $stt]));
     return [$r, (int)row('SELECT portal_acc FROM users WHERE id = ?', [$a['id']])['portal_acc']];
 };
-check('上の帯のアプリ: 受け取り口で、ポータルの経理・管理者を覚える（入るたびに、今の値にそろえる）', [$accAfter(['accounting' => false, 'admin' => false]), $accAfter(['accounting' => true]), $accAfter([]), $accAfter(['admin' => true])],
+check('上の帯のアプリ: 受け取り口で、Hub の経理・管理者を覚える（入るたびに、今の値にそろえる）', [$accAfter(['accounting' => false, 'admin' => false]), $accAfter(['accounting' => true]), $accAfter([]), $accAfter(['admin' => true])],
     [['', 0], ['', 1], ['', 0], ['', 1]]);
 logout();
 db()->exec('ALTER TABLE users DROP COLUMN portal_acc');
@@ -2382,7 +2382,7 @@ check('更新: 古いデータベースに users.portal_linked_at が足され�
 check('更新: 古いデータベースに users.portal_acc が足される（すでにいる人は 0 から）', (function () { try { return [(int)row('SELECT COUNT(*) AS c FROM users WHERE portal_acc = 0')['c'] === (int)row('SELECT COUNT(*) AS c FROM users')['c'], (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v']]; } catch (PDOException $e) { return $e->getMessage(); } })(), [true, SCHEMA_VERSION]);
 
 $GLOBALS['SSO_CFG']['portal_url'] = 'http://portal.example.test/public/';
-check('ポータル: ポータルの URL が https でなければ使わない', sso_on(), false);
+check('Hub: Hub の URL が https でなければ使わない', sso_on(), false);
 $GLOBALS['SSO_CFG']['portal_url'] = 'https://portal.skym.ink/public/';
 $GLOBALS['SSO_CFG']['portal_pubkey'] = '';
 logout();

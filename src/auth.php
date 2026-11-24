@@ -102,7 +102,7 @@ function login_record_fail(string $email): void
     }
 }
 
-/** @return ?array ユーザー。失敗なら null（$locked が true なら、回数制限で試せなかった。$portal が true なら、パスワードは正しいが、ポータルから入る人（portal_only）） */
+/** @return ?array ユーザー。失敗なら null（$locked が true なら、回数制限で試せなかった。$portal が true なら、パスワードは正しいが、Hub から入る人（portal_only）） */
 function login_attempt(string $email, string $password, ?bool &$locked = null, ?bool &$portal = null): ?array
 {
     $email = strtolower(trim($email));
@@ -125,7 +125,7 @@ function login_attempt(string $email, string $password, ?bool &$locked = null, ?
         // 何もしない
     }
     require_once __DIR__ . '/sso.php';
-    if (portal_only($u)) { // パスワードが正しいときだけ知らせる（ほかの人が、ポータルを使う人かどうかを探れない）
+    if (portal_only($u)) { // パスワードが正しいときだけ知らせる（ほかの人が、Hub を使う人かどうかを探れない）
         $portal = true;
         return null;
     }
@@ -133,7 +133,7 @@ function login_attempt(string $email, string $password, ?bool &$locked = null, ?
     return $u;
 }
 
-/** ログインした状態にする（パスワードのログインと、ポータルから入るとき（src/sso.php）の両方で使う） */
+/** ログインした状態にする（パスワードのログインと、Hub から入るとき（src/sso.php）の両方で使う） */
 function login_start(array $u): void
 {
     try { // 管理者の「利用状況」に出す、最後にログインした日時

@@ -1208,7 +1208,7 @@ table.insp-imp-tbl { border-collapse: collapse; width: 100%; min-width: 900px; f
   .cell.today .num .d { padding: 1px 3px; }
   .num .offmark { padding: 0 2px; font-size: 10px; letter-spacing: -.02em; }
 }
-/* 上の帯の「アプリ ▾」（ポータルへ戻る・ほかのアプリへ移る。v1.119.0。パスワード管理アプリと同じ作り） */
+/* 上の帯の「アプリ ▾」（Hub へ戻る・ほかのアプリへ移る。v1.119.0。パスワード管理アプリと同じ作り） */
 .menu-list a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; white-space: nowrap; }
 .menu-list a:hover, .menu-list a:focus-visible { background: var(--surface-2); }
 .menu-list .menu-sep { height: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
