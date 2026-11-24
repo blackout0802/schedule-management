@@ -33,6 +33,8 @@ function app_config(): array
             // ポータルから自動で入る（src/sso.php）。portal_pubkey が空なら使わない（ふつうのログインだけ）
             'portal_url' => 'https://portal.skym.ink/public/',
             'portal_app_id' => 'schedule',  // ポータルのアプリの一覧の id（チケットの aud）
+            // ポータルの段階6（2026-11-24 ユーザーの選択「B・人ごとに自動で」）: ポータルから一度でも入った人は、ふつうのログイン（パスワード）を止める（管理者は除く）。false にすると、全員ふつうのログインもできる（今までどおり）
+            'portal_only' => true,
             'portal_pubkey' => 'laBBM9qZRu4Qa2ZefnZYpHzHJShKKEk6N/VSqDkdA9s=', // ポータルの「確かめる鍵」（公開鍵。ポータルの status の sso_key。2026-11-19 の本番のもの）。秘密ではないので、ここに書いてよい。空にすると使わない
             // 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る。src/sso.php の portal_nav）。ポータルの default_apps と同じものにする。
             // リンク先は sso（受け取り口）があればそれ、なければ url。for = accounting は、ポータルで経理か管理者の人だけに出す
@@ -273,7 +275,7 @@ function migrate_schema(): void
     } catch (PDOException $e) {
         db()->exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
     }
-    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''", 'prefs' => "VARCHAR(500) NOT NULL DEFAULT ''", 'last_login_at' => 'DATETIME NULL', 'last_seen_at' => 'DATETIME NULL', 'family_of' => 'INTEGER NULL', 'private_name' => "VARCHAR(60) NOT NULL DEFAULT ''", 'portal_acc' => 'INTEGER NOT NULL DEFAULT 0'] as $col => $def) { // family_of: 家族のアカウントの持ち主（family.php）／private_name: プライベート版・家族用の画面で使う、自分の名前／portal_acc: ポータルで経理か管理者か（上の帯の「アプリ」で経理のアプリを出す。src/sso.php）
+    foreach (['family_share_off' => 'INTEGER NOT NULL DEFAULT 0', 'family_share_tags' => "VARCHAR(500) NOT NULL DEFAULT ''", 'prefs' => "VARCHAR(500) NOT NULL DEFAULT ''", 'last_login_at' => 'DATETIME NULL', 'last_seen_at' => 'DATETIME NULL', 'family_of' => 'INTEGER NULL', 'private_name' => "VARCHAR(60) NOT NULL DEFAULT ''", 'portal_acc' => 'INTEGER NOT NULL DEFAULT 0', 'portal_linked_at' => 'DATETIME NULL'] as $col => $def) { // portal_linked_at: ポータルから初めて入った日時（ポータルの段階6。src/sso.php の portal_only）／family_of: 家族のアカウントの持ち主（family.php）／private_name: プライベート版・家族用の画面で使う、自分の名前／portal_acc: ポータルで経理か管理者か（上の帯の「アプリ」で経理のアプリを出す。src/sso.php）
         try {
             db()->query("SELECT $col FROM users LIMIT 1")->fetchAll();
         } catch (PDOException $e) {

@@ -20,6 +20,16 @@ function sso_on(): bool
         && strlen((string)base64_decode(sso_cfg('portal_pubkey'), true)) === 32;
 }
 
+/**
+ * ポータルの段階6: この人は、ふつうのログイン（パスワード）を使えず、ポータルから入るか。
+ * ポータルから一度でも入った人（portal_linked_at）だけ。管理者は、ポータルが止まったときのために、ふつうのログインも使える。
+ * ポータルの仕組みが使えない（sso_on が false）ときと、設定 portal_only が false のときは、だれも止めない（入れなくならないように）
+ */
+function portal_only(array $u): bool
+{
+    return (bool)($GLOBALS['SSO_CFG']['portal_only'] ?? cfg('portal_only', true)) && sso_on() && !is_admin($u) && ($u['role'] ?? '') !== 'family' && (string)($u['portal_linked_at'] ?? '') !== '';
+}
+
 /** ポータルの URL が正しい形か（http は手元の確かめ用 portal_allow_http のときだけ） */
 function portal_url_ok(): bool
 {
@@ -126,7 +136,8 @@ function sso_receive(string $ticket): string
         return 'nouser';
     }
     // 上の帯の「アプリ」で、経理のアプリを出すか（ポータルの一覧と同じく、経理か管理者）。入るたびに、ポータルの今の値にそろえる
-    q('UPDATE users SET portal_acc = ? WHERE id = ?', [(($d['accounting'] ?? false) === true || ($d['admin'] ?? false) === true) ? 1 : 0, $u['id']]);
+    // portal_linked_at: ポータルから初めて入った日時（この人は、次からふつうのログインを使えない。portal_only）
+    q('UPDATE users SET portal_acc = ?, portal_linked_at = COALESCE(portal_linked_at, ?) WHERE id = ?', [(($d['accounting'] ?? false) === true || ($d['admin'] ?? false) === true) ? 1 : 0, now_str(), $u['id']]);
     login_start($u);
     return '';
 }

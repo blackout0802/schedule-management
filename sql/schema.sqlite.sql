@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   family_of INTEGER NULL,
   private_name TEXT NOT NULL DEFAULT '',
   portal_acc INTEGER NOT NULL DEFAULT 0,
+  portal_linked_at TEXT NULL,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS series (
