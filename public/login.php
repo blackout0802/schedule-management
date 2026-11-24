@@ -8,7 +8,7 @@ if (current_user()) {
     header('Location: index.php');
     exit;
 }
-// ポータルから自動で入る: ログインしていなければ、受け取り口（sso.php）からポータルへ行き、チケットを持って戻る。
+// Hub から自動で入る: ログインしていなければ、受け取り口（sso.php）から Hub へ行き、チケットを持って戻る。
 // 戻ってきても入れなかったとき（?sso=理由）・ログアウトしたとき（?sso=out）・1分以内に行ったばかりのときは、行かずにこの画面を出す
 $ssoWhy = (string)($_GET['sso'] ?? '');
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $ssoWhy === '' && sso_on()) {
@@ -20,11 +20,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $ssoWhy === '' && sso_on()) {
     }
 }
 $ssoMsg = [
-    'nouser' => 'ポータルのメールアドレスが、このアプリに登録されていません。管理者に確かめるか、下からログインしてください。',
-    'expired' => 'ポータルから入るのに時間がかかりすぎました。下からログインするか、ポータルからもう一度開いてください。',
-    'invalid' => 'ポータルから正しく入れませんでした。下からログインしてください。',
-    'off' => 'ポータルから入る仕組みが、このアプリで使えません。下からログインしてください。',
-    'error' => 'ポータルから入る途中で、問題が起きました。下からログインしてください。',
+    'nouser' => 'Hub のメールアドレスが、このアプリに登録されていません。管理者に確かめるか、下からログインしてください。',
+    'expired' => 'Hub から入るのに時間がかかりすぎました。下からログインするか、Hub からもう一度開いてください。',
+    'invalid' => 'Hub から正しく入れませんでした。下からログインしてください。',
+    'off' => 'Hub から入る仕組みが、このアプリで使えません。下からログインしてください。',
+    'error' => 'Hub から入る途中で、問題が起きました。下からログインしてください。',
 ][$ssoWhy] ?? '';
 $error = '';
 $email = '';
@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: index.php');
         exit;
     } elseif ($portalOnly) {
-        $error = 'このアカウントは、ポータルから入ります（ふつうのログインは、管理者だけが使えます）。下の「ポータルからログインする」を押してください。';
+        $error = 'このアカウントは、Hub から入ります（ふつうのログインは、管理者だけが使えます）。下の「Hub からログインする」を押してください。';
     } else {
         $error = $locked ? 'ログインの失敗が続いたため、15分ほど待ってからもう一度お試しください。' : 'メールアドレスまたはパスワードが違います。';
     }
@@ -78,8 +78,8 @@ $app = cfg('app_name');
     </label>
     <button type="submit" class="btn primary">ログイン</button>
   </form>
-  <?php if (sso_on()): ?><p class="muted"><a href="sso.php">ポータルからログインする</a></p><?php endif; ?>
-  <?php if (portal_url_ok()): ?><p class="muted login-portal"><a href="<?= h(sso_cfg('portal_url')) ?>" id="login-portal">← ポータルへ戻る</a></p><?php endif; ?>
+  <?php if (sso_on()): ?><p class="muted"><a href="sso.php">Hub からログインする</a></p><?php endif; ?>
+  <?php if (portal_url_ok()): ?><p class="muted login-portal"><a href="<?= h(sso_cfg('portal_url')) ?>" id="login-portal">← Hub へ戻る</a></p><?php endif; ?>
 </main>
 </body>
 </html>
