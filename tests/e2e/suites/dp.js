@@ -33,14 +33,11 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('#agenda button:has-text("この日に予定を追加")'); await a.waitForSelector('.modal input[name=title]'); ok('「この日に予定を追加」で、新規の登録画面が開く', (await a.inputValue('.modal input[name=title]')) === ''); await a.click('.modal button:has-text("キャンセル")'); await a.waitForFunction(() => !document.querySelector('.modal'));
   await a.locator('.cell[data-date="' + `${M}-22` + '"]').click({ position: { x: 20, y: 4 } }); await a.waitForSelector('#agenda .ag-none'); ok('予定のない日は、「この日の予定はありません」の行', (await a.locator('#agenda .ag-none').innerText()).includes('22（'));
   await a.click('#agenda .ag-unsel'); await a.waitForFunction(() => !document.querySelector('#agenda .ag-selbar')); ok('×で、選ぶのをやめる', (await a.locator('.cal .cell.ag-sel').count()) === 0);
-  // 画面の色: 上の帯のアイコン（太陽＝ライト／モニター＝自動／月＝ダーク）
-  ok('上の帯に、画面の色のアイコン（ライト・自動・ダーク）が並ぶ', (await a.locator('.topbar .theme-sw button').count()) === 3);
+  // 画面の色: 切り替えのアイコンは無く、端末の設定に従う（前に選んだ固定は使わず、消す。v1.121.2）
+  ok('上の帯に、画面の色のアイコンは無い', (await a.locator('.theme-sw, [data-theme-opt]').count()) === 0);
   ok('設定のページには、画面の色の項目は無い', await (async () => { await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page'); const n = await a.locator('#set-theme').count(); await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal'); return n === 0; })());
-  await a.click('.theme-sw [data-theme-opt=light]'); await a.waitForTimeout(200); const light = await bg(); ok('ライトのアイコンを押すと、ダーク端末でも白い背景になる', /rgb\(242, 242, 247\)/.test(light), light);
-  ok('押したアイコンが選ばれた状態になる', (await a.getAttribute('.theme-sw [data-theme-opt=light]', 'aria-pressed')) === 'true' && (await a.getAttribute('.theme-sw [data-theme-opt=dark]', 'aria-pressed')) === 'false');
-  await a.reload(); await a.waitForSelector('.cal'); ok('開き直しても、ライトのまま（この端末に記憶）', /rgb\(242, 242, 247\)/.test(await bg()) && (await a.getAttribute('.theme-sw [data-theme-opt=light]', 'aria-pressed')) === 'true');
-  await a.click('.theme-sw [data-theme-opt=dark]'); await a.waitForTimeout(200); ok('ダークのアイコンを押すと、黒い背景', /rgb\(14, 21, 34\)/.test(await bg()));
-  await a.click('.theme-sw [data-theme-opt=auto]'); await a.waitForTimeout(200); ok('自動のアイコンに戻すと、端末の設定（ダーク）に従う', /rgb\(14, 21, 34\)/.test(await bg()));
+  await a.evaluate(() => localStorage.setItem('sched.theme', JSON.stringify('light'))); await a.reload(); await a.waitForSelector('.cal');
+  ok('前に選んだライトは使わず、端末の設定（ダーク）に従う', /rgb\(14, 21, 34\)/.test(await bg()) && (await a.evaluate(() => localStorage.getItem('sched.theme'))) === null);
 
   // 共有リンク（未ログインの端末・ライト端末）
   for (const [i, nm] of [[0, '会社用'], [1, '家族用']]) {
@@ -49,7 +46,7 @@ const BASE = 'http://127.0.0.1:8099/';
     await g.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g.waitForSelector('#agenda .ag-selbar');
     const gt = (await g.locator('#agenda .ag-item.hl').allInnerTexts()).join(' / '); ok(nm + 'リンク: 日付を押すと、一覧のその日の予定に色が付く', (i === 0 ? gt.includes('全体会議') : gt.includes('家族で外食') && gt.includes('19:00')), gt); ok(nm + 'リンク: 「予定を追加」は出ない', !(await g.locator('#agenda').innerText()).includes('予定を追加'));
     if (i === 0) { await g.click('#agenda .ag-item:has-text("全体会議")'); await g.waitForSelector('.modal'); ok('会社用: 予定を押すと、詳細（閲覧）が出る', (await g.locator('.modal').innerText()).includes('予定の詳細')); }
-    ok(nm + 'リンク: 画面の色のアイコン（ライト・自動・ダーク）がある', (await g.locator('header .theme-sw button').count()) === 3);
+    ok(nm + 'リンク: 画面の色のアイコンは無い', (await g.locator('header .theme-sw').count()) === 0);
     await g.close(); }
   const g2 = await mk(phone, 'light'); await g2.goto(BASE + sh[0]); await g2.waitForSelector('.cal'); await g2.uncheck('#off-only'); await g2.locator('.cell[data-date="' + `${M}-14` + '"]').click({ position: { x: 20, y: 4 } }); await g2.waitForSelector('#agenda .ag-item.hl'); await g2.screenshot({ path: 'dp-popup.png', fullPage: true });
   // PC幅では、これまでどおり（空きの日を押すと、登録画面）

@@ -13,7 +13,7 @@
   --rm0: #2459b8; --rm0-soft: #e1ebfa; --rm1: #b85a08; --rm1-soft: #fbe9d6; --rm2: #1f7a37; --rm2-soft: #e3f5e8; --rm3: #8e35bd; --rm3-soft: #f3e8fb; --on-rm: #fff; /* 会議室の色（部屋ごとに固定。大=青、小=オレンジ） */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
 }
-/* 画面の色: 端末の設定に合わせる（自動）。「画面の色」で、ライト／ダークに固定できる（html の data-theme） */
+/* 画面の色: 端末の設定に合わせる（自動）。切り替えは無い（v1.121.2） */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0e1522; --surface: #162033; --surface-2: #1e2b43; --ink: #e8eef8; --muted: #9aa8bd; --line: #2a3850;
@@ -924,14 +924,7 @@ details.help-sm[open] > summary { margin-bottom: 2px; }
 .ic * { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .topbar .btn.small { gap: 6px; }
 
-/* 画面の色の切り替え（上の帯）: 太陽・モニター・月のアイコン */
-.theme-sw { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
-.theme-sw button { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; padding: 0; }
-.theme-sw button:hover { color: var(--ink); }
-.theme-sw button[aria-pressed="true"] { background: color-mix(in srgb, var(--work) 14%, var(--surface)); color: var(--work); }
-.theme-sw .ic { width: 16px; height: 16px; }
-.topbar-in .theme-sw { margin-left: 4px; }
-@media (max-width: 640px) { .theme-sw button { width: 24px; height: 26px; } .topbar-in .theme-sw { margin-left: 0; } .topbar-in > .muted, .topbar-in.settings-bar .brand { display: none; } .topbar-in .brand { display: flex; flex-direction: column; line-height: 1.15; } .topbar-in .brand .ver { font-size: 10px; margin-left: 0; } } /* 版は、スマホでもパソコンと同じ場所（左上のアプリ名のところ）に出す。横に並べると帯が3行になるので、アプリ名のすぐ下に小さく重ねる。スマホは、上の帯が1行に収まるよう、版の表示を省く */
+@media (max-width: 640px) { .topbar-in > .muted, .topbar-in.settings-bar .brand { display: none; } .topbar-in .brand { display: flex; flex-direction: column; line-height: 1.15; } .topbar-in .brand .ver { font-size: 10px; margin-left: 0; } } /* 版は、スマホでもパソコンと同じ場所（左上のアプリ名のところ）に出す。横に並べると帯が3行になるので、アプリ名のすぐ下に小さく重ねる。スマホは、上の帯が1行に収まるよう、版の表示を省く */
 
 /* 設定の各項目: 見出しを押すと開く（初めは畳んである） */
 .set-sec.collapsible > h3 { margin: 0; padding: 0; border: 0; cursor: pointer; justify-content: flex-start; user-select: none; }
