@@ -2319,12 +2319,13 @@ q('UPDATE users SET portal_acc = 0 WHERE id = ?', [$a['id']]);
 $navOf = function () use ($a) { return portal_nav(row('SELECT * FROM users WHERE id = ?', [$a['id']])); };
 $nv = $navOf();
 check('上の帯のアプリ: ポータルへ戻る URL と、このアプリ自身（schedule）を除いたアプリ。受け取り口があれば、そこへ', [$nv['portal'], array_column($nv['apps'], 'id'), $nv['apps'][0]['href'], $nv['apps'][0]['accounting']],
-    ['https://portal.skym.ink/public/', ['password'], 'https://password-manager.skym.ink/public/sso.php', false]);
-check('上の帯のアプリ: 初期値の一覧は、ポータルの default_apps と同じ4つ', array_column(cfg('portal_apps'), 'id'), ['schedule', 'password', 'payroll', 'invoice']);
+    ['https://portal.skym.ink/public/', ['password', 'kinmuhyo'], 'https://password-manager.skym.ink/public/sso.php', false]);
+check('上の帯のアプリ: 初期値の一覧は、ポータルの default_apps と同じ5つ', array_column(cfg('portal_apps'), 'id'), ['schedule', 'password', 'payroll', 'invoice', 'kinmuhyo']);
+check('上の帯のアプリ: 勤務表ツクールは、受け取り口へ（全員）', [$nv['apps'][1]['href'], $nv['apps'][1]['accounting']], ['https://kinmuhyo-auto.skym.ink/sso.php', false]);
 q('UPDATE users SET portal_acc = 1 WHERE id = ?', [$a['id']]);
 $nv = $navOf();
 check('上の帯のアプリ: 経理のアプリは、portal_acc が 1 の人だけ（受け取り口がなければ url。経理の印）', [array_column($nv['apps'], 'id'), array_column($nv['apps'], 'accounting'), $nv['apps'][1]['href']],
-    [['password', 'payroll', 'invoice'], [false, true, true], 'https://payroll.skym.ink/']);
+    [['password', 'payroll', 'invoice', 'kinmuhyo'], [false, true, true, false], 'https://payroll.skym.ink/']);
 $GLOBALS['SSO_CFG']['portal_apps'] = [['id' => 'h', 'name' => 'http', 'url' => 'http://x.example/'], ['id' => 'j', 'name' => 'js', 'url' => 'javascript:alert(1)'], ['id' => 's', 'name' => 'ok', 'url' => 'https://ok.example/a', 'sso' => 'http://ok.example/sso.php'], ['name' => 'id なし', 'url' => 'https://x.example/'], 'x', ['id' => 'k', 'name' => 'よい', 'url' => 'https://k.example/']];
 check('上の帯のアプリ: https でない URL・形の違うものは出さない', array_column($navOf()['apps'], 'id'), ['k']);
 unset($GLOBALS['SSO_CFG']['portal_apps']);

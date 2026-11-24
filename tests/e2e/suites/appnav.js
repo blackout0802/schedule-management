@@ -28,8 +28,8 @@ const PORTAL = 'https://portal.skym.ink/public/';
   await btn.click();
   let l = await links(p);
   ok('押すと開く: 「← ポータルへ戻る」・区切りの線・ほかのアプリ（このアプリ自身と、経理のアプリは出ない）', await p.locator('#app-list').isVisible() && (await btn.getAttribute('aria-expanded')) === 'true'
-    && JSON.stringify(l.map(x => x.id)) === '["portal","password"]' && l[0].href === PORTAL && l[0].text.includes('ポータルへ戻る') && (await p.locator('#app-list .menu-sep').count()) === 1, l);
-  ok('ほかのアプリは、受け取り口（sso.php）へ。同じタブで移る（target なし）', l[1].href === 'https://password-manager.skym.ink/public/sso.php' && l[1].text === 'パスワード管理' && l.every(x => !x.target), l);
+    && JSON.stringify(l.map(x => x.id)) === '["portal","password","kinmuhyo"]' && l[0].href === PORTAL && l[0].text.includes('ポータルへ戻る') && (await p.locator('#app-list .menu-sep').count()) === 1, l);
+  ok('ほかのアプリは、受け取り口（sso.php）へ。同じタブで移る（target なし）', l[1].href === 'https://password-manager.skym.ink/public/sso.php' && l[1].text === 'パスワード管理' && l[2].href === 'https://kinmuhyo-auto.skym.ink/sso.php' && l[2].text === '勤務表ツクール' && l.every(x => !x.target), l);
   const box = await p.locator('#app-list').boundingBox();
   ok('開いた一覧は、画面の中に収まる', box && box.x >= 0 && box.x + box.width <= 1280, box);
   await p.click('header .brand'); // カレンダーのマスを押すと、予定の入力が開くので、アプリ名のところを押す
@@ -47,7 +47,7 @@ const PORTAL = 'https://portal.skym.ink/public/';
   await p.goto(BASE + 'index.php'); await p.waitForSelector('.cal');
   await p.click('#btn-apps'); l = await links(p);
   await p.screenshot({ path: 'appnav-pc.png', clip: { x: 0, y: 0, width: 760, height: 300 } });
-  ok('経理の人には、給与計算・請求書も出る（小さく「経理」の印）', JSON.stringify(l.map(x => x.id)) === '["portal","password","payroll","invoice"]' && (await p.locator('#app-list a[data-app=payroll] .menu-acc').innerText()) === '経理'
+  ok('経理の人には、給与計算・請求書も出る（小さく「経理」の印）', JSON.stringify(l.map(x => x.id)) === '["portal","password","payroll","invoice","kinmuhyo"]' && (await p.locator('#app-list a[data-app=payroll] .menu-acc').innerText()) === '経理'
     && (await p.locator('#app-list a[data-app=password] .menu-acc').count()) === 0 && l[2].href === 'https://payroll.skym.ink/' && l[3].href === 'https://skym.ink/invoice/', l);
   await Promise.all([p.waitForURL(PORTAL), p.click('#app-list a[data-app=portal]')]);
   ok('「← ポータルへ戻る」を押すと、ポータルへ移る', p.url() === PORTAL, p.url());
@@ -56,7 +56,7 @@ const PORTAL = 'https://portal.skym.ink/public/';
   await p.goto(BASE + 'index.php#settings'); await p.waitForSelector('.settings-page');
   ok('設定のページの上の帯にも「アプリ ▾」', await p.locator('.settings-bar #btn-apps').isVisible());
   await p.click('#btn-apps');
-  ok('設定のページでも開いて、同じリンク', JSON.stringify((await links(p)).map(x => x.id)) === '["portal","password","payroll","invoice"]');
+  ok('設定のページでも開いて、同じリンク', JSON.stringify((await links(p)).map(x => x.id)) === '["portal","password","payroll","invoice","kinmuhyo"]');
   await p.click('.settings-page > h2');
   ok('設定のページでも、外を押すと閉じる', (await p.locator('#app-list').count()) === 0);
   await p.goto(BASE + 'index.php#annual'); await p.waitForSelector('#insp-btn.on');
@@ -66,7 +66,7 @@ const PORTAL = 'https://portal.skym.ink/public/';
   sql("UPDATE users SET portal_acc = 0 WHERE email = 'yamada@example.com'");
   const a = await mk(); await login(a, 'admin@example.com', 'adminpass1');
   await a.click('#btn-apps');
-  ok('ポータルから入ったことのない管理者には、経理のアプリは出ない（ポータルで確かめた値だけを使う）', JSON.stringify((await links(a)).map(x => x.id)) === '["portal","password"]');
+  ok('ポータルから入ったことのない管理者には、経理のアプリは出ない（ポータルで確かめた値だけを使う）', JSON.stringify((await links(a)).map(x => x.id)) === '["portal","password","kinmuhyo"]');
 
   // ---- スマホ: 上の帯には置かず、名前のメニューの中に出す
   const m = await mk({ width: 390, height: 844 }); await login(m, 'yamada@example.com', 'yamadapass1');
@@ -74,7 +74,7 @@ const PORTAL = 'https://portal.skym.ink/public/';
   ok('スマホでも、横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await m.click('header .uname');
   const ua = await m.$$eval('#user-apps a', as => as.map(a => ({ id: a.dataset.app, href: a.getAttribute('href') })));
-  ok('名前のメニューの中に、ポータルへ戻る・パスワード管理（経理のアプリは出ない）', await m.locator('#user-apps').isVisible() && JSON.stringify(ua.map(x => x.id)) === '["portal","password"]' && ua[0].href === PORTAL, ua);
+  ok('名前のメニューの中に、ポータルへ戻る・パスワード管理（経理のアプリは出ない）', await m.locator('#user-apps').isVisible() && JSON.stringify(ua.map(x => x.id)) === '["portal","password","kinmuhyo"]' && ua[0].href === PORTAL, ua);
   await m.screenshot({ path: 'appnav-phone.png', clip: { x: 0, y: 0, width: 390, height: 460 } });
   const mb = await m.locator('header .menu-list:not(#app-list)').boundingBox();
   ok('名前のメニューは、画面の中に収まる', mb && mb.x >= 0 && mb.x + mb.width <= 390, mb);
