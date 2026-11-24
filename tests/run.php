@@ -2314,6 +2314,35 @@ $stt = sso_test_start();
 check('ポータル: 止めた人は入れない', sso_receive(sso_test_ticket($kp, ['state' => $stt, 'email' => 'b@example.com'])), 'nouser');
 q('UPDATE users SET active = 1 WHERE id = ?', [$b['id']]);
 
+// ---- ポータルの段階6: ポータルから一度でも入った人は、ふつうのログインを使えない（管理者は使える） ----
+logout();
+$linked = function (int $id) { return (string)(row('SELECT portal_linked_at FROM users WHERE id = ?', [$id])['portal_linked_at'] ?? ''); };
+check('段階6: ポータルから入った人には、初めて入った日時が付く（まだの人は空）', [$linked((int)$a['id']) !== '', $linked((int)$b['id'])], [true, '']);
+$first = $linked((int)$a['id']);
+$stt = sso_test_start();
+sso_receive(sso_test_ticket($kp, ['state' => $stt]));
+logout();
+check('段階6: 2回目からは、初めの日時のまま', $linked((int)$a['id']), $first);
+$pl = null; $lk = null;
+check('段階6: ポータルから入った社員は、正しいパスワードでもふつうのログインを使えない', [login_attempt('a@example.com', 'password1', $lk, $pl) === null, $pl, $lk, $_SESSION['uid'] ?? null], [true, true, false, null]);
+check('段階6: パスワードが違うときは、ポータルの人かどうかを知らせない', [login_attempt('a@example.com', 'wrong', $lk, $pl) === null, $pl], [true, false]);
+check('段階6: ポータルから入ったことのない社員は、今までどおりふつうのログインを使える', [login_attempt('b@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+logout();
+q("UPDATE users SET role = 'admin' WHERE id = ?", [$a['id']]);
+check('段階6: 管理者は、ポータルから入ったあとも、ふつうのログインを使える（ポータルが止まったとき）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+logout();
+q("UPDATE users SET role = 'member' WHERE id = ?", [$a['id']]);
+$GLOBALS['SSO_CFG']['portal_pubkey'] = '';
+check('段階6: ポータルの仕組みが使えないときは、止めない（だれも入れなくならない）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+logout();
+$GLOBALS['SSO_CFG']['portal_pubkey'] = base64_encode(sodium_crypto_sign_publickey($kp));
+check('段階6: 止める判定（portal_only）: 社員で、ポータルから入ったことがある人だけ', [portal_only(['role' => 'member', 'portal_linked_at' => '2026-11-24 10:00:00']), portal_only(['role' => 'member', 'portal_linked_at' => null]), portal_only(['role' => 'admin', 'portal_linked_at' => '2026-11-24 10:00:00']), portal_only(['role' => 'family', 'portal_linked_at' => '2026-11-24 10:00:00'])], [true, false, false, false]);
+check('段階6: 初期値は「止める」（portal_only）', cfg('portal_only'), true);
+$GLOBALS['SSO_CFG']['portal_only'] = false;
+check('段階6: 設定 portal_only を false にすれば、全員ふつうのログインを使える（今までどおり）', [login_attempt('a@example.com', 'password1', $lk, $pl) !== null, $pl], [true, false]);
+logout();
+unset($GLOBALS['SSO_CFG']['portal_only']);
+
 // ---- 上の帯の「アプリ」（ポータルへ戻る・ほかのアプリへ移る。portal_nav） ----
 q('UPDATE users SET portal_acc = 0 WHERE id = ?', [$a['id']]);
 $navOf = function () use ($a) { return portal_nav(row('SELECT * FROM users WHERE id = ?', [$a['id']])); };
@@ -2345,9 +2374,11 @@ check('上の帯のアプリ: 受け取り口で、ポータルの経理・管�
     [['', 0], ['', 1], ['', 0], ['', 1]]);
 logout();
 db()->exec('ALTER TABLE users DROP COLUMN portal_acc');
+db()->exec('ALTER TABLE users DROP COLUMN portal_linked_at');
 q('DELETE FROM app_meta WHERE meta_key = ?', ['schema_version']);
 q('INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?)', ['schema_version', '35']);
 ensure_schema();
+check('更新: 古いデータベースに users.portal_linked_at が足される（すでにいる人は空 = 今までどおりふつうのログインを使える）', (function () { try { return (int)row('SELECT COUNT(*) AS c FROM users WHERE portal_linked_at IS NOT NULL')['c']; } catch (PDOException $e) { return $e->getMessage(); } })(), 0);
 check('更新: 古いデータベースに users.portal_acc が足される（すでにいる人は 0 から）', (function () { try { return [(int)row('SELECT COUNT(*) AS c FROM users WHERE portal_acc = 0')['c'] === (int)row('SELECT COUNT(*) AS c FROM users')['c'], (int)row("SELECT meta_value AS v FROM app_meta WHERE meta_key = 'schema_version'")['v']]; } catch (PDOException $e) { return $e->getMessage(); } })(), [true, SCHEMA_VERSION]);
 
 $GLOBALS['SSO_CFG']['portal_url'] = 'http://portal.example.test/public/';

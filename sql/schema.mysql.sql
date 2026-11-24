@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   family_of INT UNSIGNED NULL,
   private_name VARCHAR(60) NOT NULL DEFAULT '',
   portal_acc TINYINT NOT NULL DEFAULT 0,
+  portal_linked_at DATETIME NULL,
   created_at DATETIME NOT NULL,
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

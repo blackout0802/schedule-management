@@ -33,9 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = (string)($_POST['email'] ?? '');
     if (!csrf_valid($_POST['csrf'] ?? null)) {
         $error = '画面の有効期限が切れました。もう一度お試しください。';
-    } elseif (login_attempt($email, (string)($_POST['password'] ?? ''), $locked)) {
+    } elseif (login_attempt($email, (string)($_POST['password'] ?? ''), $locked, $portalOnly)) {
         header('Location: index.php');
         exit;
+    } elseif ($portalOnly) {
+        $error = 'このアカウントは、ポータルから入ります（ふつうのログインは、管理者だけが使えます）。下の「ポータルからログインする」を押してください。';
     } else {
         $error = $locked ? 'ログインの失敗が続いたため、15分ほど待ってからもう一度お試しください。' : 'メールアドレスまたはパスワードが違います。';
     }

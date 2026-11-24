@@ -821,8 +821,8 @@ function handle_api(): void
         case 'users_list':
             require_admin($user);
             api_out(['users' => array_map(function ($u) {
-                return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'active' => (int)$u['active'], 'must_change_password' => (int)$u['must_change_password']];
-            }, rows("SELECT id,name,email,role,active,must_change_password FROM users WHERE role <> 'family' ORDER BY id"))]);
+                return ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role'], 'active' => (int)$u['active'], 'must_change_password' => (int)$u['must_change_password'], 'portal_linked' => (string)($u['portal_linked_at'] ?? '') !== '' ? 1 : 0];
+            }, rows("SELECT id,name,email,role,active,must_change_password,portal_linked_at FROM users WHERE role <> 'family' ORDER BY id"))]);
 
         case 'user_save':
             require_admin($user);

@@ -4089,7 +4089,7 @@
         body.appendChild(el('div', { class: 'scroll-x' }, el('table', { class: 't stack' },
           el('thead', null, el('tr', null, ['名前', 'メールアドレス', '権限', ''].map(function (h) { return el('th', { text: h }); }))),
           el('tbody', null, j.users.map(function (u) {
-            return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') + (u.must_change_password ? '（初回パスワード未変更）' : '') }), el('td', { text: u.email }),
+            return el('tr', null, el('td', { text: u.name + (u.active ? '' : '（停止中）') + (u.must_change_password ? '（初回パスワード未変更）' : '') + (u.portal_linked && u.role !== 'admin' ? '（ポータルで入る）' : '') }), el('td', { text: u.email }),
               el('td', null, el('span', { class: 'pill' + (u.role === 'admin' ? ' admin' : ''), text: u.role === 'admin' ? '管理者' : '一般' })),
               el('td', { class: 'row-btns' }, el('button', { class: 'btn small', type: 'button', text: '編集', onclick: function () { openUserForm(u, refresh); } }),
                 u.id === S.me.user.id ? null : el('button', { class: 'btn small', type: 'button', text: 'パスワードをリセット', title: '新しい一時パスワードを作ります（本人は、次のログインで変更します）', onclick: function () { resetPasswordFor(u, refresh); } })));
