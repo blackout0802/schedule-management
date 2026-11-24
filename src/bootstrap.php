@@ -41,6 +41,7 @@ function app_config(): array
                 ['id' => 'password', 'name' => 'パスワード管理', 'url' => 'https://password-manager.skym.ink/public/', 'for' => 'all', 'sso' => 'https://password-manager.skym.ink/public/sso.php'],
                 ['id' => 'payroll', 'name' => '給与計算', 'url' => 'https://payroll.skym.ink/', 'for' => 'accounting'],
                 ['id' => 'invoice', 'name' => '請求書', 'url' => 'https://skym.ink/invoice/', 'for' => 'accounting'],
+                ['id' => 'kinmuhyo', 'name' => '勤務表ツクール', 'url' => 'https://kinmuhyo-auto.skym.ink/', 'for' => 'all', 'sso' => 'https://kinmuhyo-auto.skym.ink/sso.php'], // 2026-11-24 ポータル v0.4.1・v0.4.2 で追加
             ],
         ];
         $cfg = array_merge($defaults, require $file);
