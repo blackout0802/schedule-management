@@ -106,24 +106,6 @@
     inp.addEventListener('change', function () { timeVal(inp); });
     return inp;
   }
-  /* 画面の色: 自動（端末の設定に合わせる）／ライト／ダーク。端末ごとに覚える */
-  function applyTheme() {
-    var t = store('sched.theme');
-    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
-  }
-  /* 画面の色の切り替え（上の帯のアイコン）: 太陽＝ライト、モニター＝自動（端末の設定に合わせる）、月＝ダーク。端末ごとに覚える */
-  function themeSwitch() {
-    var cur = store('sched.theme'); cur = cur === 'light' || cur === 'dark' ? cur : 'auto';
-    var opts = [['light', 'sun', 'ライト（白い背景）'], ['auto', 'monitor', '自動（端末の設定に合わせる）'], ['dark', 'moon', 'ダーク（黒い背景）']];
-    var box = el('span', { class: 'theme-sw', role: 'group', 'aria-label': '画面の色（この端末だけの設定）' });
-    opts.forEach(function (o) {
-      box.appendChild(el('button', { type: 'button', 'data-theme-opt': o[0], 'aria-pressed': cur === o[0] ? 'true' : 'false', 'aria-label': o[2], title: o[2], onclick: function () {
-        store('sched.theme', o[0]); applyTheme();
-        Array.prototype.forEach.call(document.querySelectorAll('.theme-sw button'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-theme-opt') === o[0] ? 'true' : 'false'); });
-      } }, svgIcon(o[1])));
-    });
-    return box;
-  }
   function NARROW() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); } // スマホの幅
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parse(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
@@ -577,7 +559,7 @@
   function renderShareShell() {
     root.textContent = '';
     root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' }, S.shareMine ? el('a', { class: 'btn small primary', href: 'index.php?view=' + (SHARE.kind === 'family' ? 'me' : 'team'), title: 'この共有を作ったあなたの画面（ログイン中）へ戻る', text: '← 自分の画面に戻る' }) : null,
-      el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('span', { class: 'spacer' }), themeSwitch())));
+      el('span', { class: 'brand', text: S.shareTitle }), el('button', { class: 'btn small', type: 'button', text: 'ホーム画面に追加', onclick: openInstallHelp }), el('span', { class: 'spacer' }))));
     root.appendChild(el('main', null, el('div', { id: 'toolbar' }), el('div', { class: 'layout single' }, el('div', { id: 'board', class: 'board' }))));
     renderToolbar();
   }
@@ -673,7 +655,7 @@
       el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })),
       appMenu(menus),
       FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : tabs,
-      el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), annualBtn, FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
+      el('span', { class: 'spacer' }), kbdHelpButton(), annualBtn, FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
     // （ボタンの件数は、読み込みずみなら、すぐ出す。まだなら、inspRefresh のあとに出る）
   }
 
@@ -1020,7 +1002,7 @@
       appMenu(),
       el('button', { class: 'btn small', type: 'button', title: 'カレンダー（c）', 'aria-label': 'カレンダーに戻る', onclick: leaveSettings }, '← ', el('span', { class: 'lbl', text: 'カレンダーに' }), '戻る'),
       phone ? null : sw,
-      el('span', { class: 'spacer' }), kbdHelpButton(), themeSwitch(), el('span', { class: 'muted', text: S.me.user.name }),
+      el('span', { class: 'spacer' }), kbdHelpButton(), el('span', { class: 'muted', text: S.me.user.name }),
       el('button', { class: 'btn small', type: 'button', text: 'ログアウト', onclick: doLogout }))));
     root.appendChild(el('main', { class: 'settings-page' + (isAdminPage ? ' admin-page' : '') }, phone ? sw : null, el('h2', { text: isAdminPage ? '会社の管理' : '設定' }), el('div', { class: 'set-layout' }, nav, content)));
     window.scrollTo(0, 0);
@@ -5230,7 +5212,6 @@
   }
 
   /* ---------- 起動 ---------- */
-  applyTheme();
   if (SHARE) {
     api('meta').then(function (m) {
       S.me = { user: { id: 0, name: '閲覧専用', role: 'viewer' }, app_name: m.app_name, work_tags: [], off_tags: [], users: [] };

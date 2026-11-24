@@ -35,7 +35,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1;
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="<?= h(mb_substr($link['kind'] === 'family' ? '予定（家族用）' : '業務カレンダー', 0, 12)) ?>">
-<script nonce="<?= csp_nonce() ?>">try{var t=JSON.parse(localStorage.getItem('sched.theme'));if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<script nonce="<?= csp_nonce() ?>">try{localStorage.removeItem('sched.theme')}catch(e){}</script><?php /* 画面の色は端末の設定に合わせる。前に選んだ固定は消す（v1.121.2） */ ?>
 </head>
 <body>
 <div id="app" data-csrf=""><p class="muted" style="padding:24px">読み込み中…</p></div>

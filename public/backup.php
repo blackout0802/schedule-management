@@ -118,7 +118,7 @@ $names = ['users' => '社員', 'events' => '予定', 'series' => '繰り返し�
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="robots" content="noindex">
 <title>バックアップ｜<?= h(cfg('app_name')) ?></title>
-<script nonce="<?= csp_nonce() ?>">try{var t=localStorage.getItem('sched.theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script nonce="<?= csp_nonce() ?>">try{localStorage.removeItem('sched.theme')}catch(e){}</script><?php /* 画面の色は端末の設定に合わせる。前に選んだ固定は消す（v1.121.2） */ ?>
 <link rel="stylesheet" href="assets/app.css">
 <style>.upd{max-width:720px;margin:32px auto;padding:0 16px;display:grid;gap:16px}.upd .card{background:var(--surface)}.upd ul{margin:6px 0;padding-left:1.3em}.upd code{font-size:.9em}.bk-list{table-layout:fixed}.bk-old summary{cursor:pointer;color:var(--muted);font-size:13px;padding:8px 8px 4px}</style>
 </head>
