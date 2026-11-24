@@ -1,6 +1,11 @@
-# push と pull request のたびに、自動テストを流す。
+# push のたびに、自動テストを流す。
 # auto-merge が本番ブランチへマージしたあとは、workflow_dispatch で本番ブランチのテストと反映を始める
 # （GITHUB_TOKEN でマージすると、その push ではワークフローが動かないため）。
+# Actions の使用時間を減らす（2026-11-24。11月は約4,000分のうち、画面テストが約7割）:
+#   - pull_request では流さない（同じコミットを push 側でも流していて、二重だった。auto-merge は push 側の結果で決める。
+#     PR の画面のチェックにも、push 側の結果が出る）
+#   - 同じ作業ブランチに続けて push したら、古い実行は止める（本番ブランチは止めない）
+#   - 作業ブランチで、文書（docs/・*.md）だけを変えたときは、画面テストを飛ばす（ジョブは成功として終わる）
 #   unit    … 部品ごとのテスト（tests/run.php）。PHP 7.4 / 8.1 / 8.3 × SQLite
 #   mariadb … 同じテストを MariaDB で（PHP 8.3）
 #   compat  … PHP 7.4 で使えない書き方がないかの、静的な検査
@@ -11,11 +16,14 @@ name: tests
 on:
   push:
     branches: ['**']
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/claude/intelligent-brahmagupta-qhk963' }}
 
 jobs:
   unit:
@@ -80,21 +88,44 @@ jobs:
   e2e:
     # ubuntu-latest が Ubuntu 26.04 になり、Playwright 1.56.1 がブラウザを入れられなくなった（2026-11-09）。対応している 24.04 に固定する
     runs-on: ubuntu-24.04
+    env:
+      BASE: claude/intelligent-brahmagupta-qhk963
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # 作業ブランチで、本番ブランチから変わったのが文書（docs/・*.md）だけなら、画面テストを飛ばす。
+      # 本番ブランチ（反映の前）では、いつも流す。
+      - name: 画面テストが要るか
+        id: need
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/$BASE" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! base="$(git merge-base HEAD "origin/$BASE" 2>/dev/null)"; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          files="$(git diff --name-only "$base" HEAD)"
+          echo "$files"
+          if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE '^docs/|\.md$'; then
+            echo "::notice::文書だけの変更なので、画面テストを飛ばしました。"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: shivammathur/setup-php@v2
+        if: steps.need.outputs.run == 'true'
         with:
           php-version: '8.3'
           extensions: pdo, pdo_sqlite, mbstring, gd, openssl, zlib, json, curl
           coverage: none
       - uses: actions/setup-node@v4
+        if: steps.need.outputs.run == 'true'
         with:
           node-version: '20'
       - name: Playwright と Chromium
+        if: steps.need.outputs.run == 'true'
         run: |
           npm install -g playwright@1.56.1
           npx playwright install --with-deps chromium
       - name: 画面テスト
+        if: steps.need.outputs.run == 'true'
         run: bash tests/e2e/run.sh
       - name: 失敗したときの、画面の写真などを残す
         if: failure()
