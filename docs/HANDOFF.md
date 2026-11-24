@@ -54,6 +54,8 @@
 ## 3. 自動デプロイ（GitHub Actions）
 
 - `.github/workflows/test.yml`。ブランチに push すると、unit（PHP 7.4/8.1/8.3）・mariadb・compat・e2e が走り、**すべて通ったときだけ** `deploy` ジョブが FTPS でサーバーに反映する。
+  - **Actions の使用時間を減らした（2026-11-24。作業ブランチ `claude/ci-save-minutes`）**: 2026-11 は、GitHub の使用の上限に届いて、どのリポジトリでも Actions が止まった（12/1 に戻る）。このリポジトリの11月は約4,000分（e2e 約2,760分・1回 約12.6分）。同じコミットを push と pull_request の両方で流していて（pull_request 90回・約1,380分）、二重だった。直したこと: ① `pull_request` では流さない（auto-merge は、もとから push 側の結果で決める）、② 同じ作業ブランチへ続けて push したら、古い実行を止める（本番ブランチは止めない）、③ 作業ブランチで文書（`docs/`・`*.md`）だけを変えたときは、e2e を飛ばす（ジョブは成功。本番ブランチでは、いつも流す）。
+  - 使いすぎないために: 作業ブランチへの push は、区切りごとにまとめる（1コミットずつ push しない。push のたびに約15分）。手元で関係する画面テストを流してから push する。
 - `.github/workflows/auto-pr.yml`。作業ブランチ（`claude/**`）へ push すると、本番ブランチ向けの PR を自動で作る（同じ組み合わせの PR があれば作らない）。
 - `.github/workflows/auto-merge.yml`。作業ブランチの `tests`（**push 側**）がすべて成功したら、そのブランチの PR を本番ブランチへ自動でマージする（下書きの PR と、テストしたコミットより新しい push がある PR は、その回はマージしない）。マージ後は `workflow_dispatch` で本番ブランチの `tests`（`deploy` を含む）を始める。
   - `auto-pr` が `GITHUB_TOKEN` で作った PR は、**PR 側**のテスト実行が「承認待ち（`action_required`）」になり、ジョブが動かないことがある。そのため、同じコミットの push 側の成功で判断している。PR の画面に承認待ちが残っても、マージは行われる。
