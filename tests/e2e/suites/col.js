@@ -4,7 +4,7 @@ let fails = 0; const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n +
 async function login(b, email, pw, vp) { const ctx = await b.newContext({ viewport: vp || { width: 1280, height: 900 } }); const p = await ctx.newPage(); p.on('pageerror', e => console.log('PAGEERR', e.message)); p.on('dialog', d => d.accept());
   await p.goto(BASE + 'login.php'); await p.fill('input[name=email]', email); await p.fill('input[name=password]', pw); await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal'); return p; }
 const colorOf = (p, txt) => p.locator('.cal .bar:has-text("' + txt + '")').first().evaluate(e => { const c = getComputedStyle(e); return [c.color, c.backgroundColor, c.fontWeight, c.boxShadow]; });
-const openColors = async (p) => { await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-colors .cs-row'); };
+const openColors = async (p) => { await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('#set-colors .cs-row'); };
 const tab = (p, name) => p.click('#set-colors .cs-tab:has-text("' + name + '")');
 const backToCal = async (p) => { await p.click('button:has-text("カレンダーに戻る")'); await p.waitForSelector('.cal .bar'); await p.waitForTimeout(300); };
 (async () => {
@@ -15,13 +15,13 @@ const backToCal = async (p) => { await p.click('button:has-text("カレンダー
     await fetch('api.php?action=event_save', { method: 'POST', headers: h, body: JSON.stringify({ kind: 'work', title: '重要な単発', tag: '打ち合わせ', start: ds, end: ds, important: true }) }); });
   await p.reload(); await p.waitForSelector('.cal .bar');
   // ---- 設定のページ
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page'); const st = await p.locator('.set-sec > h3').allInnerTexts();
+  await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('.settings-page'); const st = await p.locator('.set-sec > h3').allInnerTexts();
   ok('「設定」を押すと、設定のページが開き、項目が並ぶ（管理者向けは出ない）', ['予定の色', '共有リンク', '家族の招待'].every(x => st.join().includes(x)) && !st.join().includes('繰り返し業務') && !st.join().includes('社員の管理') && !st.join().includes('システム更新'), st);
   ok('色の設定の画面は、タブで切り替える（単発の業務・繰り返しの業務・休み・プライベート・休みの人がいる日）。色の表示は、選んだ1つだけ', (await p.locator('.cs-tab').allInnerTexts()).join(',') === '単発の業務,繰り返しの業務,休み,プライベート,休みの人がいる日' && (await p.locator('.cs-row').count()) === 1);
   await tab(p, '休み'); ok('タブを押すと、その種類の色の画面に切り替わる', (await p.locator('.cs-name').innerText()) === '休み' && (await p.locator('.cs-row').count()) === 1); await tab(p, 'プライベート'); ok('プライベートのタブ', (await p.locator('.cs-name').innerText()) === 'プライベート'); await tab(p, '単発の業務');
-  await backToCal(p); await p.click('header button:has-text("山田")'); const um = await p.locator('.menu-list').innerText(); ok('ユーザー名のメニューは、パスワードの変更・繰り返し業務・ログアウトの順', um.includes('パスワードの変更') && um.includes('繰り返し業務') && um.includes('ログアウト') && um.indexOf('パスワードの変更') < um.indexOf('繰り返し業務') && um.indexOf('繰り返し業務') < um.indexOf('ログアウト') && !um.includes('予定の色の設定'), um);
-  await p.locator('.menu-list button:has-text("繰り返し業務")').click(); await p.waitForSelector('.modal'); ok('「繰り返し業務」を押すと、繰り返し業務の設定の画面が開く', (await p.locator('.modal').innerText()).includes('繰り返し業務の設定')); await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.modal')); await p.click('header button:has-text("山田")');
-  await p.keyboard.press('Escape'); await p.click('body', { position: { x: 5, y: 500 } }); ok('外を押すとメニューが閉じる', (await p.locator('.menu-list').count()) === 0);
+  await backToCal(p); await p.click('#btn-user'); const um = await p.locator('.hb-user-list').innerText(); ok('ユーザー名のメニューは、パスワードの変更・繰り返し業務・ログアウトの順', um.includes('パスワードの変更') && um.includes('繰り返し業務') && um.includes('ログアウト') && um.indexOf('パスワードの変更') < um.indexOf('繰り返し業務') && um.indexOf('繰り返し業務') < um.indexOf('ログアウト') && !um.includes('予定の色の設定'), um);
+  await p.locator('.hb-user-list .hb-mi:has-text("繰り返し業務")').click(); await p.waitForSelector('.modal'); ok('「繰り返し業務」を押すと、繰り返し業務の設定の画面が開く', (await p.locator('.modal').innerText()).includes('繰り返し業務の設定')); await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.modal')); await p.click('#btn-user');
+  await p.keyboard.press('Escape'); await p.click('body', { position: { x: 5, y: 500 } }); ok('外を押すとメニューが閉じる', (await p.locator('.hb-user-list:visible').count()) === 0);
   await openColors(p);
   // ---- 明るい色の候補
   const n = await p.locator('.cs-row').locator('button.sw').count(); ok('色の候補は、17色相×3段階の51色', n === 51, n);
@@ -71,8 +71,8 @@ const backToCal = async (p) => { await p.click('button:has-text("カレンダー
   ok('「すべて標準に戻す」で元の色に戻る', (await colorOf(p, '単発の打ち合わせ'))[1] === 'rgb(230, 241, 253)');
   // ---- スマホ幅
   const m = await login(b, 'yamada@example.com', 'yamadapass1', { width: 390, height: 800 });
-  ok('スマホ幅でも、トップバーが横にはみ出さない（設定・ユーザー名のボタンが見える）', await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && await m.locator('header button:has-text("設定")').isVisible() && await m.locator('header button:has-text("山田")').isVisible());
-  await m.click('header button:has-text("設定")'); await m.waitForSelector('.settings-page'); await m.waitForTimeout(500); await m.screenshot({ path: 'col-mobile.png' });
+  ok('スマホ幅でも、上の帯が横にはみ出さない（名前のボタンが見える。設定は名前のメニューの中）', await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && await m.locator('#btn-user').isVisible());
+  await m.click('#btn-user'); await m.click('#btn-settings'); await m.waitForSelector('.settings-page'); await m.waitForTimeout(500); await m.screenshot({ path: 'col-mobile.png' });
   ok('スマホ幅でも、設定のページが横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

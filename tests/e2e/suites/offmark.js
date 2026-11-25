@@ -23,31 +23,31 @@ const api = (p, a, body) => p.evaluate(async ([a, body]) => { const t = document
   await api(s, 'event_save', { kind: 'off', title: '', tag: '有給', start: day, end: day });
   const cell = (p, d) => p.locator('.cell[data-date="' + d + '"]');
   // プライベート版（初期値: 帯。「プライベート版の名前｜休み」。決めていなければ下の名前）
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.bar.off');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.bar.off');
   const meBars = await y.locator('.bar.off').allInnerTexts();
   ok('プライベート版: 自分の休みは「下の名前｜休み」の帯（休みの種類は出ない・アイコンは出ない）', meBars.includes('花子｜休み') && !meBars.some(t => t.includes('有給')) && (await y.locator('.offmark').count()) === 0, meBars);
   ok('プライベート版: 半休は「名前｜半休」', meBars.includes('花子｜半休'), meBars);
   await y.screenshot({ path: 'offmark-me.png' });
   // プライベート版の名前を決める（設定の「休みの出し方」）
-  ok('名前のメニューには、「プライベート版の名前」は無い（設定の「休みの出し方」にある）', await (async () => { await y.click('header .menu button:has-text("山田 花子")'); const n = await y.locator('button:has-text("プライベート版の名前")').count(); await y.keyboard.press('Escape'); await y.mouse.click(5, 300); return n === 0; })());
-  await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-offmark input[name=private_name]');
+  ok('名前のメニューには、「プライベート版の名前」は無い（設定の「休みの出し方」にある）', await (async () => { await y.click('#btn-user'); const n = await y.locator('button:has-text("プライベート版の名前")').count(); await y.keyboard.press('Escape'); await y.mouse.click(5, 300); return n === 0; })());
+  await y.click('#btn-user'); await y.click('#btn-settings'); await y.waitForSelector('#set-offmark input[name=private_name]');
   ok('設定の「休みの出し方」に「プライベート版の名前」の欄がある（空のときは、下の名前が薄く出る）', (await y.getAttribute('#set-offmark input[name=private_name]', 'placeholder')) === '花子');
   await y.fill('#set-offmark input[name=private_name]', 'はなママ'); await y.locator('#set-offmark').screenshot({ path: 'offmark-set.png' }); await y.click('#set-offmark button:has-text("保存")'); await y.waitForSelector('.toast:has-text("休みの出し方を保存しました")');
   await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal');
   await y.waitForFunction(() => [...document.querySelectorAll('.bar.off')].some(b => b.textContent === 'はなママ｜休み'));
-  ok('プライベート版の名前を決めると、「その名前｜休み」になる（会社の名前は変わらない）', (await y.locator('header .menu button').filter({ hasText: '山田 花子' }).count()) === 1);
+  ok('プライベート版の名前を決めると、「その名前｜休み」になる（会社の名前は変わらない）', (await y.locator('#btn-user').filter({ hasText: '山田 花子' }).count()) === 1);
   // 業務版（初期値: 帯）
-  await y.click('.tab[data-view=team]'); await y.waitForSelector('#who-sel'); await y.selectOption('#who-sel', 'all'); await y.waitForSelector('.bar.off');
+  await y.click('.hb-tab[data-view=team]'); await y.waitForSelector('#who-sel'); await y.selectOption('#who-sel', 'all'); await y.waitForSelector('.bar.off');
   ok('業務版: 初めは、これまでどおり帯（アイコンは出ない）', (await y.locator('.offmark').count()) === 0 && (await y.locator('.bar.off').count()) >= 3);
   // 設定で、版ごとに変える
-  await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-offmark select[name=offmark_team]');
+  await y.click('#btn-user'); await y.click('#btn-settings'); await y.waitForSelector('#set-offmark select[name=offmark_team]');
   ok('設定に「休みの出し方」があり、初めは、どちらも帯が選ばれている', (await y.inputValue('#set-offmark select[name=offmark_team]')) === 'bar' && (await y.inputValue('#set-offmark select[name=offmark_me]')) === 'bar');
   await y.selectOption('#set-offmark select[name=offmark_team]', 'icon'); await y.selectOption('#set-offmark select[name=offmark_me]', 'icon');
   await y.click('#set-offmark button:has-text("保存")'); await y.waitForSelector('.toast:has-text("休みの出し方を保存しました")');
   await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal'); await y.selectOption('#who-sel', 'all'); await y.waitForSelector('.cell[data-date="' + day + '"] .offmark');
   const teamBars = await y.locator('.bar.off').allInnerTexts();
   ok('業務版をアイコンにすると、自分の休みはアイコン、ほかの人の休みは帯のまま', (await cell(y, day).locator('.offmark').count()) === 1 && teamBars.some(t => t.includes('鈴木')) && !teamBars.some(t => t.includes('山田')), teamBars);
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.cell[data-date="' + day + '"] .offmark');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.cell[data-date="' + day + '"] .offmark');
   ok('プライベート版をアイコンにすると、日付の横に「休」のアイコンだけ（休みの帯は出ない）', (await cell(y, day).locator('.offmark').innerText()) === '休' && (await y.locator('.bar.off').count()) === 0);
   ok('プライベート版: 半休は「半休」のアイコン', (await cell(y, half).locator('.offmark').innerText()) === '半休');
   ok('アイコンに、休みの内容の説明（ホバー）が付く', (await cell(y, day).locator('.offmark').getAttribute('title')).includes('有給'));

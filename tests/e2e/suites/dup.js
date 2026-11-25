@@ -49,14 +49,14 @@ async function login(browser, email, pw) {
   await s.click('.bar.off:has-text("山田") >> nth=0');
   ok('他の社員は複製できない（詳細表示のみ）', await s.locator('.modal button:has-text("複製")').count() === 0);
   // プライベートの複製
-  await p.goto(BASE + 'index.php'); await p.waitForSelector('.cal'); await p.click('.tab[data-view=me]'); await p.waitForTimeout(500);
+  await p.goto(BASE + 'index.php'); await p.waitForSelector('.cal'); await p.click('.hb-tab[data-view=me]'); await p.waitForTimeout(500);
   await p.keyboard.press('n'); await p.fill('input[name=title]', '秘密の予定'); await p.fill('input[name=start]', d(0)); await p.click('.modal button[type=submit]');
   await p.waitForSelector('.bar.private'); await p.click('.bar.private'); await p.click('.modal button:has-text("複製")');
   ok('プライベートには専用の注意書き', (await p.locator('.modal').innerText()).includes('本人以外には表示されません'));
   await p.fill('.dup-row input >> nth=0', d(3)); await p.click('.modal button[type=submit]'); await p.waitForSelector('.toast:has-text("1件を複製しました")');
   await p.waitForTimeout(500);
   ok('プライベートの複製が自分の画面に出る', await p.locator('.bar.private:has-text("秘密の予定")').count() === 2);
-  await s.keyboard.press('Escape'); await s.click('.tab[data-view=me]'); await s.waitForTimeout(500);
+  await s.keyboard.press('Escape'); await s.click('.hb-tab[data-view=me]'); await s.waitForTimeout(500);
   ok('鈴木さんにはプライベートのコピーも見えない', (await s.content()).indexOf('秘密の予定') < 0);
   // スマホ幅
   const m = await b.newContext({ viewport: { width: 390, height: 800 } }); const mp = await m.newPage();

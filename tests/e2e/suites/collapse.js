@@ -9,7 +9,7 @@ const BASE = 'http://127.0.0.1:8099/';
   // 画面テストの「すべて開く」設定を外して、ふだんの状態にする
   await p.evaluate(() => { sessionStorage.setItem('e2e.keepCollapsed', '1'); localStorage.removeItem('sched.setOpen'); });
   await p.reload(); await p.waitForSelector('.cal');
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page');
+  await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('.settings-page');
   const n = await p.locator('.set-sec').count();
   ok('設定の項目は、初めは、すべて畳んである', n === 4 && (await p.locator('.set-sec.open').count()) === 0 && !(await p.locator('#set-colors .cs-tabs').isVisible()), n);
   ok('畳んでいても、見出しは並んでいる（押せる）', (await p.locator('.set-sec > h3[role=button][aria-expanded=false]').count()) === n);
@@ -27,13 +27,13 @@ const BASE = 'http://127.0.0.1:8099/';
   // 開いた項目は、覚える
   await p.click('.set-switch button:has-text("設定")'); await p.waitForSelector('.settings-page:not(.admin-page)');
   await p.click('#set-offmark > h3'); await p.waitForSelector('#set-offmark select', { state: 'visible' });
-  await p.click('button:has-text("カレンダーに戻る")'); await p.waitForSelector('.cal'); await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page');
+  await p.click('button:has-text("カレンダーに戻る")'); await p.waitForSelector('.cal'); await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('.settings-page');
   ok('開いた項目は、設定のページを開き直しても、開いたまま（この端末に記憶）', (await p.locator('#set-offmark.open').count()) === 1 && (await p.locator('#set-family.open').count()) === 1 && (await p.locator('#set-colors.open').count()) === 0);
   await p.click('.set-switch button:has-text("会社の管理")'); await p.waitForSelector('.admin-page .set-sec');
   ok('会社の管理で開いた項目も、覚える', (await p.locator('#set-holidays.open').count()) === 1 && (await p.locator('#set-users.open').count()) === 0);
   await p.screenshot({ path: 'collapse-open.png' });
   // ショートカットキー: 設定の項目ではなく、上の帯の「?」（「?」キー）。コンパクトに並ぶ
-  await p.click('header .kbd-help'); await p.waitForSelector('.overlay .sc-grid');
+  await p.click('.hb .kbd-help'); await p.waitForSelector('.overlay .sc-grid');
   const g = await p.locator('.overlay .sc-grid').evaluate(e => ({ h: e.getBoundingClientRect().height, cols: getComputedStyle(e).gridTemplateColumns.split(' ').length, items: e.querySelectorAll('.sc-item').length, txt: e.innerText }));
   ok('ショートカットキーは、2列以上に並び、縦が短い（220px以内）', g.cols >= 2 && g.h <= 220 && g.items >= 11 && g.txt.includes('カレンダーを表示') && g.txt.includes('このショートカット一覧'), g);
   await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.overlay'));
@@ -45,6 +45,6 @@ const BASE = 'http://127.0.0.1:8099/';
   const mo = await m.locator('.set-sec.open').count(); ok('スマホでも、初めは畳んである', mo === 0, [mo, await m.evaluate(() => localStorage.getItem('sched.setOpen'))]);
   await m.tap('#set-offmark > h3'); await m.waitForTimeout(400); ok('スマホでも、見出しを押すと開く', (await m.locator('#set-offmark.open').count()) === 1, await m.evaluate(() => document.getElementById('set-offmark').className));
   ok('スマホでも、横にはみ出さない', await m.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-  ok('スマホでは、「?」（ショートカットキー）のボタンは出さない', !(await m.locator('header .kbd-help').isVisible()));
+  ok('スマホでは、「?」（ショートカットキー）のボタンは出さない', !(await m.locator('.hb .kbd-help').isVisible()));
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

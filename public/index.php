@@ -18,6 +18,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1; // 更新時にブラウザの
 <meta name="robots" content="noindex">
 <title><?= h($app) ?></title>
 <link rel="stylesheet" href="assets/app.css?v=<?= $v ?>">
+<link rel="stylesheet" href="assets/hub-bar.css?v=<?= $v ?>">
 <meta name="theme-color" content="#2155d6">
 <link rel="manifest" href="manifest.php">
 <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
@@ -30,6 +31,7 @@ $v = @filemtime(__DIR__ . '/assets/app.js') ?: 1; // 更新時にブラウザの
 <body>
 <script nonce="<?= csp_nonce() ?>">window.SCHEDULE_POLL_MS = <?= (int)poll_ms() ?>; window.SCHEDULE_BUILD = <?= json_encode(app_build()) ?>;</script>
 <div id="app" data-csrf="<?= h(csrf_token()) ?>"><p class="muted" style="padding:24px">読み込み中…</p></div>
+<script src="assets/hub-bar.js?v=<?= $v ?>"></script>
 <script src="assets/app.js?v=<?= $v ?>"></script>
 </body>
 </html>

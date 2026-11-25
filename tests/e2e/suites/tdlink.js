@@ -11,7 +11,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]);
   await p.waitForSelector('.cal');
   await p.evaluate(() => localStorage.setItem('sched.doneOpen', 'true')); await p.reload(); await p.waitForSelector('.cal'); // 完了は、ふだんは畳んである。このテストは、開いた状態で確かめる
-  const ver = await p.locator('.brand .ver').innerText();
+  const ver = await p.locator('.hb-ver').innerText();
   ok('スケジュール管理の右横にバージョンが出る', /^v\d+\.\d+\.\d+$/.test(ver), ver);
   // ToDoを作る（API）
   const api = (a, body) => p.evaluate(async ([a, body]) => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=' + a, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify(body) }); return r.json(); }, [a, body]);

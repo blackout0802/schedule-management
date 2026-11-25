@@ -573,90 +573,39 @@
     return el('details', { class: 'help-sm' }, el('summary', { text: 'ⓘ 使い方' }), p);
   }
 
-  /* 上の帯の「アプリ ▾」: Hub へ戻る・ほかのアプリへ移る（me の nav。Hub のアプリの一覧と同じもの。サーバーの portal_nav）。同じタブで移る。
-     ほかのアプリは、その受け取り口（sso.php）を開くので、Hub を通って自動で入る。nav がない（Hub の URL がない・家族のアカウント）ときは出さない */
-  function appLinks() {
-    var nav = S.me && S.me.nav;
-    if (!nav || !nav.portal) return null;
-    var apps = nav.apps || [];
-    return [el('a', { href: nav.portal, 'data-app': 'portal', text: '← Hub へ戻る' }),
-      apps.length ? el('div', { class: 'menu-sep', 'aria-hidden': 'true' }) : null,
-      apps.map(function (a) { return el('a', { href: a.href, 'data-app': a.id }, a.name, a.accounting ? el('span', { class: 'menu-acc', text: '経理' }) : null); })];
-  }
-  /* menus: 上の帯のほかのメニューと、同時に開かないための受け渡し（{ closeAll, add, remove }。なくてもよい） */
-  function appMenu(menus) {
-    if (!appLinks()) return null;
-    var list = null; // 開いたときに作り、閉じたら消す（ほかのメニューと同じ）
-    var btn = el('button', { class: 'btn small', type: 'button', id: 'btn-apps', 'aria-haspopup': 'true', 'aria-expanded': 'false', title: 'Hub へ戻る・ほかのアプリへ移る', 'aria-label': 'アプリ（Hub へ戻る・ほかのアプリへ移る）' },
-      svgIcon('apps'), el('span', { class: 'lbl', text: ' アプリ' }), ' ▾');
-    function close() {
-      if (!list) return;
-      list.remove(); list = null;
-      btn.setAttribute('aria-expanded', 'false');
-      document.removeEventListener('click', close);
-      if (menus) menus.remove(close);
-    }
-    btn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (list) return close();
-      if (menus) menus.closeAll();
-      list = el('div', { class: 'menu-list left', id: 'app-list' }, appLinks());
-      list.addEventListener('click', function (ev) { if (!ev.target.closest('a')) ev.stopPropagation(); }); // 区切りの線などを押しても閉じない
-      btn.parentNode.appendChild(list);
-      btn.setAttribute('aria-expanded', 'true');
-      document.addEventListener('click', close);
-      if (menus) menus.add(close);
-    });
-    return el('div', { class: 'menu apps-menu' }, btn);
-  }
-
-  /* 上の帯（アプリ名・業務版/プライベート版・会議室・設定・ユーザー）。カレンダーと会議室のページで、同じものを使う */
+  /* 上の帯（v1.122.0〜）: Hub とつながる全アプリで共通の部品（assets/hub-bar.js・hub-bar.css。元は Hub。直すときは Hub を直して写す）。
+     上の黒い段＝SKYM（Hub へ）と名前（名前と役割の2行）。下の段＝アプリ名 ▾（Hub・ほかのアプリへ。me の nav。同じタブで移る）・版・タブ（業務版／プライベート版）・道具（?・年間計画）。
+     名前のメニュー: このアプリ（設定・年間計画・会社の管理・パスワードの変更・繰り返し業務）→ Hub（Hub に戻る・自分の設定）→ ログアウト。⚙・会社の管理のボタンは帯に置かない。
+     カレンダー・会議室・設定のページで、同じものを使う */
   function buildTopbar(onMain, teamOnly) { // teamOnly: 会議室のページは業務版だけなので、プライベート版のタブは出さない
-    /* 右上のメニュー: 「設定」ボタン（設定の項目）と、ユーザー名のボタン（パスワード・ログアウト）。同時に開くのは1つだけ */
-    var openMenus = [];
-    function closeAllMenus() { openMenus.slice().forEach(function (m) { m(); }); }
-    function makeMenu(label, itemsFn, extraClass) {
-      var list = null;
-      var btn = el('button', { class: 'btn small uname', type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', text: label });
-      function close() { if (list) { list.remove(); list = null; btn.setAttribute('aria-expanded', 'false'); openMenus = openMenus.filter(function (f) { return f !== close; }); } }
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (list) return close();
-        closeAllMenus();
-        list = el('div', { class: 'menu-list' }, itemsFn(close));
-        btn.parentNode.appendChild(list);
-        btn.setAttribute('aria-expanded', 'true');
-        openMenus.push(close);
-      });
-      return el('div', { class: 'menu' + (extraClass ? ' ' + extraClass : '') }, btn);
-    }
-    var item = function (text, fn, close, title) { return el('button', { type: 'button', text: text, title: title || null, onclick: function () { close(); fn(); } }); };
-    var menus = { closeAll: closeAllMenus, add: function (f) { openMenus.push(f); }, remove: function (f) { openMenus = openMenus.filter(function (x) { return x !== f; }); } };
-    /* スマホの幅では、上の帯に「アプリ」を置く場所がないので、名前のメニューの中に同じリンクを出す（CSS の .only-sm） */
-    var smApps = function () { var links = appLinks(); return links ? el('div', { class: 'only-sm', id: 'user-apps' }, links, el('div', { class: 'menu-sep', 'aria-hidden': 'true' })) : null; };
-    var settingsMenu = el('div', { class: 'menu' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '設定', title: '設定のページを開く', onclick: function (e) { e.stopPropagation(); openSettingsPage(); } }, svgIcon('gear'), el('span', { class: 'lbl', text: ' 設定' })));
-    var adminBtn = !FAMACCT && S.me.user.role === 'admin' ? el('div', { class: 'menu admin-btn' }, el('button', { class: 'btn small', type: 'button', 'aria-label': '会社の管理', title: '会社の管理のページを開く（社員・休業日・会議室・Slack・バックアップなど）', onclick: function (e) { e.stopPropagation(); openAdminPage(); } }, svgIcon('building'), el('span', { class: 'lbl', text: ' 会社の管理' }))) : null;
-    var annualBtn = FAMACCT ? null : el('div', { class: 'menu annual-btn' }, el('button', { class: 'btn small insp-btn' + (S.page === 'annual' ? ' on' : ''), id: 'insp-btn', type: 'button', 'aria-label': '年間計画', 'aria-current': S.page === 'annual' ? 'page' : null, title: '年間計画（Pマークなどの定期点検）を開く', onclick: function (e) { e.stopPropagation(); openAnnualPage(); } },
-      svgIcon('checkcal'), el('span', { class: 'lbl', text: ' 年間計画' }), el('span', { class: 'insp-bd', id: 'insp-btn-bd', hidden: true })));
-    var userMenu = makeMenu(S.me.user.name + ' ▾', function (close) {
-      if (FAMACCT) return [smApps(), item('表示名の変更', openFamilyNameDialog, close, '予定の先頭や、' + (S.me.family_owner_name || '') + 'さんの画面に出る名前を変える'), item('パスワードの変更', openPasswordDialog, close), item('ログアウト', doLogout, close)];
-      return [smApps(), item('年間計画' + (S.insp && S.insp.mine ? '（' + S.insp.mine + '）' : ''), openAnnualPage, close, 'Pマークなどの定期点検の年間計画'), S.me.user.role === 'admin' ? item('会社の管理', openAdminPage, close, '社員・休業日・会議室・Slack・バックアップなど') : null, item('パスワードの変更', openPasswordDialog, close), item('繰り返し業務', openSeriesDialog, close), item('ログアウト', doLogout, close)];
-    }, FAMACCT ? 'fam-menu' : '');
-    document.addEventListener('click', closeAllMenus);
-
-    var tabs = FAMACCT ? null : el('div', { class: 'tabs', role: 'tablist' },
-      (teamOnly ? ['team'] : ['team', 'me']).map(function (v) {
-        return el('button', { class: 'tab', type: 'button', role: 'tab', 'data-view': v, 'aria-selected': onMain && S.view === v ? 'true' : 'false',
-          text: v === 'team' ? '業務版' : 'プライベート版', title: (v === 'team' ? '業務版（b）' : 'プライベート版（p）'),
-          onclick: function () { if (onMain) return setView(v); S.view = v; store('sched.view', v); leaveSettings(); } }); // 会議室のページからは、押した版のカレンダーに戻る
-      }));
-
-    return (el('header', { class: 'topbar' }, el('div', { class: 'topbar-in' },
-      el('span', { class: 'brand' }, S.me.app_name, el('span', { class: 'ver', text: 'v' + S.me.app_version, title: 'このアプリのバージョン' })),
-      appMenu(menus),
-      FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : tabs,
-      el('span', { class: 'spacer' }), kbdHelpButton(), annualBtn, FAMACCT ? null : settingsMenu, adminBtn, userMenu)));
-    // （ボタンの件数は、読み込みずみなら、すぐ出す。まだなら、inspRefresh のあとに出る）
+    var nav = (!FAMACCT && S.me.nav) || {};
+    var admin = !FAMACCT && S.me.user.role === 'admin';
+    var annualBtn = FAMACCT ? null : el('button', { class: 'btn small insp-btn' + (S.page === 'annual' ? ' on' : ''), id: 'insp-btn', type: 'button', 'aria-label': '年間計画', 'aria-current': S.page === 'annual' ? 'page' : null, title: '年間計画（Pマークなどの定期点検）を開く', onclick: function (e) { e.stopPropagation(); openAnnualPage(); } },
+      svgIcon('checkcal'), el('span', { class: 'lbl', text: ' 年間計画' }), el('span', { class: 'insp-bd', id: 'insp-btn-bd', hidden: true }));
+    var famPill = FAMACCT ? el('span', { class: 'pill fam-pill', text: (S.me.family_owner_name || '') + 'さんの家族', title: '家族のアカウント（プライベートのカレンダーだけ）' }) : null;
+    var appItems = FAMACCT
+      ? [{ label: '表示名の変更', onclick: openFamilyNameDialog }, { label: 'パスワードの変更', onclick: openPasswordDialog }]
+      : [{ label: '設定', id: 'btn-settings', onclick: openSettingsPage },
+        { label: '年間計画', note: S.insp && S.insp.mine ? String(S.insp.mine) : null, onclick: openAnnualPage },
+        admin ? { label: '会社の管理', id: 'btn-admin', onclick: openAdminPage } : null,
+        { label: 'パスワードの変更', onclick: openPasswordDialog },
+        { label: '繰り返し業務', onclick: openSeriesDialog }];
+    var tabs = FAMACCT ? [] : (teamOnly ? ['team'] : ['team', 'me']).map(function (v) {
+      return { id: v, label: v === 'team' ? '業務版' : 'プライベート版', title: v === 'team' ? '業務版（b）' : 'プライベート版（p）', attrs: { 'data-view': v } };
+    });
+    S.bar = window.HubBar.create({
+      appId: 'schedule', appName: S.me.app_name, version: S.me.app_version,
+      tabs: tabs, tab: onMain ? S.view : null,
+      onTab: function (v) { if (onMain) return setView(v); S.view = v; store('sched.view', v); leaveSettings(); }, // 会議室・設定のページからは、押した版のカレンダーに戻る
+      user: { name: S.me.user.name, role: FAMACCT ? (S.me.family_owner_name || '') + 'さんの家族' : (admin ? '管理者' : '社員'), email: S.me.user.email },
+      appItems: appItems,
+      hubUrl: nav.portal || '',
+      apps: (nav.apps || []).map(function (a) { return { id: a.id, name: a.name, href: a.href }; }),
+      onLogout: doLogout,
+      tools: [famPill, kbdHelpButton(), annualBtn].filter(Boolean)
+    });
+    return S.bar.el;
+    // （年間計画のボタンの件数は、読み込みずみなら、すぐ出す。まだなら、inspRefresh のあとに出る）
   }
 
   function renderShell() {
@@ -993,18 +942,12 @@
       nav.appendChild(el('a', { href: '#set-tools', text: '管理の道具', onclick: function (e) { e.preventDefault(); document.getElementById('set-tools').scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
     }
     var admin = S.me.user.role === 'admin';
-    /* 管理者: 「設定」と「会社の管理」の切り替え。パソコンでは上の帯、スマホでは（帯に収まらないので）ページの見出しの上 */
+    /* 管理者: 「設定」と「会社の管理」の切り替え。ページの見出しの上（上の帯は共通の部品なので、そこには置かない） */
     var sw = admin ? el('div', { class: 'set-switch', role: 'group', 'aria-label': 'ページ' },
       el('button', { type: 'button', class: 'btn small', 'aria-pressed': isAdminPage ? 'false' : 'true', text: '設定', onclick: openSettingsPage }),
       el('button', { type: 'button', class: 'btn small', 'aria-pressed': isAdminPage ? 'true' : 'false', text: '会社の管理', onclick: openAdminPage })) : null;
-    root.appendChild(el('header', { class: 'topbar' }, el('div', { class: 'topbar-in settings-bar' },
-      el('span', { class: 'brand', text: S.me.app_name }),
-      appMenu(),
-      el('button', { class: 'btn small', type: 'button', title: 'カレンダー（c）', 'aria-label': 'カレンダーに戻る', onclick: leaveSettings }, '← ', el('span', { class: 'lbl', text: 'カレンダーに' }), '戻る'),
-      phone ? null : sw,
-      el('span', { class: 'spacer' }), kbdHelpButton(), el('span', { class: 'muted', text: S.me.user.name }),
-      el('button', { class: 'btn small', type: 'button', text: 'ログアウト', onclick: doLogout }))));
-    root.appendChild(el('main', { class: 'settings-page' + (isAdminPage ? ' admin-page' : '') }, phone ? sw : null, el('h2', { text: isAdminPage ? '会社の管理' : '設定' }), el('div', { class: 'set-layout' }, nav, content)));
+    root.appendChild(buildTopbar(false));
+    root.appendChild(el('main', { class: 'settings-page' + (isAdminPage ? ' admin-page' : '') }, el('div', { class: 'set-head' }, el('button', { class: 'btn small', type: 'button', id: 'btn-back', title: 'カレンダー（c）', onclick: leaveSettings }, '← カレンダーに戻る')), sw, el('h2', { text: isAdminPage ? '会社の管理' : '設定' }), el('div', { class: 'set-layout' }, nav, content)));
     window.scrollTo(0, 0);
   }
 
@@ -1066,7 +1009,7 @@
     if (S.view === v) return;
     S.view = v; store('sched.view', v);
     if (S.page !== 'main' || SHARE) { renderShell(); load(); return; }
-    document.querySelectorAll('.tabs .tab').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-view') === v ? 'true' : 'false'); });
+    if (S.bar) S.bar.setTab(v);
     var c = S.cache[evKey(evParams())];
     if (c) applyEvents(c); else { S.events = []; S.roomBk = []; S.summary = null; }
     var t = S.tdCache[v];

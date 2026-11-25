@@ -39,12 +39,12 @@ const openList = async p => { await p.click('.toolbar .seg label:has-text("リ�
   // サーバー側: プライベートのToDo／他人のプライベートには付けられない
   const r = await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const L = await (await fetch('api.php?action=todo_list&view=team')).json(); const id = L.others.todos[0].id; const post = async (a, body) => (await fetch('api.php?action=' + a, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify(body) })).status; return { empty: await post('todo_comment_add', { id, body: ' ' }), long: await post('todo_comment_add', { id, body: 'あ'.repeat(501) }), nothere: await post('todo_comment_add', { id: 999999, body: 'x' }), delOthers: await post('todo_comment_delete', { id: (await (await fetch('api.php?action=todo_comments&id=' + id)).json()).comments.find(c => c.author_name.startsWith('山田')).id }) }; });
   ok('空・長すぎ・存在しないToDo・他人のコメントの削除は、すべて断られる', r.empty === 400 && r.long === 400 && r.nothere === 404 && r.delOthers === 403, r);
-  await y.click('.tab[data-view=me]'); await y.waitForTimeout(500); await y.waitForSelector('.cal, #todo-mgr');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForTimeout(500); await y.waitForSelector('.cal, #todo-mgr');
   await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=todo_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ title: '山田の私用', kind: 'private' }) }); });
   const pr = await s.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const out = []; for (let id = 1; id < 40; id++) { const res = await fetch('api.php?action=todo_comment_add', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ id, body: 'のぞき見' }) }); out.push(res.status); } return out; });
   const privId = Number(sql("SELECT id FROM todos WHERE title='山田の私用'")); ok('他人のプライベートのToDoには、コメントできない（404）', pr[privId - 1] === 404, pr);
   // ToDoを削除すると、コメントも消える
-  await y.goto(BASE + 'index.php?view=team'); await y.waitForSelector('#todo-mgr'); await y.click('.tab[data-view=team]'); await y.waitForTimeout(600);
+  await y.goto(BASE + 'index.php?view=team'); await y.waitForSelector('#todo-mgr'); await y.click('.hb-tab[data-view=team]'); await y.waitForTimeout(600);
   const todoId = Number(sql("SELECT id FROM todos WHERE title='コメントを付けるToDo'")); ok('コメントが保存されている', Number(sql(`SELECT COUNT(*) FROM todo_comments WHERE todo_id=${todoId}`)) >= 2);
   y.once('dialog', d => d.accept()); await y.click('#todo-mgr .kb-card:has-text("コメントを付けるToDo") button:has-text("削除")'); await y.waitForFunction(() => !document.querySelector('#todo-mgr').innerText.includes('コメントを付けるToDo'));
   await y.waitForTimeout(500); ok('ToDoを削除すると、コメントも消える', Number(sql(`SELECT COUNT(*) FROM todo_comments WHERE todo_id=${todoId}`)) === 0);

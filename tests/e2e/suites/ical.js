@@ -13,7 +13,7 @@ const pad = n => String(n).padStart(2, '0');
   const now = new Date(); const ym = now.getFullYear() + '-' + pad(now.getMonth() + 1);
   await p.evaluate(async (ym) => { const t = document.getElementById('app').dataset.csrf; await fetch('api.php?action=event_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ kind: 'private', title: '購読テストの私用', start: ym + '-20', end: ym + '-20', start_time: '18:00' }) }); }, ym);
   // 設定 → 共有リンク（家族へ）: 相手 × 見るリンク／カレンダー購読 の表（v1.106.0）
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('#set-share');
+  await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('#set-share');
   if (await p.locator('#set-share.collapsible:not(.open)').count()) await p.click('#set-share > h3');
   await p.waitForSelector('#set-share table.share-tbl');
   const txt = await p.locator('#set-share table.share-tbl').innerText();
@@ -48,7 +48,7 @@ const pad = n => String(n).padStart(2, '0');
   const a = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
   await a.goto(BASE + 'login.php'); await a.fill('input[name=email]', 'admin@example.com'); await a.fill('input[name=password]', 'adminpass1');
   await Promise.all([a.waitForURL('**/index.php'), a.click('button[type=submit]')]); await a.waitForSelector('.cal');
-  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-company-share table.share-tbl');
+  await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('#set-company-share table.share-tbl');
   ok('管理者には、会社の管理の「会社用の共有」に、会社用の購読も出る', (await a.locator('#set-company-share .share-cell[data-kind=ical-company]').count()) === 1);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

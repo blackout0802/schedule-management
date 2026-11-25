@@ -60,7 +60,7 @@ async function login(browser, email, pw) {
   ok('休みが追加できる（件名は空でよい）', await y.page.locator('.bar.off:has-text("山田 花子 有給")').count() >= 1);
 
   // プライベート版で追加
-  await y.page.click('.tab[data-view=me]');
+  await y.page.click('.hb-tab[data-view=me]');
   await y.page.waitForSelector('.view-banner.me');
   await y.page.keyboard.press('n');
   ok('プライベート版ではプライベートが初期選択', await y.page.locator('input[name=kind][value=private]').isChecked());
@@ -77,7 +77,7 @@ async function login(browser, email, pw) {
   ok('プライベートは残る', await y.page.locator('.bar.private').count() === 1);
 
   // 業務版にはプライベートが出ない
-  await y.page.click('.tab[data-view=team]');
+  await y.page.click('.hb-tab[data-view=team]');
   await y.page.waitForTimeout(500);
   ok('業務版にプライベートは出ない', await y.page.locator('.bar.private').count() === 0 && (await y.page.content()).indexOf('歯医者') < 0);
   await y.page.screenshot({ path: 'team.png', fullPage: true });
@@ -87,7 +87,7 @@ async function login(browser, email, pw) {
   await s.page.evaluate(() => localStorage.setItem('sched.span', '"week"')); await s.page.reload(); await s.page.waitForSelector('.cal.wk'); // 全社の表示も、週表示で（同じ理由）
   await s.page.selectOption('#who-sel', 'all'); await s.page.waitForSelector('.bar:has-text("A社")');
   ok('鈴木さんに山田さんの業務・休みが見える', await s.page.locator('.bar:has-text("A社")').count() === 1 && await s.page.locator('.bar.off:has-text("山田")').count() >= 1);
-  await s.page.click('.tab[data-view=me]');
+  await s.page.click('.hb-tab[data-view=me]');
   await s.page.waitForTimeout(500);
   ok('鈴木さんのプライベート版に山田さんのプライベートは出ない', (await s.page.content()).indexOf('歯医者') < 0);
   // APIを直接叩いても返らない
@@ -101,7 +101,7 @@ async function login(browser, email, pw) {
   ok('（確認）APIの応答が正常で、今日の予定を含んでいる（プライベート版には、他の人の業務は出ない）', raw.every(t => t.indexOf('"events"') >= 0) && raw[0].indexOf('A社') >= 0 && raw[1].indexOf('A社') < 0);
   ok('APIの応答にプライベートの文字列が含まれない', raw.every(t => t.indexOf('歯医者') < 0));
   // 他人の休みは一般社員は編集不可（詳細表示のみ）
-  await s.page.click('.tab[data-view=team]');
+  await s.page.click('.hb-tab[data-view=team]');
   await s.page.waitForTimeout(400);
   await s.page.click('.bar.off >> nth=0');
   ok('他人の休みは閲覧のみ', await s.page.locator('.modal >> text=予定の詳細').count() === 1);
@@ -115,16 +115,16 @@ async function login(browser, email, pw) {
   });
   ok('一般社員は社員管理APIを使えない(403)', forb[0] === 403);
   ok('CSRFトークンなしの更新は拒否(403)', forb[1] === 403);
-  ok('設定のページに管理項目がない', await (async () => { await s.page.click('header button:has-text("設定")'); await s.page.waitForSelector('.settings-page'); const n = (await s.page.locator('#set-users').count()) === 0; await s.page.click('button:has-text("カレンダーに戻る")'); await s.page.waitForSelector('.cal'); return n; })());
+  ok('設定のページに管理項目がない', await (async () => { await s.page.click('#btn-user'); await s.page.click('#btn-settings'); await s.page.waitForSelector('.settings-page'); const n = (await s.page.locator('#set-users').count()) === 0; await s.page.click('button:has-text("カレンダーに戻る")'); await s.page.waitForSelector('.cal'); return n; })());
 
   // --- 管理者 ---
   const a = await login(browser, 'admin@example.com', 'adminpass1');
   await a.page.selectOption('#who-sel', 'all');
   await a.page.waitForSelector('.bar.off');
   ok('管理者にも山田さんのプライベートは見えない', (await a.page.content()).indexOf('歯医者') < 0);
-  await a.page.click('.tab[data-view=me]'); await a.page.waitForTimeout(500);
+  await a.page.click('.hb-tab[data-view=me]'); await a.page.waitForTimeout(500);
   ok('管理者のプライベート版にも出ない', (await a.page.content()).indexOf('歯医者') < 0);
-  await a.page.click('.tab[data-view=team]'); await a.page.waitForTimeout(300);
+  await a.page.click('.hb-tab[data-view=team]'); await a.page.waitForTimeout(300);
   // 管理者が他の社員の休みを代理登録
   await a.page.keyboard.press('n');
   await a.page.check('input[name=kind][value=off]');
@@ -141,14 +141,14 @@ async function login(browser, email, pw) {
   ok('管理者は他人の休みを編集できる(フォーム表示)', await a.page.locator('.modal input[name=title]').count() === 1);
   await a.page.click('.modal >> text=キャンセル');
   // 社員管理
-  await a.page.click('header button:has-text("会社の管理")'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
+  await a.page.click('#btn-user'); await a.page.click('#btn-admin'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   await a.page.waitForSelector('#set-users tbody tr');
   ok('社員一覧に3名', await a.page.locator('#set-users tbody tr').count() === 3);
   await a.page.screenshot({ path: 'admin-users.png' });
   await a.page.click('button:has-text("カレンダーに戻る")'); await a.page.waitForSelector('.cal');
 
   // --- 管理者が新しい社員を登録 → 初回ログインでパスワード変更を求める ---
-  await a.page.click('header button:has-text("会社の管理")'); await a.page.waitForSelector('#set-users tbody tr');
+  await a.page.click('#btn-user'); await a.page.click('#btn-admin'); await a.page.waitForSelector('#set-users tbody tr');
   await a.page.click('#set-users >> text=＋ 社員を追加');
   await a.page.fill('.modal input[name=name]', '新人 次郎');
   await a.page.fill('.modal input[name=email]', 'newbie@example.com');
@@ -191,7 +191,7 @@ async function login(browser, email, pw) {
   await np.fill('.modal input[autocomplete=new-password]', 'my-own-pass-2');
   await np.click('.modal button[type=submit]');
   await np.waitForSelector('.cal');
-  ok('変更後にカレンダーが出る', await np.locator('.topbar').count() === 1 && await np.locator('.modal').count() === 0);
+  ok('変更後にカレンダーが出る', await np.locator('.hb').count() === 1 && await np.locator('.modal').count() === 0);
   // 再ログイン: 新しいパスワードで入れて、もう変更を求められない
   await np.evaluate(() => { const f = document.createElement('form'); f.method = 'post'; f.action = 'logout.php'; document.body.appendChild(f); });
   const ctx2 = await browser.newContext(); const p2 = await ctx2.newPage();
@@ -202,7 +202,7 @@ async function login(browser, email, pw) {
   await p2.fill('input[name=password]', 'my-own-pass-2');
   await Promise.all([p2.waitForURL('**/index.php'), p2.click('button[type=submit]')]);
   await p2.waitForSelector('.cal, .notice');
-  ok('2回目以降は変更を求められない', await p2.locator('.notice').count() === 0 && await p2.locator('.topbar').count() === 1);
+  ok('2回目以降は変更を求められない', await p2.locator('.notice').count() === 0 && await p2.locator('.hb').count() === 1);
   ok('新しい人のブラウザエラーなし', nerrs.length === 0);
 
   // 一般社員の画面(スマホ幅)

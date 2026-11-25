@@ -13,8 +13,8 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
   await a.keyboard.press('s'); await a.waitForTimeout(500); ok('s を押しても、何も起きない（システム更新の画面は、無い）', a.url().includes('index.php') && !a.url().includes('update.php'));
   const s = await login(b, 'yamada@example.com', 'yamadapass1');
   // ---- Slack設定ダイアログ
-  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-slack-dest .slack-status'); ok('会社の管理に、Slack通知の項目がある（管理者のみ）', (await a.locator('#set-slack').count()) === 1);
-  await s.click('header button:has-text("設定")'); await s.waitForSelector('.settings-page'); ok('管理者でない人の設定には出ない', (await s.locator('#set-slack').count()) === 0); await s.click('button:has-text("カレンダーに戻る")'); await s.waitForSelector('.cal');
+  await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('#set-slack-dest .slack-status'); ok('会社の管理に、Slack通知の項目がある（管理者のみ）', (await a.locator('#set-slack').count()) === 1);
+  await s.click('#btn-user'); await s.click('#btn-settings'); await s.waitForSelector('.settings-page'); ok('管理者でない人の設定には出ない', (await s.locator('#set-slack').count()) === 0); await s.click('button:has-text("カレンダーに戻る")'); await s.waitForSelector('.cal');
   const st = await a.locator('.slack-status').innerText(); ok('状態が出る（config.php で設定済み・URLは伏せ字）', st.includes('config.php') && !st.includes('hook.php?') , st);
   // テスト通知
   await a.click('button:has-text("テスト通知を送る")'); await a.waitForSelector('#set-slack-dest .slack-result.ok'); ok('テスト通知を送ると、「送信できました」と出る', (await a.locator('#set-slack-dest .slack-result').innerText()).includes('送信できました'));
@@ -69,7 +69,7 @@ async function login(b, email, pw) { const p = await (await b.newContext({ viewp
   const ymdhm = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + hm(d);
   const setAt = d => { const j = JSON.parse(env.sql("SELECT meta_value FROM app_meta WHERE meta_key = 'slack_test_at'")); j.at = ymdhm(d); env.sql("UPDATE app_meta SET meta_value = '" + JSON.stringify(j) + "' WHERE meta_key = 'slack_test_at'"); };
   const refresh = async () => { await a.click('#set-slack-dest button:has-text("最新の状態を見る")'); await a.waitForTimeout(400); };
-  await a.goto(BASE + 'index.php'); await a.waitForSelector('.cal'); await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-slack #slack-sched-time');
+  await a.goto(BASE + 'index.php'); await a.waitForSelector('.cal'); await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('#set-slack #slack-sched-time');
   const cronCmds = await a.locator('#set-slack-dest .cron-cmds input.cron-cmd').evaluateAll(xs => xs.map(x => x.value));
   ok('cron に登録するコマンドが、このサーバーの本当の場所で、1つだけ出る（notify。繰り返し業務も、これが1日1回行う）', cronCmds.length === 1 && /^\/usr\/bin\/php\d+\.\d+ \/.+\/bin\/cron\.php notify$/.test(cronCmds[0]) && cronCmds[0].includes(process.env.E2E_APP || '/app/'), cronCmds);
   await a.locator('#set-slack-dest .cron-cmds').screenshot({ path: 'cron-cmds.png' });

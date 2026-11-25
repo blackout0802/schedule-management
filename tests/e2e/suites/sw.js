@@ -46,7 +46,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await p.click('.seg label:has-text("リスト")'); await p.waitForTimeout(500); const ml = await month(p); await touch(p, 320, 600, 80, 600); ok('リスト表示では、スワイプしても、月は変わらない', (await month(p)) === ml);
   await p.click('.seg label:has-text("カレンダー")'); await p.waitForSelector('.cal');
   // 設定のページでは動かない
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page'); await touch(p, 320, 500, 80, 500); ok('設定のページでは、何も起きない', (await p.locator('.settings-page').count()) === 1);
+  await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('.settings-page'); await touch(p, 320, 500, 80, 500); ok('設定のページでは、何も起きない', (await p.locator('.settings-page').count()) === 1);
   // 共有リンク
   await p.evaluate(() => window.scrollTo(0, 0)); await p.click('button:has-text("カレンダーに戻る")'); await p.waitForSelector('.cal');
   const sh = await p.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ kind: 'company' }) }); return (await r.json()).path; });

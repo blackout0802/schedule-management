@@ -10,7 +10,7 @@ const BASE = 'http://127.0.0.1:8099/';
   const titles = p => p.locator('.set-sec .set-title').allInnerTexts();
   const a = await mk(); await login(a, 'admin@example.com', 'adminpass1');
   // ---- 設定（自分のこと）
-  await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page');
+  await a.click('#btn-user'); await a.click('#btn-settings'); await a.waitForSelector('.settings-page');
   ok('「設定」を押すと、ポップアップではなく、設定のページになる（URL は #settings）', a.url().endsWith('#settings') && (await a.locator('.overlay').count()) === 0 && (await a.locator('.cal').count()) === 0);
   let t = await titles(a);
   ok('設定は、自分のことの4項目だけ（管理者でも）', t.join(',') === '予定の色,休みの出し方,共有リンク（家族へ）,家族の招待', t);
@@ -27,7 +27,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.waitForFunction(() => document.querySelector('#set-offmark .set-sum').innerText.includes('業務: アイコン'), null, { timeout: 5000 }).catch(() => {});
   ok('保存すると、見出しの右の要約も最新になる', (await a.locator('#set-offmark .set-sum').innerText()).includes('業務: アイコン'), await a.locator('#set-offmark .set-sum').innerText());
   // ショートカットキー: 上の帯の「?」
-  await a.click('header .kbd-help'); await a.waitForSelector('.overlay .sc-table');
+  await a.click('.hb .kbd-help'); await a.waitForSelector('.overlay .sc-table');
   ok('上の帯の「?」で、ショートカットキーの一覧が開く', (await a.locator('.overlay .sc-table').innerText()).includes('カレンダーを表示')); await a.keyboard.press('Escape'); await a.waitForFunction(() => !document.querySelector('.overlay'));
   // ---- 会社の管理（管理者）
   await a.click('.set-switch button:has-text("会社の管理")'); await a.waitForSelector('.admin-page');
@@ -61,23 +61,23 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.goBack(); await a.waitForSelector('.admin-page'); ok('ブラウザの「戻る」で、会社の管理のページに戻る', true);
   await a.keyboard.press('c'); await a.waitForSelector('.cal'); ok('会社の管理のページで「c」を押すと、カレンダーに戻る', (await a.locator('.settings-page').count()) === 0);
   await a.keyboard.press('?'); await a.waitForSelector('.overlay .sc-table'); await a.keyboard.press('Escape');
-  ok('カレンダーの上の帯に、「会社の管理」のボタン（管理者）', await a.locator('header .admin-btn button').isVisible());
-  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('.admin-page'); ok('押すと、会社の管理のページが開く', a.url().endsWith('#admin'));
+  ok('名前のメニューに「会社の管理」（管理者。上の帯のボタンは、共通の帯にしたときにやめた）', await (async () => { await a.click('#btn-user'); const v = await a.locator('#btn-admin').isVisible(); await a.click('#btn-user'); return v; })());
+  await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('.admin-page'); ok('押すと、会社の管理のページが開く', a.url().endsWith('#admin'));
   await a.screenshot({ path: 'admin-desk.png', fullPage: true });
   await a.click('.set-switch button:has-text("設定")'); await a.waitForSelector('.settings-page:not(.admin-page)'); await a.screenshot({ path: 'set-desk.png' });
   // ---- 一般の社員: 会社の管理は無い
   const y = await mk(); await login(y, 'yamada@example.com', 'yamadapass1');
-  ok('一般の社員には、上の帯に「会社の管理」が無い', (await y.locator('header .admin-btn').count()) === 0);
-  await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page');
+  ok('一般の社員には、「会社の管理」が無い', (await y.locator('#btn-admin').count()) === 0);
+  await y.click('#btn-user'); await y.click('#btn-settings'); await y.waitForSelector('.settings-page');
   const yt = await titles(y); ok('一般の社員の設定も、同じ4項目（管理者向けは出ない）・切り替えは無い', yt.length === 4 && yt.join().includes('休みの出し方') && (await y.locator('.set-switch').count()) === 0, yt);
   await y.goto(BASE + 'index.php#admin'); await y.waitForTimeout(500);
   ok('一般の社員が #admin を開いても、設定のページになる', (await y.locator('.admin-page').count()) === 0 && (await y.locator('.settings-page').count()) === 1 && (await y.locator('#set-users').count()) === 0);
   // ---- スマホ幅（管理者）
   const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1');
-  ok('スマホ: カレンダーの上の帯には「会社の管理」を出さず（幅がないため）、名前のメニューに入れる', !(await ph.locator('header .admin-btn').isVisible()) && !(await ph.locator('header .kbd-help').isVisible()));
-  ok('スマホ: カレンダーの上の帯は、増えていない（2段まで）', await ph.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 130, await ph.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height));
-  await ph.click('header button:has-text("管理者")'); await ph.click('.menu-list button:has-text("会社の管理")'); await ph.waitForSelector('.admin-page'); await ph.waitForTimeout(800);
-  const m = await ph.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector('.topbar').getBoundingClientRect().height]);
-  ok('スマホ: 会社の管理は、横にはみ出さず、上の帯は1行（切り替えはページの見出しの上）', m[0] <= m[1] && m[2] <= 60 && await ph.locator('.settings-page > .set-switch').isVisible(), m);
+  ok('スマホ: カレンダーの上の帯には「会社の管理」を出さず（幅がないため）、名前のメニューに入れる', !(await ph.locator('.hb #btn-admin').isVisible()) && !(await ph.locator('.hb .kbd-help').isVisible()));
+  ok('スマホ: カレンダーの上の帯は、共通の部品の高さ（140px まで）', await ph.evaluate(() => document.querySelector('.hb').getBoundingClientRect().height) <= 140, await ph.evaluate(() => document.querySelector('.hb').getBoundingClientRect().height));
+  await ph.click('#btn-user'); await ph.click('.hb-user-list .hb-mi:has-text("会社の管理")'); await ph.waitForSelector('.admin-page'); await ph.waitForTimeout(800);
+  const m = await ph.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector('.hb').getBoundingClientRect().height]);
+  ok('スマホ: 会社の管理は、横にはみ出さず、上の帯は共通の部品（切り替えはページの見出しの上）', m[0] <= m[1] && m[2] <= 140 && await ph.locator('.settings-page > .set-switch').isVisible(), m);
   await ph.screenshot({ path: 'admin-phone.png', fullPage: true });
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0); })();

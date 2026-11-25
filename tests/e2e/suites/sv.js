@@ -20,21 +20,21 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : (x || 
   await p.route('**/api.php?action=events*', async r => { await new Promise(x => setTimeout(x, 1500)); r.continue(); });
   await p.route('**/api.php?action=todo_list*', async r => { await new Promise(x => setTimeout(x, 1500)); r.continue(); });
   let blank = 0;
-  await p.click('.tab[data-view=me]');
+  await p.click('.hb-tab[data-view=me]');
   for (let i = 0; i < 10; i++) { if (await p.locator('.cal-weeks .day, .cal .cell, .cal-dow').count() === 0) blank++; await p.waitForTimeout(100); }
   ok('切り替え中（通信が遅い間）も、カレンダーの枠が出ている', blank === 0, blank);
-  ok('タブの選択が切り替わる', (await p.locator('.tab[data-view=me]').getAttribute('aria-selected')) === 'true');
+  ok('タブの選択が切り替わる', (await p.locator('.hb-tab[data-view=me]').getAttribute('aria-selected')) === 'true');
   ok('バナーも切り替わる', (await p.locator('.view-banner').innerText()).includes('プライベート版'));
   await p.waitForTimeout(2200);
   // 戻る（前に読んだ内容がすぐ出る）
-  await p.click('.tab[data-view=team]');
+  await p.click('.hb-tab[data-view=team]');
   await p.waitForTimeout(150);
   ok('戻ると、前に読んだ予定がすぐ出る（通信を待たない）', await p.locator('.bar').count() > 0);
   // 素早く往復しても、最後に選んだ版の内容になる
   await p.waitForTimeout(2200);
-  await p.click('.tab[data-view=me]'); await p.click('.tab[data-view=team]'); await p.click('.tab[data-view=me]');
+  await p.click('.hb-tab[data-view=me]'); await p.click('.hb-tab[data-view=team]'); await p.click('.hb-tab[data-view=me]');
   await p.waitForTimeout(3500);
-  ok('素早く往復しても、最後に選んだ版が表示される', (await p.locator('.view-banner').innerText()).includes('プライベート版') && (await p.locator('.tab[data-view=me]').getAttribute('aria-selected')) === 'true');
+  ok('素早く往復しても、最後に選んだ版が表示される', (await p.locator('.view-banner').innerText()).includes('プライベート版') && (await p.locator('.hb-tab[data-view=me]').getAttribute('aria-selected')) === 'true');
   ok('JSエラーなし', errs.length === 0, errs);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();
