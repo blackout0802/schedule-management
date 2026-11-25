@@ -14,7 +14,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await p.fill('input[name=email]', 'admin@example.com'); await p.fill('input[name=password]', 'adminpass1'); await Promise.all([p.waitForURL('**/index.php'), p.click('button[type=submit]')]); await p.waitForSelector('.cal');
   ok('アプリの画面にも、同じ指定がある', (await p.evaluate(() => document.querySelector('link[rel=manifest]')?.getAttribute('href'))) === 'manifest.php');
   // 設定のページには、「ホーム画面に追加」「パスワードの変更」は無い（パスワードの変更は、名前のメニューから）
-  await p.click('header button:has-text("設定")'); await p.waitForSelector('.settings-page');
+  await p.click('#btn-user'); await p.click('#btn-settings'); await p.waitForSelector('.settings-page');
   ok('設定のページに、「ホーム画面に追加」「パスワードの変更」の項目は無い', (await p.locator('#set-install').count()) === 0 && (await p.locator('#set-password').count()) === 0);
   // 共有リンク
   const sh = await p.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const f = k => fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ kind: k }) }).then(x => x.json()); return [(await f('company')).path, (await f('family')).path]; });

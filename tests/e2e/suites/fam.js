@@ -12,11 +12,11 @@ const pad = n => String(n).padStart(2, '0');
 
   // ---- 持ち主（山田）が、家族を招待する
   const y = await mk(); await login(y, 'yamada@example.com', 'yamadapass1'); await y.waitForSelector('.cal');
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   await api(y, 'event_save', { kind: 'private', title: '家族への連絡', start: today, family_shared: true });
   await api(y, 'event_save', { kind: 'private', title: 'ひみつの予定', start: today, family_shared: false });
   await api(y, 'event_save', { kind: 'work', title: '会社の打ち合わせ', tag: '打ち合わせ', start: today });
-  await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page');
+  await y.click('#btn-user'); await y.click('#btn-settings'); await y.waitForSelector('.settings-page');
   ok('設定のページに「家族の招待」の項目がある（一般の社員）', (await y.locator('#set-family').count()) === 1);
   await y.waitForSelector('#set-family input[name=fam_name]');
   await y.fill('#set-family input[name=fam_name]', '山田 妻'); await y.fill('#set-family input[name=fam_email]', 'wife@example.com'); await y.click('#set-family button:has-text("招待する")');
@@ -30,13 +30,13 @@ const pad = n => String(n).padStart(2, '0');
   const before = mailLog();
   const noMail = await api(y, 'family_add', { name: 'メールなし', email: 'nomail@example.com' });
   ok('メールを送らない招待（送るチェックなし）では、メールは出ない', noMail.j.mail === 'skipped' && mailLog() === before);
-  await y.reload(); await y.waitForSelector('.cal, .settings-page'); if (!(await y.locator('.settings-page').count())) await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-family input[name=fam_name]');
+  await y.reload(); await y.waitForSelector('.cal, .settings-page'); if (!(await y.locator('.settings-page').count())) { await y.click('#btn-user'); await y.click('#btn-settings'); } await y.waitForSelector('#set-family input[name=fam_name]');
   ok('招待のフォームに「招待メールも送る」があり、初めはオン', await y.locator('#set-family input[name=fam_send_mail]').isChecked());
   await y.uncheck('#set-family input[name=fam_send_mail]'); await y.fill('#set-family input[name=fam_name]', '山田 次男'); await y.fill('#set-family input[name=fam_email]', 'jiro@example.com'); await y.click('#set-family button:has-text("招待する")'); await y.waitForSelector('.fam-pw');
   ok('チェックを外して招待すると、メールは出ず、「メールでも送りました」とも出ない', !(await y.locator('.modal').innerText()).includes('メールでも送りました') && mailLog() === before && !mailLog().includes('jiro@example.com'));
   await y.click('.modal button:has-text("閉じる")'); await y.waitForFunction(() => !document.querySelector('.fam-pw'));
   for (const m of (await api(y, 'family_list')).j.members.filter(m => m.email !== 'wife@example.com')) await api(y, 'family_delete', { id: m.id }); // この確認のために招待した人は、消しておく（あとの確認に影響しないように）
-  await y.reload(); await y.waitForSelector('.cal, .settings-page'); if (!(await y.locator('.settings-page').count())) await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-family .fam-member');
+  await y.reload(); await y.waitForSelector('.cal, .settings-page'); if (!(await y.locator('.settings-page').count())) { await y.click('#btn-user'); await y.click('#btn-settings'); } await y.waitForSelector('#set-family .fam-member');
   ok('家族の一覧に出る（招待中）', (await y.locator('#set-family .fam-member').innerText()).includes('山田 妻') && (await y.locator('#set-family .fam-member').innerText()).includes('招待中'));
   ok('同じメールアドレスでは招待できない', (await api(y, 'family_add', { name: '別人', email: 'wife@example.com' })).status === 400);
 
@@ -46,7 +46,7 @@ const pad = n => String(n).padStart(2, '0');
   ok('最初のログインで、パスワードの変更を求められる（家族向けの文言）', (await f.locator('.modal').innerText()).includes('招待されたときの一時パスワード'));
   await f.fill('.modal input[autocomplete=current-password]', pw1); await f.fill('.modal input[autocomplete=new-password]', 'familypass99'); await f.click('.modal button[type=submit]');
   await f.waitForSelector('.cal'); await f.waitForSelector('.bar');
-  const top = await f.evaluate(() => ({ tabs: document.querySelectorAll('.tabs .tab').length, pill: (document.querySelector('.fam-pill') || {}).innerText, setBtn: [...document.querySelectorAll('header button')].some(b => b.getAttribute('aria-label') === '設定' || b.textContent.trim() === '設定'), seg: document.querySelectorAll('.seg input[name=mode]').length, hover: !!document.getElementById('todo-hover'), side: !!document.querySelector('.side'), who: !!document.getElementById('who-sel') }));
+  const top = await f.evaluate(() => ({ tabs: document.querySelectorAll('.hb-tabs .hb-tab').length, pill: (document.querySelector('.fam-pill') || {}).innerText, setBtn: [...document.querySelectorAll('.hb button')].some(b => b.getAttribute('aria-label') === '設定' || b.textContent.trim() === '設定'), seg: document.querySelectorAll('.seg input[name=mode]').length, hover: !!document.getElementById('todo-hover'), side: !!document.querySelector('.side'), who: !!document.getElementById('who-sel') }));
   ok('家族の画面: 業務版・プライベート版のタブ、設定、ToDo、表示の切り替え、表示する人は出ない', top.tabs === 0 && !top.setBtn && top.seg === 0 && !top.hover && !top.side && !top.who, top);
   ok('家族の画面: 「○○さんの家族」の印と説明が出る', top.pill.includes('山田') && (await f.locator('.view-banner').innerText()).includes('家族のカレンダー'), top.pill);
   const names = await f.locator('.bar').allInnerTexts();
@@ -74,25 +74,25 @@ const pad = n => String(n).padStart(2, '0');
   const me = await api(f, 'me'); ok('家族の「me」には、社員の一覧が入らない', (me.j.users || []).length === 0 && me.j.user.role === 'family', me.j);
 
   // ---- 持ち主の画面に、家族の予定が出る（見るだけ）
-  await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal'); await y.click('.tab[data-view=me]'); await y.waitForSelector('.bar:has-text("妻の買い物")');
+  await y.click('button:has-text("カレンダーに戻る")'); await y.waitForSelector('.cal'); await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.bar:has-text("妻の買い物")');
   const yb = await y.locator('.bar:has-text("妻の買い物")').first().innerText();
   ok('持ち主のプライベート版に、家族の予定が出る（先頭に名前）', yb.includes('山田 妻'), yb);
   // 家族が、自分の表示名を変える → 持ち主の画面の予定の先頭も、その名前になる
   await f.goto(BASE + 'index.php'); await f.waitForSelector('.cal');
-  await f.click('header .uname'); await f.waitForSelector('.menu-list');
-  ok('家族のメニューに「表示名の変更」が出る', (await f.locator('.menu-list button:has-text("表示名の変更")').count()) === 1);
-  await f.click('.menu-list button:has-text("表示名の変更")'); await f.waitForSelector('.modal input[name=fam_display_name]');
+  await f.click('#btn-user'); await f.waitForSelector('.hb-user-list');
+  ok('家族のメニューに「表示名の変更」が出る', (await f.locator('.hb-user-list .hb-mi:has-text("表示名の変更")').count()) === 1);
+  await f.click('.hb-user-list .hb-mi:has-text("表示名の変更")'); await f.waitForSelector('.modal input[name=fam_display_name]');
   ok('表示名の入力欄には、いまの名前が入っている', (await f.inputValue('.modal input[name=fam_display_name]')) === '山田 妻');
   await f.fill('.modal input[name=fam_display_name]', ''); await f.click('.modal button[type=submit]');
   ok('空の表示名では、変えられない（入力欄が必須）', (await f.locator('.modal input[name=fam_display_name]').count()) === 1);
   await f.fill('.modal input[name=fam_display_name]', 'ママ'); await f.click('.modal button[type=submit]'); await f.waitForFunction(() => !document.querySelector('.modal'));
-  ok('変えると、家族の画面の名前のボタンも新しい名前になる', (await f.locator('header .uname').innerText()).includes('ママ'));
+  ok('変えると、家族の画面の名前のボタンも新しい名前になる', (await f.locator('#btn-user').innerText()).includes('ママ'));
   await y.reload(); await y.waitForSelector('.bar:has-text("妻の買い物")');
   const yb2 = await y.locator('.bar:has-text("妻の買い物")').first().innerText();
   ok('持ち主のプライベート版の予定の先頭が、家族が決めた表示名になる（名字だけにしない）', yb2.startsWith('ママ｜'), yb2);
   ok('社員（持ち主）は、この方法では名前を変えられない（403）', (await api(y, 'family_name_save', { name: '別名' })).status === 403);
-  await y.click('header .uname'); await y.waitForSelector('.menu-list');
-  ok('社員のメニューには、「表示名の変更」は出ない', (await y.locator('.menu-list button:has-text("表示名の変更")').count()) === 0);
+  await y.click('#btn-user'); await y.waitForSelector('.hb-user-list');
+  ok('社員のメニューには、「表示名の変更」は出ない', (await y.locator('.hb-user-list .hb-mi:has-text("表示名の変更")').count()) === 0);
   await y.keyboard.press('Escape'); await y.mouse.click(5, 5);
   await api(f, 'family_name_save', { name: '山田 妻' }); // 以降の確認は、元の名前で
   await y.reload(); await y.waitForSelector('.bar:has-text("妻の買い物")');
@@ -122,10 +122,10 @@ const pad = n => String(n).padStart(2, '0');
   const f2 = await mk(); await login(f2, 'wife@example.com', 'familypass99'); await f2.waitForSelector('.cal');
   // スマホ幅: 名前のメニューは右に寄り、開いたメニューが画面の外に切れない（左端にあると、メニューが左に切れていた）
   const ph = await mk({ width: 390, height: 844 }); await login(ph, 'wife@example.com', 'familypass99'); await ph.waitForSelector('.cal');
-  const menuBtn = await ph.locator('.fam-menu .uname').boundingBox();
+  const menuBtn = await ph.locator('#btn-user').boundingBox();
   ok('スマホ幅: 家族の名前のメニューのボタンが、右の端に寄っている', menuBtn && menuBtn.x + menuBtn.width > 390 / 2 && menuBtn.x + menuBtn.width <= 390, menuBtn);
-  await ph.click('.fam-menu .uname'); await ph.waitForSelector('.fam-menu .menu-list');
-  const list = await ph.locator('.fam-menu .menu-list').boundingBox();
+  await ph.click('#btn-user'); await ph.waitForSelector('.hb-user-list');
+  const list = await ph.locator('.hb-user-list').boundingBox();
   ok('スマホ幅: 開いたメニューが、画面の中に収まる', list && list.x >= 0 && list.x + list.width <= 390, list);
   ok('スマホ幅: 上の帯は、横にはみ出さない', await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok('再開すると、また使えて、予定も戻る', (await api(y, 'events&from=' + today + '&to=' + today + '&view=me')).j.events.some(e => e.title === '妻の買い物'));
@@ -137,7 +137,7 @@ const pad = n => String(n).padStart(2, '0');
   for (let i = 0; i < 5; i++) await api(y, 'family_add', { name: '家族' + i, email: 'fam' + i + '@example.com' });
   const over = await api(y, 'family_add', { name: '多すぎ', email: 'over@example.com' });
   ok('招待できるのは5人まで', over.status === 400 && String(over.j.error).includes('5人'), over);
-  await y.reload(); await y.waitForSelector('.cal, .settings-page'); if (!(await y.locator('.settings-page').count())) await y.click('header button:has-text("設定")'); await y.waitForSelector('#set-family .fam-member');
+  await y.reload(); await y.waitForSelector('.cal, .settings-page'); if (!(await y.locator('.settings-page').count())) { await y.click('#btn-user'); await y.click('#btn-settings'); } await y.waitForSelector('#set-family .fam-member');
   ok('人数に達すると、招待ボタンが押せない', await y.locator('#set-family button:has-text("招待する")').isDisabled());
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

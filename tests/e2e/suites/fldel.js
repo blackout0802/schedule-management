@@ -6,7 +6,7 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   const b = await chromium.launch(); const y = await login(b, 'yamada@example.com', 'yamadapass1');
   const M = ((x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'))(new Date()).slice(0, 7);
   const addPriv = async (title, day) => { await y.keyboard.press('n'); await y.waitForSelector('.modal'); await y.click('.modal label:has-text("プライベート")'); await y.fill('.modal input[name=title]', title); await y.fill('.modal input[name=start]', `${M}-${day}`); await y.fill('.modal input[name=end]', `${M}-${day}`); await y.click('.modal button[type=submit]'); await y.waitForSelector('.bar:has-text("' + title + '")'); };
-  await y.click('header >> text=プライベート版'); await y.waitForSelector('.view-banner.me');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   await addPriv('履歴その1', '05'); await addPriv('履歴その2', '06'); await addPriv('履歴その3', '07');
   const csrf = () => y.evaluate(() => document.getElementById('app').dataset.csrf);
   const path = await y.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ kind: 'family' }) }); return (await r.json()).path; });
@@ -29,7 +29,7 @@ const login = async (b, email, pw) => { const p = await b.newPage({ viewport: { 
   y.once('dialog', d => d.accept()); await y.click('.modal:has-text("家族に見える更新履歴") button:has-text("すべて削除")'); await y.waitForSelector('.modal:has-text("更新の記録はありません")');
   ok('「すべて削除」で、一覧が空になる', true);
   t = await famLog(); ok('家族の更新履歴も、空になる', t.includes('まだ更新の記録はありません'), t);
-  ok('予定そのものは、消えない', await (async () => { await y.keyboard.press('Escape'); await y.goto(BASE + 'index.php'); await y.waitForSelector('.cal'); await y.click('header >> text=プライベート版'); await y.waitForSelector('.bar:has-text("履歴その1")'); return true; })());
+  ok('予定そのものは、消えない', await (async () => { await y.keyboard.press('Escape'); await y.goto(BASE + 'index.php'); await y.waitForSelector('.cal'); await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.bar:has-text("履歴その1")'); return true; })());
   // 削除のあとの新しい更新は、家族に「新着」で出る
   await addPriv('履歴その4', '08'); await f.reload(); await f.waitForSelector('.upd-banner.has', { timeout: 20000 });
   ok('削除のあとに追加した予定は、家族に「更新あり」として出る', (await f.locator('.upd-banner').innerText()).includes('1件の更新'), await f.locator('.upd-banner').innerText());

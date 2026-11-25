@@ -44,7 +44,7 @@ const pad = n => String(n).padStart(2, '0');
   await openAdd('19'); await p.check('.modal input[name=kind][value=off]');
   ok('「休み」を選ぶと、ToDoの欄は出ない', !(await p.locator('.modal .todo-opt').isVisible()));
   await p.keyboard.press('Escape'); await p.waitForFunction(() => !document.querySelector('.modal'));
-  await p.click('.tab[data-view=me]'); await p.waitForTimeout(500); await openAdd('19');
+  await p.click('.hb-tab[data-view=me]'); await p.waitForTimeout(500); await openAdd('19');
   ok('「プライベート」では、ToDoの欄が出る', await p.locator('.modal .todo-opt').isVisible());
   await p.fill('.modal input[name=title]', 'ひみつの私用'); await p.selectOption('.modal select[name=todo_status]', 'doing'); await p.click('.modal button[type=submit]'); await p.waitForFunction(() => !document.querySelector('.modal'));
   const priv = await p.evaluate(async () => { const j = await (await fetch('api.php?action=todo_list&view=me')).json(); const t = j.todos.find(t => t.title === 'ひみつの私用'); return t && [t.kind, t.status]; });
@@ -52,7 +52,7 @@ const pad = n => String(n).padStart(2, '0');
   // 7) 毎月の繰り返しから作られた予定も、その回だけ ToDo にできる
   const sv = await p.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=series_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ title: '毎月の定例チェック', tag: '定例業務', rule_type: 'day', p_day: 21, shift: 'prev', bizonly: 0 }) }); return r.status; });
   ok('繰り返し業務を登録できた', sv === 200, sv);
-  await p.click('.tab[data-view=team]'); await p.reload(); await p.waitForSelector('.bar:has-text("毎月の定例チェック")');
+  await p.click('.hb-tab[data-view=team]'); await p.reload(); await p.waitForSelector('.bar:has-text("毎月の定例チェック")');
   await p.click('.bar:has-text("毎月の定例チェック")'); await p.waitForSelector('.modal input[name=title]');
   ok('繰り返しの回にも、「ToDoリストにも入れる」がある（この回だけ、と説明が出る）', await p.locator('.modal .todo-opt').isVisible() && (await p.locator('.modal .todo-opt').innerText()).includes('この回だけ'));
   await p.selectOption('.modal select[name=todo_status]', 'doing'); await p.click('.modal button[type=submit]'); await p.waitForFunction(() => !document.querySelector('.modal')); await p.waitForTimeout(500);

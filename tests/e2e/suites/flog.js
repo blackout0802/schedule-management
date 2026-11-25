@@ -7,7 +7,7 @@ const pad = n => (n < 10 ? '0' : '') + n; const t = new Date(); const M = `${t.g
   y.on('pageerror', e => console.log('PAGEERR', e.message)); y.on('dialog', d => d.accept());
   await y.goto(BASE + 'login.php'); await y.fill('input[name=email]', 'yamada@example.com'); await y.fill('input[name=password]', 'yamadapass1'); await Promise.all([y.waitForURL('**/index.php'), y.click('button[type=submit]')]); await y.waitForSelector('.cal');
   const addPriv = async (title, day, time) => { await y.keyboard.press('n'); await y.waitForSelector('.modal'); await y.click('.modal label:has-text("プライベート")'); await y.fill('.modal input[name=title]', title); await y.fill('.modal input[name=start]', `${M}-${day}`); await y.fill('.modal input[name=end]', `${M}-${day}`); if (time) await y.fill('.modal input[name=start_time]', time); await y.click('.modal button[type=submit]'); await y.waitForFunction(() => !document.querySelector('.modal')); await y.waitForTimeout(400); };
-  await y.click('header >> text=プライベート版'); await y.waitForSelector('.view-banner.me');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   await addPriv('歯医者の予約', '05', '10:00'); await addPriv('家族で食事', '06');
   const path = await y.evaluate(async () => { const tk = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=share_create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': tk }, body: JSON.stringify({ kind: 'family' }) }); return (await r.json()).path; });
   // 家族が初めて開く → 目印なし

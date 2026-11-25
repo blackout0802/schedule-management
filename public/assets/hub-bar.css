@@ -1,0 +1,131 @@
+/*
+ * Hub とつながるアプリの「上の帯」（共通の部品。hub-bar.js と組で使う）。元は Hub の public/assets/hub-bar.css。
+ * 各アプリの CSS に左右されないように、色・字・ボタンの形をこの中で決める（クラスはすべて hb- で始める）。
+ * 画面の色は端末の設定（ライト／ダーク）に合わせる。
+ */
+.hb {
+  --hb-band: #2a2b30; --hb-band-ink: #fff; --hb-band-muted: #c9c8c3; --hb-band-line: rgba(255, 255, 255, .28);
+  --hb-surface: #fff; --hb-surface-2: #e9e8e3; --hb-ink: #26272b; --hb-muted: #66676c; --hb-line: #d8d7d2;
+  --hb-gold: #c19a55; --hb-danger: #c0392b; --hb-frame: #fff; --hb-shadow: rgba(30, 30, 34, .16); --hb-ph-ink: #2a2b30;
+  --hb-ph-1: #cfdde6; --hb-ph-2: #ead6d8; --hb-ph-3: #eee0bd; --hb-ph-4: #ddd6e8; --hb-ph-5: #d3e3d2;
+  --hb-ln-1: #8eaec3; --hb-ln-2: #c99aa0; --hb-ln-3: #c9ad6a; --hb-ln-4: #a597bf; --hb-ln-5: #8fb38d;
+  --hb-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP", Meiryo, sans-serif;
+  --hb-mincho: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
+  --hb-app: var(--hb-gold); --hb-app-line: var(--hb-gold);
+  font-family: var(--hb-font); font-size: 14px; line-height: 1.5; letter-spacing: .01em; color: var(--hb-ink); text-align: left;
+  -webkit-font-smoothing: antialiased; box-sizing: border-box;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hb {
+    --hb-band: #0d0d0f; --hb-surface: #1f1f22; --hb-surface-2: #2c2c30; --hb-ink: #eae9e4; --hb-muted: #a3a2a6; --hb-line: #35353a;
+    --hb-danger: #ff8d80; --hb-frame: #e6e5e0; --hb-shadow: rgba(0, 0, 0, .5);
+  }
+}
+:root[data-theme="dark"] .hb {
+  --hb-band: #0d0d0f; --hb-surface: #1f1f22; --hb-surface-2: #2c2c30; --hb-ink: #eae9e4; --hb-muted: #a3a2a6; --hb-line: #35353a;
+  --hb-danger: #ff8d80; --hb-frame: #e6e5e0; --hb-shadow: rgba(0, 0, 0, .5);
+}
+/* アプリの色（Hub の一覧のポラロイドと同じ。アプリごとに決まっている） */
+.hb[data-app="schedule"], .hb [data-app="schedule"] { --hb-app: var(--hb-ph-1); --hb-app-line: var(--hb-ln-1); }
+.hb[data-app="password"], .hb [data-app="password"] { --hb-app: var(--hb-ph-2); --hb-app-line: var(--hb-ln-2); }
+.hb[data-app="payroll"], .hb [data-app="payroll"] { --hb-app: var(--hb-ph-3); --hb-app-line: var(--hb-ln-3); }
+.hb[data-app="invoice"], .hb [data-app="invoice"] { --hb-app: var(--hb-ph-4); --hb-app-line: var(--hb-ln-4); }
+.hb[data-app="kinmuhyo"], .hb [data-app="kinmuhyo"] { --hb-app: var(--hb-ph-5); --hb-app-line: var(--hb-ln-5); }
+
+.hb *, .hb *::before, .hb *::after { box-sizing: border-box; }
+.hb.hb-sticky { position: sticky; top: 0; z-index: 40; }
+/* アプリの CSS（button・a・header など）を打ち消して、同じ形にする（アプリの道具 .hb-tools の中は、アプリの形のまま） */
+.hb :where(button, a):not(.hb-tools *) {
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: none; text-decoration: none; text-align: left;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; min-width: 0; min-height: 0; width: auto; height: auto;
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; cursor: pointer; white-space: nowrap; -webkit-appearance: none; appearance: none; transform: none; filter: none;
+}
+.hb :where(button, a):not(.hb-tools *):focus-visible { outline: 2px solid var(--hb-gold); outline-offset: 2px; }
+.hb p { margin: 0; }
+.hb [hidden] { display: none !important; }
+.hb .hb-in { max-width: 1280px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 10px 16px; }
+.hb .hb-sp { flex: 1; }
+
+/* 上の黒い段 */
+.hb .hb-band { background: var(--hb-band); color: var(--hb-band-ink); }
+.hb .hb-band .hb-in { height: 44px; }
+.hb .hb-home { padding: 3px 4px; border-radius: 8px; color: var(--hb-band-ink); }
+.hb .hb-logo { display: inline-flex; align-items: center; gap: .45em; line-height: 1; white-space: nowrap; font-size: 17px; }
+.hb .hb-logo-box { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; width: 1.5em; height: 1.5em; flex: none; padding: .14em; margin: 0 .12em .12em 0;
+  border-radius: .16em; background: #2a2b30; box-shadow: .12em .12em 0 var(--hb-gold), 0 0 0 1px rgba(255, 255, 255, .22); }
+.hb .hb-logo-box span { display: grid; place-items: center; font-size: .5em; font-weight: 800; line-height: 1; color: #fff; }
+.hb .hb-logo-box span:nth-child(1) { transform: rotate(-14deg); }
+.hb .hb-logo-box span:nth-child(2) { transform: rotate(9deg); }
+.hb .hb-logo-box span:nth-child(3) { transform: rotate(-6deg); }
+.hb .hb-logo-box span:nth-child(4) { transform: rotate(15deg); font-style: italic; color: var(--hb-gold); }
+.hb .hb-logo-word { font-weight: 600; letter-spacing: .14em; font-size: .85em; }
+.hb .hb-logo-word span { color: var(--hb-gold); }
+/* 名前（名前と役割の2行） */
+.hb .hb-ub { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; height: 34px; padding: 0 12px; border: 1px solid var(--hb-band-line); border-radius: 9px;
+  color: var(--hb-band-ink); line-height: 1.2; max-width: 16em; }
+.hb .hb-ub:hover { background: rgba(255, 255, 255, .08); }
+.hb .hb-ub[aria-expanded="true"] { border-color: var(--hb-gold); background: rgba(255, 255, 255, .1); }
+.hb .hb-ub-name { font-size: 13px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.hb .hb-ub-role { font-size: 10.5px; color: var(--hb-band-muted); }
+
+/* 下の段（アプリごと） */
+.hb .hb-appbar { background: color-mix(in srgb, var(--hb-surface) 90%, transparent); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); }
+.hb .hb-appbar .hb-in { min-height: 54px; flex-wrap: wrap; }
+.hb .hb-line { height: 4px; background: var(--hb-app-line); }
+.hb .hb-app-pola { width: 24px; height: 24px; flex: none; border: 3px solid var(--hb-frame); background: var(--hb-app); box-shadow: 0 1px 4px var(--hb-shadow); transform: rotate(-5deg); }
+.hb .hb-appname { gap: 6px; border: 1px solid transparent; padding: 4px 8px; border-radius: 9px; font-family: var(--hb-mincho); font-weight: 600; font-size: 17px; letter-spacing: .06em; color: var(--hb-ink); }
+.hb .hb-appname small { font-family: var(--hb-font); font-size: 11px; color: var(--hb-muted); letter-spacing: 0; }
+.hb .hb-appname:hover, .hb .hb-appname[aria-expanded="true"] { background: var(--hb-surface-2); border-color: var(--hb-line); }
+.hb .hb-ver { color: var(--hb-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.hb .hb-tabs { display: flex; gap: 20px; align-self: stretch; margin-left: 10px; }
+.hb .hb-tab { align-self: stretch; border-bottom: 2px solid transparent; padding: 0 1px; color: var(--hb-muted); font-size: 13px; letter-spacing: .2em; font-weight: 500; }
+.hb .hb-tab:hover { color: var(--hb-ink); }
+.hb .hb-tab.hb-on { color: var(--hb-ink); border-bottom-color: var(--hb-ink); }
+.hb .hb-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 開くメニュー */
+.hb .hb-menu { position: relative; }
+.hb .hb-list { position: absolute; top: calc(100% + 6px); z-index: 50; min-width: 240px; padding: 6px; display: flex; flex-direction: column;
+  background: var(--hb-surface); color: var(--hb-ink); border: 1px solid var(--hb-line); border-radius: 12px; box-shadow: 0 10px 32px var(--hb-shadow); }
+.hb .hb-right .hb-list { right: 0; }
+.hb .hb-left .hb-list { left: 0; }
+.hb .hb-mi { width: 100%; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 14px; color: var(--hb-ink); }
+.hb .hb-mi:hover { background: var(--hb-surface-2); }
+.hb .hb-mi.hb-danger { color: var(--hb-danger); }
+.hb .hb-mi .hb-logo { font-size: 13px; color: var(--hb-ink); }
+.hb .hb-note { margin-left: auto; padding-left: 10px; font-size: 11px; color: var(--hb-muted); }
+.hb .hb-who { padding: 8px 10px; display: flex; flex-direction: column; line-height: 1.4; }
+.hb .hb-who b { font-weight: 600; }
+.hb .hb-who small { font-size: 12px; color: var(--hb-muted); overflow-wrap: anywhere; }
+.hb .hb-sec { padding: 6px 10px 2px; font-size: 11px; color: var(--hb-muted); letter-spacing: .12em; }
+.hb .hb-hr { border-top: 1px solid var(--hb-line); margin: 4px 0; }
+.hb .hb-empty { padding: 8px 10px; font-size: 13px; color: var(--hb-muted); grid-column: 1 / -1; }
+.hb .hb-sw-list { width: 340px; gap: 6px; padding: 8px; }
+.hb .hb-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.hb .hb-tile { flex-direction: column; justify-content: flex-start; gap: 6px; padding: 10px 4px 8px; border: 1px solid transparent; border-radius: 10px; font-size: 12px; text-align: center; white-space: normal; color: var(--hb-ink); }
+.hb .hb-tile small { font-size: 10.5px; color: var(--hb-muted); }
+.hb .hb-tile:hover { background: var(--hb-surface-2); }
+.hb .hb-tile.hb-cur { border-color: var(--hb-line); background: var(--hb-surface-2); font-weight: 600; }
+.hb .hb-pola { width: 44px; height: 50px; flex: none; padding: 4px 4px 10px; background: var(--hb-frame); box-shadow: 0 3px 8px var(--hb-shadow); transform: rotate(-5deg); transition: transform .25s; }
+.hb .hb-tile:nth-child(3n+2) .hb-pola { transform: rotate(4deg); }
+.hb .hb-tile:nth-child(3n) .hb-pola { transform: rotate(-2deg); }
+.hb .hb-tile:hover .hb-pola { transform: rotate(0deg) scale(1.08); }
+.hb .hb-ph { width: 100%; height: 100%; display: grid; place-items: center; background: var(--hb-app); color: var(--hb-ph-ink); }
+.hb .hb-ic { width: 18px; height: 18px; display: block; }
+.hb .hb-ic * { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .hb .hb-pola { transition: none; } }
+
+/* スマホの幅 */
+@media (max-width: 760px) {
+  .hb.hb-sticky { position: static; }
+  .hb .hb-in { padding: 0 12px; }
+  .hb .hb-ub { height: 32px; max-width: 11em; }
+  .hb .hb-ub-role { display: none; }
+  .hb .hb-appbar .hb-in { padding-top: 6px; row-gap: 0; position: relative; }
+  .hb .hb-ver { display: none; }
+  .hb .hb-tabs { order: 3; flex-basis: 100%; margin-left: 0; height: 40px; justify-content: space-around; gap: 0; }
+  .hb .hb-tools { order: 2; }
+  /* アプリの切り替えは、下の段の幅いっぱいに開く */
+  .hb .hb-left { position: static; }
+  .hb .hb-left .hb-list { left: 12px; right: 12px; top: 50px; width: auto; }
+}

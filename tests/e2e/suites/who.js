@@ -28,6 +28,6 @@ const add = async (p, title) => { await p.keyboard.press('n'); await p.waitForSe
   ok('他の人の更新も、選んだ人の分が自動で反映される', (await cal()).includes('鈴木の追加分'));
   await p.selectOption('#who-sel', 'all'); await p.waitForFunction(() => document.querySelector('.cal').innerText.includes('山田の業務')); ok('全社に戻せる', true);
   // プライベート版には、この切り替えは無い
-  await p.click('header >> text=プライベート版'); await p.waitForSelector('.view-banner.me'); ok('プライベート版には「表示する人」は出ない', await p.locator('#who-sel').count() === 0);
+  await p.click('.hb-tab[data-view=me]'); await p.waitForSelector('.view-banner.me'); ok('プライベート版には「表示する人」は出ない', await p.locator('#who-sel').count() === 0);
   await b.close(); console.log(fails ? fails + ' 件失敗' : 'すべて成功'); process.exit(fails ? 1 : 0);
 })();

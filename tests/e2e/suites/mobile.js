@@ -16,19 +16,19 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   // カレンダー（v1.112.0 から、カレンダーの下に「予定の一覧」があるので、ページは縦に続く。カレンダー自体が1画面に収まることを確かめる）
   const calFit = async (n) => { const s = await p.evaluate(() => ({ bottom: Math.round(document.querySelector('.cal-wrap').getBoundingClientRect().bottom + scrollY), vh: innerHeight, w: document.documentElement.scrollWidth, vw: innerWidth, ag: !!document.querySelector('.cal-wrap + #agenda') })); ok(n + ': カレンダーは1画面に収まり、その下に予定の一覧', s.bottom <= s.vh && s.ag, s); ok(n + ': 横にはみ出さない', s.w <= s.vw, s); };
   await calFit('カレンダー');
-  const top = await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height);
-  ok('上の帯は2行（タイトル／設定／ユーザー と 業務版・プライベート版）で、90px以内', top <= 90, top);
+  const top = await p.evaluate(() => document.querySelector('.hb').getBoundingClientRect().height);
+  ok('上の帯は共通の部品（黒い段・アプリの段・タブ。2026-11-25〜）で、140px以内', top <= 140, top);
   await p.screenshot({ path: 'mobile-top.png', clip: { x: 0, y: 0, width: 390, height: 160 } });
-  ok('スマホでも、版がパソコンと同じ場所（左上のアプリ名のところ）に出る', await p.evaluate(() => { const v = document.querySelector('.topbar .brand .ver'); return !!v && v.offsetWidth > 0 && /^v\d+\.\d+\.\d+$/.test(v.textContent) && v.getBoundingClientRect().right <= window.innerWidth; }));
+  ok('スマホでは、版は帯に出さない（名前のメニューから。共通の部品）', await p.evaluate(() => { const v = document.querySelector('.hb-ver'); return !!v && v.offsetWidth === 0 && /^v\d+\.\d+\.\d+$/.test(v.textContent); }));
   // v1.114.0: 重なりの順番（z-index）を効かせるため static → relative に変えた（張り付かないことは同じ）
-  ok('上の帯は、画面に張り付かない（スクロールで消える）', ['static', 'relative'].includes(await p.evaluate(() => getComputedStyle(document.querySelector('.topbar')).position)));
+  ok('上の帯は、画面に張り付かない（スクロールで消える）', ['static', 'relative'].includes(await p.evaluate(() => getComputedStyle(document.querySelector('.hb')).position)));
   // 名前のメニューを開くと、下の「会議室予約／カレンダー／リスト」のボタンより手前に出る（v1.113.0 までは、ボタンがメニューの上に重なって見えた）
-  await p.tap('.topbar button.uname'); await p.waitForSelector('.topbar .menu-list');
-  const hid = await p.evaluate(() => Array.from(document.querySelectorAll('.topbar .menu-list button')).map(bt => { const r = bt.getBoundingClientRect(); const pts = [[r.left + 6, r.top + r.height / 2], [r.left + r.width / 2, r.top + r.height / 2], [r.right - 6, r.top + r.height / 2]]; return pts.some(([x, y]) => !bt.contains(document.elementFromPoint(x, y))) ? bt.textContent : null; }).filter(Boolean));
-  ok('スマホ: 名前のメニューの項目が、ほかのボタンの後ろに隠れない', hid.length === 0 && (await p.locator('.topbar .menu-list button').count()) >= 3, hid);
+  await p.tap('#btn-user'); await p.waitForSelector('.hb-user-list');
+  const hid = await p.evaluate(() => Array.from(document.querySelectorAll('.hb-user-list .hb-mi')).map(bt => { const r = bt.getBoundingClientRect(); const pts = [[r.left + 6, r.top + r.height / 2], [r.left + r.width / 2, r.top + r.height / 2], [r.right - 6, r.top + r.height / 2]]; return pts.some(([x, y]) => !bt.contains(document.elementFromPoint(x, y))) ? bt.textContent : null; }).filter(Boolean));
+  ok('スマホ: 名前のメニューの項目が、ほかのボタンの後ろに隠れない', hid.length === 0 && (await p.locator('.hb-user-list .hb-mi').count()) >= 3, hid);
   await p.screenshot({ path: 'mobile-menu.png', clip: { x: 0, y: 0, width: 390, height: 360 } });
-  await p.tap('.topbar .brand'); await p.waitForTimeout(150);
-  if (await p.locator('.topbar .menu-list').count()) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
+  await p.tap('.hb-app-pola'); await p.waitForTimeout(150);
+  if (await p.locator('.hb-user-list:visible').count()) { await p.keyboard.press('Escape'); await p.waitForTimeout(150); }
   const rows = await p.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { seg: r('.toolbar .seg').top, who: r('#who-sel').top }; });
   ok('表示する人・会議室予約／カレンダー／リスト が、同じ1行に並ぶ', Math.abs(rows.seg - rows.who) < 8, rows);
   ok('長い説明の文は、スマホでは出さない（凡例だけが残る）', await p.evaluate(() => getComputedStyle(document.querySelector('.view-banner .vb-text')).display === 'none' && !!document.querySelector('.view-banner .legend')));
@@ -57,7 +57,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.tap('.pane-seg label:has-text("ToDo")'); await p.waitForSelector('#todo-mgr', { state: 'visible' });
   await p.tap('label:has-text("カレンダー")'); await p.waitForSelector('.cal');
   // プライベート版
-  await p.tap('.tab[data-view=me]'); await p.waitForTimeout(400); await calFit('プライベート版');
+  await p.tap('.hb-tab[data-view=me]'); await p.waitForTimeout(400); await calFit('プライベート版');
   // 設定
   await p.goto(BASE + 'index.php#settings'); await p.waitForSelector('.settings-page'); await p.waitForTimeout(500);
   const secs = await p.evaluate(() => ({ n: document.querySelectorAll('.set-sec.collapsible').length, open: document.querySelectorAll('.set-sec.collapsible.open').length, nav: getComputedStyle(document.querySelector('.set-nav')).display, h: document.documentElement.scrollHeight }));
@@ -71,13 +71,13 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   ok('もう一度押すと、畳まれる', await p.evaluate(() => !document.querySelector('#set-colors').classList.contains('open')));
   // 会社の管理（管理者）: 切り替えは、ページの見出しの上（帯には収まらないため）
   await p.tap('.settings-page > .set-switch button:has-text("会社の管理")'); await p.waitForSelector('.admin-page #set-usage');
-  ok('会社の管理の上の帯が1行（スマホ）', await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 60);
+  ok('会社の管理の上の帯は、カレンダーと同じ共通の部品（スマホ）', await p.evaluate(() => document.querySelector('.hb').getBoundingClientRect().height) <= 140);
   const sA = await size(); ok('会社の管理のページも、横にはみ出さない', sA.w <= sA.vw, sA);
   await p.tap('#set-usage'); await p.waitForSelector('.modal .usage-sec', { state: 'visible' });
   const s3 = await size(); ok('「利用状況」を開いても、横にはみ出さない', s3.w <= s3.vw, s3);
   await p.tap('.modal button:has-text("閉じる")'); await p.waitForFunction(() => !document.querySelector('.overlay'));
   await p.tap('.settings-page > .set-switch button:has-text("設定")'); await p.waitForSelector('.settings-page:not(.admin-page)');
-  ok('設定の上の帯が1行（スマホ）', await p.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height) <= 60);
+  ok('設定の上の帯は、カレンダーと同じ共通の部品（スマホ）', await p.evaluate(() => document.querySelector('.hb').getBoundingClientRect().height) <= 140);
   // 横にずれない: 文字幅の広い端末（iPhone）を想定して文字間を広げても、画面より広がらない。スワイプ（横の移動）は元に戻る
   const css = await p.evaluate(() => ({ ox: getComputedStyle(document.documentElement).overflowX, ta: getComputedStyle(document.body).touchAction }));
   ok('スマホでは、横にずれない設定（overflow-x: hidden）と、ダブルタップで拡大しない設定（touch-action: manipulation）', css.ox === 'hidden' && css.ta === 'manipulation', css);
@@ -85,7 +85,7 @@ const ok = (n, c, x) => { console.log((c ? 'OK  ' : 'NG  ') + n, c ? '' : JSON.s
   await p.addStyleTag({ content: '* { letter-spacing: .25em !important; }' });
   const wide = async (n) => { const r = await p.evaluate(() => { const vw = innerWidth; return { sw: document.documentElement.scrollWidth, vw, n: Array.from(document.querySelectorAll('body *')).filter(e => { const r = e.getBoundingClientRect(); return r.width && r.right > vw + 1 && getComputedStyle(e).position !== 'fixed'; }).length }; }); ok(n + ': 文字幅が広くても、画面より横に広がらない', r.sw <= r.vw && r.n === 0, r); };
   await wide('カレンダー');
-  await p.tap('.tab[data-view=team]'); await p.waitForTimeout(400);
+  await p.tap('.hb-tab[data-view=team]'); await p.waitForTimeout(400);
   await p.tap('label:has-text("リスト")'); await p.waitForSelector('.kanban'); await wide('ToDo');
   await p.tap('.pane-seg label:has-text("日報メモ")'); await p.waitForSelector('#memo .memo-editor', { state: 'visible' }); await wide('日報メモ');
   const small = async (n) => { const r = await p.evaluate(() => Array.from(document.querySelectorAll('input:not([type=radio]):not([type=checkbox]):not([type=hidden]), select, textarea, [contenteditable=true]')).filter(e => e.getBoundingClientRect().width > 0 && parseFloat(getComputedStyle(e).fontSize) < 16).map(e => e.tagName + '.' + (e.className || e.name || ''))); ok(n + ': 入力欄の文字は、すべて16px以上（iPhone が勝手に拡大しない）', r.length === 0, r); };

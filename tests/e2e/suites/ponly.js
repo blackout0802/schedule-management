@@ -50,7 +50,7 @@ const orig = fs.readFileSync(CONFIG, 'utf8');
     await a.waitForSelector('.cal');
     ok('管理者は、Hub から入ったあとも、ふつうのログインで入れる', a.url().includes('index.php'), a.url());
     // 社員の管理: Hub で入る社員に印（管理者には付けない）
-    await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-users table');
+    await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('#set-users table');
     const ut = await a.locator('#set-users table').innerText();
     ok('社員の管理に「（Hub で入る）」の印（Hub から入った社員だけ）', ut.includes('山田 花子（Hub で入る）') && !ut.includes('鈴木 一郎（Hub で入る）') && !ut.includes('管理者 太郎（Hub で入る）'), ut);
 

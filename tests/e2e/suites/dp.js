@@ -35,7 +35,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('#agenda .ag-unsel'); await a.waitForFunction(() => !document.querySelector('#agenda .ag-selbar')); ok('×で、選ぶのをやめる', (await a.locator('.cal .cell.ag-sel').count()) === 0);
   // 画面の色: 切り替えのアイコンは無く、端末の設定に従う（前に選んだ固定は使わず、消す。v1.121.2）
   ok('上の帯に、画面の色のアイコンは無い', (await a.locator('.theme-sw, [data-theme-opt]').count()) === 0);
-  ok('設定のページには、画面の色の項目は無い', await (async () => { await a.click('header button:has-text("設定")'); await a.waitForSelector('.settings-page'); const n = await a.locator('#set-theme').count(); await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal'); return n === 0; })());
+  ok('設定のページには、画面の色の項目は無い', await (async () => { await a.click('#btn-user'); await a.click('#btn-settings'); await a.waitForSelector('.settings-page'); const n = await a.locator('#set-theme').count(); await a.click('button:has-text("カレンダーに戻る")'); await a.waitForSelector('.cal'); return n === 0; })());
   await a.evaluate(() => localStorage.setItem('sched.theme', JSON.stringify('light'))); await a.reload(); await a.waitForSelector('.cal');
   ok('前に選んだライトは使わず、端末の設定（ダーク）に従う', /rgb\(14, 21, 34\)/.test(await bg()) && (await a.evaluate(() => localStorage.getItem('sched.theme'))) === null);
 

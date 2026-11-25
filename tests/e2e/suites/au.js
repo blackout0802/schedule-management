@@ -18,7 +18,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await post(a, 'user_reset_password', { id: uid });
   await post(a, 'share_create', { kind: 'company' });
   await a.reload(); await a.waitForSelector('.cal');
-  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-audit'); await a.click('#set-audit'); await a.waitForSelector('.modal .audit-item'); // 変更履歴は「会社の管理」の「管理の道具」から、大きなポップアップで開く（v1.105.0）
+  await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('#set-audit'); await a.click('#set-audit'); await a.waitForSelector('.modal .audit-item'); // 変更履歴は「会社の管理」の「管理の道具」から、大きなポップアップで開く（v1.105.0）
   ok('変更履歴は、初めは直近の5件だけ出る（残りはボタンで）', (await a.locator('.modal .audit-item').count()) === 5 && (await a.locator('.modal button:has-text("古い履歴を表示する")').isVisible()));
   for (let g = 0; g < 8 && await a.locator('.modal button:has-text("古い履歴を表示する")').isVisible(); g++) { const n = await a.locator('.modal .audit-item').count(); await a.click('.modal button:has-text("古い履歴を表示する")'); await a.waitForFunction(k => document.querySelectorAll('.modal .audit-item').length > k, n); }
   const txt = await a.locator('.modal').innerText();
@@ -43,7 +43,7 @@ const BASE = 'http://127.0.0.1:8099/';
   await a.click('.modal button:has-text("古い履歴を表示する")'); await a.waitForFunction(() => document.querySelectorAll('.modal .audit-item').length > 50); ok('押すと、続きが読み込まれる', (await a.locator('.modal .audit-item').count()) > 50);
   // 権限
   const y3 = await mk(); await login(y3, 'suzuki@example.com', 'suzukipass1'); // 山田さんは、パスワードをリセットされて、前のログインは終わっているので、別の一般社員で確かめる
-  await y3.click('header button:has-text("設定")'); await y3.waitForSelector('.settings-page'); ok('一般の社員の設定には、変更履歴は出ない', (await y3.locator('#set-audit').count()) === 0);
+  await y3.click('#btn-user'); await y3.click('#btn-settings'); await y3.waitForSelector('.settings-page'); ok('一般の社員の設定には、変更履歴は出ない', (await y3.locator('#set-audit').count()) === 0);
   const forb = await y3.evaluate(async () => (await fetch('api.php?action=audit_list')).status); ok('一般の社員は、変更履歴のAPIを使えない（403）', forb === 403, forb);
   // スマホ幅で、はみ出さない
   const ph = await mk({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await login(ph, 'admin@example.com', 'adminpass1'); await ph.goto(BASE + 'index.php#admin'); await ph.waitForSelector('#set-audit'); await ph.click('#set-audit'); await ph.waitForSelector('.modal .audit-item'); await ph.waitForTimeout(500);

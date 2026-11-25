@@ -7,9 +7,9 @@ const login = async (b, em, pw, w = 1100) => { const p = await b.newPage({ viewp
   const b = await chromium.launch();
   // 一般の社員: 設定に項目が出ない／API も手引きも使えない。その人の私用ToDoは、管理者の利用状況に出ない
   const y = await login(b, 'yamada@example.com', 'yamadapass1');
-  await y.click('.tab[data-view=me]'); await y.waitForTimeout(300);
+  await y.click('.hb-tab[data-view=me]'); await y.waitForTimeout(300);
   const secret = await y.evaluate(async () => { const t = document.getElementById('app').dataset.csrf; const r = await fetch('api.php?action=todo_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': t }, body: JSON.stringify({ title: '利用状況に出ない私用', kind: 'private' }) }); return r.status; });
-  await y.click('header button:has-text("設定")'); await y.waitForSelector('.settings-page');
+  await y.click('#btn-user'); await y.click('#btn-settings'); await y.waitForSelector('.settings-page');
   ok('一般の社員の設定には、利用状況・運用の手引きが出ない', (await y.locator('#set-usage').count()) === 0 && (await y.locator('#set-guide').count()) === 0);
   ok('一般の社員は、利用状況の API を使えない（403）', (await y.evaluate(async () => (await fetch('api.php?action=usage_get')).status)) === 403);
   ok('一般の社員は、運用の手引きを開けない（403）', (await y.goto(BASE + 'guide.php')).status() === 403);
@@ -18,7 +18,7 @@ const login = async (b, em, pw, w = 1100) => { const p = await b.newPage({ viewp
 
   // 管理者
   const a = await login(b, 'admin@example.com', 'adminpass1');
-  await a.click('header button:has-text("会社の管理")'); await a.waitForSelector('#set-usage'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
+  await a.click('#btn-user'); await a.click('#btn-admin'); await a.waitForSelector('#set-usage'); // 管理者の項目は「会社の管理」のページ（v1.105.0）
   ok('管理者の「会社の管理」に、利用状況と運用の手引きがある', (await a.locator('#set-usage').count()) === 1 && (await a.locator('#set-guide').count()) === 1);
   await a.click('#set-usage'); await a.waitForSelector('.modal .usage-sec'); // 利用状況は、タイルを押すとポップアップで開く
   const txt = await a.locator('.modal').innerText();

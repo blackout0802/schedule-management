@@ -134,7 +134,7 @@ body.is-dragging .bar, body.is-dragging .todo-item { cursor: grabbing; }
 .empty-note { padding: 24px; text-align: center; color: var(--muted); }
 
 /* ToDo */
-.side { display: grid; gap: 12px; position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; align-content: start; }
+.side { display: grid; gap: 12px; position: sticky; top: 114px; max-height: calc(100vh - 130px); overflow-y: auto; align-content: start; }
 @media (max-width: 980px) { .side { position: static; max-height: none; } }
 .todo { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; }
 .todo h2 { margin: 0; font-size: 16px; }
@@ -482,7 +482,7 @@ body.is-dragging.drag-event .tp-drop { display: block; }
 .settings-page { max-width: 1180px; margin: 0 auto; padding: 8px 16px 48px; }
 .settings-page > h2 { margin: 12px 0; font-size: 22px; }
 .set-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
-.set-nav { position: sticky; top: 64px; display: grid; gap: 2px; }
+.set-nav { position: sticky; top: 114px; display: grid; gap: 2px; }
 .set-nav a { padding: 7px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 14px; font-weight: var(--fw); }
 .set-nav a:hover { background: var(--surface-2); }
 .set-content { min-width: 0; }
@@ -1213,3 +1213,9 @@ table.insp-imp-tbl { border-collapse: collapse; width: 100%; min-width: 900px; f
   .topbar-in:not(.settings-bar) > .apps-menu { display: none; } /* スマホのカレンダー・年間計画・会議室のページでは、名前のメニューの中に出す */
   .only-sm { display: block; }
 }
+
+/* 上の帯は共通の部品 hub-bar（v1.122.0〜）。帯の中のアプリの道具（? ・年間計画）と、設定のページの見出しの上 */
+.hb .hb-tools .btn.small { gap: 6px; }
+.set-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
+@media (max-width: 760px) { .hb .hb-tools .lbl { display: none; } }
+@media (max-width: 640px) { .hb .hb-tools .insp-btn { display: none; } } /* スマホでは、年間計画は名前のメニューから（前と同じ） */

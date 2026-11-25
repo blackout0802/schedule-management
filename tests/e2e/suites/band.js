@@ -17,7 +17,7 @@ const bg = (p, sel) => p.locator(sel).first().evaluate(e => getComputedStyle(e).
   const events = view => y.evaluate(async ([from, view]) => (await (await fetch('api.php?action=events&from=' + from + '&to=' + from + '&view=' + view)).json()).events, [today, view]);
 
   // プライベート版で、新しい予定を、ローズの帯で作る
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches');
   ok('入力画面に、帯の色が9色（標準の紫・青・緑・オレンジ・ローズ・マスタード・ライム・ティール・ブラウン）出る。初めは標準', await y.locator('.modal .band-sw:visible').count() === 9 && await y.locator('.modal .band-sw[data-band=purple]').isHidden() && (await y.locator('.modal .band-sw[aria-pressed=true]').getAttribute('data-band')) === 'standard');
   await y.fill('.modal input[name=title]', '色つきの予定'); await y.click('.modal .band-sw[data-band=rose]');
@@ -60,7 +60,7 @@ const bg = (p, sel) => p.locator(sel).first().evaluate(e => getComputedStyle(e).
   const bad = await api('event_save', { kind: 'private', title: 'おかしな色', start: today, band: 'zzz' });
   ok('休みの予定に色を送っても、付かない。決められた色以外は、標準になる', (await events('team')).filter(e => e.kind === 'off')[0].band === '' && (await events('me')).filter(e => e.title === 'おかしな色')[0].band === '', [wk, bad]);
   // 業務の予定: 入力画面で色を選ぶと、業務版の帯がその色になる。繰り返しでない業務も、全社の表示（人ごとの色）でも、選んだ色
-  await y.click('.tab[data-view=team]'); await y.waitForSelector('.view-banner:not(.me)').catch(() => { }); await y.waitForSelector('.cal');
+  await y.click('.hb-tab[data-view=team]'); await y.waitForSelector('.view-banner:not(.me)').catch(() => { }); await y.waitForSelector('.cal');
   await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches'); await y.click('.modal label:has-text("業務")');
   await y.fill('.modal input[name=title]', '業務の色つき'); await y.click('.modal .band-sw[data-band=teal]');
   ok('業務の予定でも、色を押すと、選んだ色の名前が出る', (await y.locator('.modal .band-name').innerText()) === 'ティール');
@@ -83,7 +83,7 @@ const bg = (p, sel) => p.locator(sel).first().evaluate(e => getComputedStyle(e).
   const sw = await y.locator('.modal button[type=submit]').boundingBox();
   ok('1366×650 の画面でも、業務の予定の入力画面で、保存ボタンまで見える（色の欄を足したあと）', sw && sw.y + sw.height <= 650, sw);
   await y.click('.modal button:has-text("キャンセル")'); await y.setViewportSize({ width: 1280, height: 1000 });
-  await y.click('.tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
+  await y.click('.hb-tab[data-view=me]'); await y.waitForSelector('.view-banner.me');
   // 小さな画面（1366×650）でも、色の欄を足したあと、保存ボタンまでスクロールせずに見える
   await y.setViewportSize({ width: 1366, height: 650 });
   await y.keyboard.press('n'); await y.waitForSelector('.modal .band-swatches');
@@ -105,7 +105,7 @@ const bg = (p, sel) => p.locator(sel).first().evaluate(e => getComputedStyle(e).
   // スマホ幅: 色の欄が1画面に収まり、はみ出さない
   const ph = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
   await ph.goto(BASE + 'login.php'); await ph.fill('input[name=email]', 'yamada@example.com'); await ph.fill('input[name=password]', 'yamadapass1');
-  await Promise.all([ph.waitForURL('**/index.php'), ph.click('button[type=submit]')]); await ph.waitForSelector('.cal'); await ph.click('.tab[data-view=me]'); await ph.waitForSelector('.tab[data-view=me][aria-selected=true]');
+  await Promise.all([ph.waitForURL('**/index.php'), ph.click('button[type=submit]')]); await ph.waitForSelector('.cal'); await ph.click('.hb-tab[data-view=me]'); await ph.waitForSelector('.hb-tab[data-view=me][aria-selected=true]');
   await ph.keyboard.press('n').catch(() => { }); if (!(await ph.locator('.modal').count())) { await ph.click('.cal .cell >> nth=10'); await ph.waitForSelector('.modal').catch(() => { }); }
   if (await ph.locator('.modal .band-swatches').count()) {
     const box = await ph.locator('.modal .band-swatches').boundingBox(); const vw = await ph.evaluate(() => window.innerWidth);

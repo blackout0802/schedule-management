@@ -51,9 +51,9 @@ const rowsOf = (p) => p.locator('.ms-table tbody tr').evaluateAll(trs => trs.map
   await p.locator('.ms-table tbody tr', { hasText: other }).click(); await p.waitForFunction(n => { const t = document.querySelector('.ms-table tbody tr.sel th'); return t && t.innerText === n; }, other);
   ok('月のまとめの行を押すと、その人に切り替わり、表は全社員のまま', (await rowsOf(p)).length === 3 && (await p.locator('#who-sel option:checked').innerText()).includes(other.split(/\s/)[0]));
   // プライベート版は自分だけ
-  await p.click('header >> text=プライベート版'); await p.waitForSelector('.view-banner.me'); ok('プライベート版: カレンダーの下（凡例・月のまとめ）は出ない', (await p.locator('.month-sum').count()) === 0 && (await p.locator('.legend').count()) === 0);
+  await p.click('.hb-tab[data-view=me]'); await p.waitForSelector('.view-banner.me'); ok('プライベート版: カレンダーの下（凡例・月のまとめ）は出ない', (await p.locator('.month-sum').count()) === 0 && (await p.locator('.legend').count()) === 0);
   // コンパクトさ
-  await p.click('header >> text=業務版'); await p.selectOption('#who-sel', { label: '自分' }); await p.waitForSelector('.ms-table tbody tr.sel');
+  await p.click('.hb-tab[data-view=team]'); await p.selectOption('#who-sel', { label: '自分' }); await p.waitForSelector('.ms-table tbody tr.sel');
   await p.screenshot({ path: 'sum-self.png', fullPage: true });
   await p.selectOption('#who-sel', 'all'); await p.waitForFunction(() => document.querySelectorAll('.ms-table tbody tr').length === 3); await p.screenshot({ path: 'sum-all.png', fullPage: true });
   // スマホ
