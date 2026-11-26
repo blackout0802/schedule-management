@@ -19,6 +19,10 @@
  *   });
  *   document.body.prepend(bar.el); bar.setTab('items');
  * Hub 自身は isHub: true と onHome・onMySettings を渡す。
+ *
+ * 名前などをサーバーに聞いてから帯を差し込むと、返事が来たときに画面全体が下にずれる（ちらつく）。
+ * そのため、帯は名前が分からなくても、画面ができるときにすぐ差し込む（user: null なら名前の欄は空。帯の高さは変わらない）。
+ * あとで分かったものは bar.update({ user, hubUrl, apps, appItems, onLogout }) で入れる（渡したものだけ変わる）。2026-11-25〜
  */
 (function () {
   'use strict';
@@ -180,22 +184,43 @@
         b.setAttribute('aria-selected', on ? 'true' : 'false');
       });
     }
-    var home = o.isHub
-      ? h('button', { type: 'button', class: 'hb-home', title: 'アプリの一覧へ', onclick: o.onHome || null }, logo())
-      : (o.hubUrl ? h('a', { class: 'hb-home', href: o.hubUrl, title: 'Hub（アプリの一覧）へ' }, logo()) : h('span', { class: 'hb-home' }, logo()));
+    o = copy(o); // update() で書き換えるので、呼んだ側の物は変えない
+    function makeHome() {
+      return o.isHub
+        ? h('button', { type: 'button', class: 'hb-home', title: 'アプリの一覧へ', onclick: o.onHome || null }, logo())
+        : (o.hubUrl ? h('a', { class: 'hb-home', href: o.hubUrl, title: 'Hub（アプリの一覧）へ' }, logo()) : h('span', { class: 'hb-home' }, logo()));
+    }
+    var home = makeHome(), user = o.user ? userMenu(o) : null, sw = appSwitch(o);
+    var bandIn = h('div', { class: 'hb-in' }, home, h('span', { class: 'hb-sp' }), user);
     var el = h('div', { class: 'hb' + (o.sticky === false ? '' : ' hb-sticky'), role: 'banner', 'data-app': o.isHub ? 'hub' : o.appId },
-      h('div', { class: 'hb-band' }, h('div', { class: 'hb-in' },
-        home, h('span', { class: 'hb-sp' }), o.user ? userMenu(o) : null)),
+      h('div', { class: 'hb-band' }, bandIn),
       h('div', { class: 'hb-appbar' }, h('div', { class: 'hb-in' },
         h('span', { class: 'hb-app-pola', 'aria-hidden': 'true' }),
-        appSwitch(o),
+        sw,
         o.version ? h('span', { class: 'hb-ver', text: 'v' + o.version }) : null,
         tabBtns.length ? h('div', { class: 'hb-tabs', role: 'tablist', 'aria-label': o.appName + 'のページ' }, tabBtns) : null,
         h('span', { class: 'hb-sp' }),
         o.tools && o.tools.length ? h('div', { class: 'hb-tools' }, o.tools) : null)),
       h('div', { class: 'hb-line', 'aria-hidden': 'true' }));
     if (o.tab) setTab(o.tab);
-    return { el: el, setTab: setTab, close: closeAll };
+    /** あとで分かった名前・Hub の URL・アプリの一覧などを入れる。帯の SKYM・名前・アプリ名 ▾ だけを作り直す（高さは変わらない） */
+    function update(p) {
+      Object.keys(p || {}).forEach(function (k) { o[k] = p[k]; });
+      closeAll();
+      var nh = makeHome(); bandIn.replaceChild(nh, home); home = nh;
+      var nu = o.user ? userMenu(o) : null;
+      if (user && nu) bandIn.replaceChild(nu, user);
+      else if (user) bandIn.removeChild(user);
+      else if (nu) bandIn.appendChild(nu);
+      user = nu;
+      var ns = appSwitch(o); sw.parentNode.replaceChild(ns, sw); sw = ns;
+    }
+    return { el: el, setTab: setTab, update: update, close: closeAll };
+  }
+  function copy(o) {
+    var c = {};
+    Object.keys(o || {}).forEach(function (k) { c[k] = o[k]; });
+    return c;
   }
 
   window.HubBar = { create: create, closeAll: closeAll };

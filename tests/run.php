@@ -450,7 +450,9 @@ q('DELETE FROM events WHERE id = ?', [$sd1['id']]);
 $back = save_todo(['kind' => 'work', 'title' => '見積書を作る', 'tag' => '個人作業', 'note' => '', 'family_shared' => 0], $a, null);
 $todoA = $back;
 $thrown = function (callable $f) { try { $f(); return false; } catch (RuntimeException $x) { return true; } };
-check('予定→ToDo: 休みは戻せない', $thrown(function () use ($a, $mk, $today) { event_to_todo($mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => date('Y-m-d', strtotime('+95 day'))]), $a); }), true);
+$offTd = $mk($a, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => date('Y-m-d', strtotime('+95 day'))]);
+check('予定→ToDo: 休みは戻せない', $thrown(function () use ($a, $offTd) { event_to_todo($offTd, $a); }), true);
+q('DELETE FROM events WHERE id = ?', [$offTd['id']]); // 残すと、実行する日によって、ほかのテスト（表示する人。2027年3月）に混ざる（2026-11-26 に落ちた）
 $rec2 = row('SELECT * FROM events WHERE series_id IS NOT NULL LIMIT 1');
 check('予定→ToDo: 繰り返し由来は戻せない', $rec2 === null ? true : $thrown(function () use ($rec2, $a) { event_to_todo($rec2, $a); }), true);
 check('予定→ToDo: 他人の予定は戻せない', $thrown(function () use ($admin, $mv) { event_to_todo(row('SELECT * FROM events WHERE id = ?', [$mv['id']]), $admin); }), true);
@@ -550,7 +552,9 @@ $wA = $mk($a, ['kind' => 'work', 'title' => '表示A', 'tag' => '定例業務', 
 $wB = $mk($b, ['kind' => 'work', 'title' => '表示B', 'tag' => '定例業務', 'start' => '2027-03-02', 'end' => '2027-03-02']);
 $wBo = $mk($b, ['kind' => 'off', 'title' => '', 'tag' => '有給', 'start' => '2027-03-03', 'end' => '2027-03-03']);
 $wBp = $mk($b, ['kind' => 'private', 'title' => '表示B私用', 'start' => '2027-03-02', 'end' => '2027-03-02']);
-$titles = function (array $l) { $t = array_column($l, 'title'); sort($t); return $t; };
+// ここで作った4件だけを見る（ほかのテストが「今日から何日後」で作って残した予定が、実行する日によって2027年3月に入るため。2026-11-26 に落ちた）
+$wIds = array_map('intval', [$wA['id'], $wB['id'], $wBo['id'], $wBp['id']]);
+$titles = function (array $l) use ($wIds) { $t = array_column(array_filter($l, function ($e) use ($wIds) { return in_array((int)$e['id'], $wIds, true); }), 'title'); sort($t); return $t; };
 check('表示する人: 全社なら、全員の業務・休み（プライベートは無し）', $titles(list_events($a, '2027-03-01', '2027-03-31', 'team')), ['休み', '表示A', '表示B']);
 check('表示する人: 特定の社員だけ（その人の業務と休み。プライベートは出ない）', $titles(list_events($a, '2027-03-01', '2027-03-31', 'team', ['who' => (int)$b['id']])), ['休み', '表示B']);
 check('表示する人: 自分を選べば、自分の分だけ', $titles(list_events($a, '2027-03-01', '2027-03-31', 'team', ['who' => (int)$a['id']])), ['表示A']);
